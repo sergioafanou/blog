@@ -1,0 +1,209 @@
+---
+layout: post
+title: How To Configure Apache HTTP with MPM Event and PHP-FPM on FreeBSD 12.0
+network: digitalocean
+date: July 09, 2019 at 11:12PM
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/funds/open-internet-free-speech">Open Internet/Free Speech Fund</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p>The <a href="http://httpd.apache.org/">Apache HTTP</a> web server has evolved through the years to work in different environments and solve different needs. One important problem Apache HTTP has to solve, like any web server, is how to handle different processes to serve an http protocol request. This involves opening a socket, processing the request, keeping the connection open for a certain period, handling new events occurring through that connection, and returning the content produced by a program made in a particular language (such as PHP, Perl, or Python). These tasks are performed and controlled by a <em>Multi-Processing Module</em> (MPM).</p>
+
+<p>Apache HTTP comes with three different MPM:</p>
+
+<ul>
+<li><strong>Pre-fork</strong>: A new process is created for each incoming connection reaching the server. Each process is isolated from the others, so no memory is shared between them, even if they are performing identical calls at some point in their execution. This is a safe way to run applications linked to libraries that do not support threading—typically older applications or libraries.</li>
+<li><strong>Worker</strong>: A parent process is responsible for launching a pool of child processes, some of which are listening for new incoming connections, and others are serving the requested content. Each process is threaded (a single thread can handle one connection) so one process can handle several requests concurrently. This method of treating connections encourages better resource utilization, while still maintaining stability. This is a result of the pool of available processes, which often has free available threads ready to immediately serve new connections.</li>
+<li><strong>Event</strong>: Based on worker, this MPM goes one step further by optimizing how the parent process schedules tasks to the child processes and the threads associated to those. A connection stays open for 5 seconds by default and closes if no new event happens; this is the keep-alive directive default value, which retains the thread associated to it. The Event MPM enables the process to manage threads so that some threads are free to handle new incoming connections while others are kept bound to the live connections. Allowing re-distribution of assigned tasks to threads will make for better resource utilization and performance.</li>
+</ul>
+
+<p>The <a href="https://httpd.apache.org/docs/2.4/mod/event.html">MPM Event</a> module is a fast multi-processing module available on the Apache HTTP web server.</p>
+
+<p><a href="https://php-fpm.org/">PHP-FPM</a> is the FastCGI Process Manager for PHP. The FastCGI protocol is based on the Common Gateway Interface (CGI), a protocol that sits between applications and web servers like Apache HTTP. This allows developers to write applications separately from the behavior of web servers. Programs run their processes independently and pass their product to the web server through this protocol. Each new connection in need of processing by an application will create a new process.</p>
+
+<p>By combining the MPM Event in Apache HTTP with the PHP FastCGI Process Manager (PHP-FPM) a website can load faster and handle more concurrent connections while using fewer resources.</p>
+
+<p>In this tutorial you will improve the performance of the <a href="https://www.digitalocean.com/community/tutorials/how-to-install-an-apache-mysql-and-php-famp-stack-on-freebsd-12-0">FAMP stack</a> by changing the default multi-processing module from pre-fork to event and by using the PHP-FPM process manager to handle PHP code instead of the classic <code>mod_php</code> in Apache HTTP.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide you'll need the following:</p>
+
+<ul>
+<li>A FreeBSD 12.0 server set up following this <a href="https://www.digitalocean.com/community/tutorials/how-to-get-started-with-freebsd">guide</a>.</li>
+<li>The FAMP stack installed on your server following this <a href="https://www.digitalocean.com/community/tutorials/how-to-install-an-apache-mysql-and-php-famp-stack-on-freebsd-12-0">tutorial</a>.</li>
+<li>Access to a user with root privileges (or allowed by using sudo) in order to make configuration changes.</li>
+</ul>
+
+<h2 id="step-1-—-changing-the-multi-processing-module">Step 1 — Changing the Multi-Processing Module</h2>
+
+<p>You'll begin by looking for the pre-fork directive in the <code>httpd.conf</code> file. This is the main configuration file for Apache HTTP in which you can enable and disable modules. You can edit and set directives such as the listening port where Apache HTTP will serve content or the location of the content to display in this file.</p>
+
+<p>To make these changes, you'll use the <code>nl</code>, number line, program, with the <code>-ba</code> flag to count and number lines so that nothing is mismatched at a later stage. Combined with <code>grep</code> this command will first count all the lines in the file specified in the path, and once finished, it will search for the string of characters you're looking for.</p>
+
+<p>Run the following command so that the <code>nl</code> program will process and number the lines in <code>httpd.conf</code>. Then, <code>grep</code> will process the output by searching for the given string of characters <code>'mod_mpm_prefork'</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nl -ba /usr/local/etc/apache24/httpd.conf | grep 'mod_mpm_prefork'
+</li></ul></code></pre>
+<p>As output you'll see something similar to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">67</span>  LoadModule mpm_prefork_module libexec/apache24/mod_mpm_prefork.so
+</code></pre>
+<p>Let's edit line <span class="highlight">67</span> with your text editor. In this tutorial, you'll use <code>vi</code>, which is the default editor on FreeBSD:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi +<span class="highlight">67</span> /usr/local/etc/apache24/httpd.conf
+</li></ul></code></pre>
+<p>Append a <code>#</code> symbol at the beginning of the line so this line is commented out, like so:</p>
+<div class="code-label " title="/usr/local/etc/apache24/httpd.conf">/usr/local/etc/apache24/httpd.conf</div><pre class="code-pre "><code langs="">...
+# LoadModule mpm_prefork_module libexec/apache24/mod_mpm_prefork.so
+...
+</code></pre>
+<p>By appending the <code>#</code> symbol you've disabled the pre-fork MPM module.</p>
+
+<p>Now you'll find the event directive in the same <code>httpd.conf</code> file.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nl -ba /usr/local/etc/apache24/httpd.conf | grep mpm_event
+</li></ul></code></pre>
+<p>You'll see output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+<span class="highlight">66</span>  #LoadModule mpm_event_module libexec/apache24/mod_mpm_event.so
+...
+</code></pre>
+<p>Now you'll remove the <code>#</code> symbol in line <span class="highlight">66</span> to enable the Event MPM:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi +<span class="highlight">66</span> /usr/local/etc/apache24/httpd.conf
+</li></ul></code></pre>
+<p>The directive will now read as follows:</p>
+<div class="code-label " title="/usr/local/etc/apache24/httpd.conf">/usr/local/etc/apache24/httpd.conf</div><pre class="code-pre "><code langs="">...
+LoadModule mpm_event_module libexec/apache24/mod_mpm_event.so
+...
+</code></pre>
+<p>Now that you've switched the configuration from the MPM pre-fork to event, you can remove the <code>mod_php73</code> package connecting the PHP processor to Apache HTTP, since it is no longer necessary and will interfere if it remains on the system:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo pkg remove -y mod_php73
+</li></ul></code></pre>
+<p>Make sure the configuration is correct by running the following command to test:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl configtest
+</li></ul></code></pre>
+<p>If you see <code>Syntax OK</code> in your output, you can restart the Apache HTTP server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl restart
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Note:</strong> If there are other running HTTP connections on your server a <a href="https://httpd.apache.org/docs/2.4/stopping.html">graceful restart</a> is recommended instead of a regular restart. This will ensure that users are not pushed out, losing their connection:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl graceful
+</li></ul></code></pre>
+<p></p></span>
+
+<p>You've switched the MPM from pre-fork to event and removed the <code>mod_php73</code> module connection PHP to Apache HTTP. In the next step you'll install the PHP-FPM module and configure Apache HTTP so that it can communicate with PHP more quickly.</p>
+
+<h2 id="step-2-—-configuring-apache-http-to-use-the-fastcgi-process-manager">Step 2 — Configuring Apache HTTP to Use the FastCGI Process Manager</h2>
+
+<p>FreeBSD has several supported versions of PHP that you can install via the package manager. On FreeBSD different binaries of the various available versions are compiled instead of using just one like most GNU/Linux distributions offer in their default repositories. To follow best practice you'll use the supported version, which you can check on at <a href="https://www.php.net/supported-versions.php">PHP's supported versions page</a>.</p>
+
+<p>In this step you'll add PHP-FPM as a running service to start at boot. You'll also configure Apache HTTP to work with PHP by adding a dedicated configuration for the module as well as enabling some further modules in <code>httpd.conf</code>.</p>
+
+<p>First you'll append <code>'php_fpm_enable=YES'</code> to the <code>/etc/rc.conf</code> file so the PHP-FPM service can start. You'll do that by using the <code>sysrc</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysrc php_fpm_enable="YES"
+</li></ul></code></pre>
+<p>Now you'll add the <code>php-fpm</code> module into the Apache module's directory, so it is configured to be used by Apache HTTP. Create the following file to do so:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi /usr/local/etc/apache24/modules.d/030_php-fpm.conf
+</li></ul></code></pre>
+<p>Add the following into <code>030_php-fpm.conf</code>:</p>
+<div class="code-label " title="/usr/local/etc/apache24/modules.d/030_php-fpm.conf">/usr/local/etc/apache24/modules.d/030_php-fpm.conf</div><pre class="code-pre "><code langs="">&lt;IfModule proxy_fcgi_module&gt;
+    &lt;IfModule dir_module&gt;
+        DirectoryIndex index.php
+    &lt;/IfModule&gt;
+    &lt;FilesMatch "\.(php|phtml|inc)$"&gt;
+        SetHandler "proxy:fcgi://127.0.0.1:9000"
+    &lt;/FilesMatch&gt;
+&lt;/IfModule&gt;
+</code></pre>
+<p>This states that if the module <code>'proxy_fcgi'</code> is enabled as well as the <code>'dir_module'</code> then any processed files matching the extensions in parentheses should be handled by the FastCGI process manager running on the local machine through port <code>9000</code>—as if the local machine were a proxy server. This is where the PHP-FPM module and Apache HTTP interconnect. To achieve this, you'll activate further modules during this step.</p>
+
+<p>To enable the proxy module, you'll first search for it in the <code>httpd.conf</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nl -ba /usr/local/etc/apache24/httpd.conf | grep mod_proxy.so
+</li></ul></code></pre>
+<p>You'll see output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+<span class="highlight">129</span> #LoadModule proxy_module libexec/apache24/mod_proxy.so
+...
+</code></pre>
+<p>You'll uncomment the line by removing the <code>#</code> symbol:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi +<span class="highlight">129</span> /usr/local/etc/apache24/httpd.conf
+</li></ul></code></pre>
+<p>The line will look as follows once edited:</p>
+<div class="code-label " title="/usr/local/etc/apache24/httpd.conf">/usr/local/etc/apache24/httpd.conf</div><pre class="code-pre "><code langs="">...
+LoadModule proxy_module libexec/apache24/mod_proxy.so
+...
+</code></pre>
+<p>Now you can activate the FastCGI module. Find the module with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nl -ba /usr/local/etc/apache24/httpd.conf | grep mod_proxy_fcgi.so
+</li></ul></code></pre>
+<p>You'll see something similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+<span class="highlight">133</span> #LoadModule proxy_fcgi_module libexec/apache24/mod_proxy_fcgi.so
+...
+</code></pre>
+<p>Now uncomment the line <span class="highlight">133</span> as you've already done with the other modules:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi +<span class="highlight">133</span> /usr/local/etc/apache24/httpd.conf
+</li></ul></code></pre>
+<p>You'll leave the line as follows:</p>
+<div class="code-label " title="/usr/local/etc/apache24/httpd.conf">/usr/local/etc/apache24/httpd.conf</div><pre class="code-pre "><code langs="">...
+LoadModule proxy_fcgi_module libexec/apache24/mod_proxy_fcgi.so
+...
+</code></pre>
+<p>Once this is done you'll start the PHP-FPM service:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service php-fpm start
+</li></ul></code></pre>
+<p>And you'll restart Apache so it loads the latest configuration changes incorporating the PHP module:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl restart
+</li></ul></code></pre>
+<p>You've installed the PHP-FPM module, configured Apache HTTP to work with it, enabled the necessary modules for the FastCGI protocol to work, and started the corresponding services.</p>
+
+<p>Now that Apache has the Event MPM module enabled and PHP-FPM is present and running, it is time to check everything is working as intended.</p>
+
+<h2 id="step-3-—-checking-your-configuration">Step 3 — Checking Your Configuration</h2>
+
+<p>In order to check that the configuration changes have been applied you'll run some tests. The first one will check what multi-processing module Apache HTTP is using. The second will verify that PHP is using the FPM manager.</p>
+
+<p>Check the Apache HTTP server by running the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl -M | grep 'mpm'
+</li></ul></code></pre>
+<p>Your output will be as follows:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>mpm_event_module (shared)
+</code></pre>
+<p>You can repeat the same for the proxy module and FastCGI:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl -M | grep 'proxy'
+</li></ul></code></pre>
+<p>The output will show:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>proxy_module (shared)
+proxy_fcgi_module (shared)
+</code></pre>
+<p>If you would like to see the entire list of the modules, you can remove the the second part of the command after <code>-M</code>.</p>
+
+<p>It is now time to check if PHP is using the FastCGI Process Manager. To do so you'll write a very small PHP script that will show you all the information related to PHP.</p>
+
+<p>Run the following command to write a file named as follows:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi /usr/local/www/apache24/data/info.php
+</li></ul></code></pre>
+<p>Add the following content into the info.php file:</p>
+<div class="code-label " title="info.php">info.php</div><pre class="code-pre "><code langs="">&lt;?php phpinfo(); ?&gt;
+</code></pre>
+<p>Now visit your server's URL and append <code>info.php</code> at the end like so: <code>http://<span class="highlight">your_server_IP_address</span>/info.php</code>.</p>
+
+<p>The Server API entry will be <strong>FPM/FastCGI</strong>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/MPMEvent/FastCGIPHP.png" alt="PHP Screen the Server API entry FPM/FastCGI"></p>
+
+<p>Remember to delete the <code>info.php</code> file after this check so no information about the server is publicly disclosed.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo rm /usr/local/www/apache24/data/info.php
+</li></ul></code></pre>
+<p>You've checked the working status of the MPM module, the modules handling the FastCGI, and the handling of PHP code.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>You've optimized your original FAMP stack, so the number of connections to create new Apache HTTP processes has increased, PHP-FPM will handle PHP code more efficiently, and overall resource utilization has improved.</p>
+
+<p>See the Apache HTTP server project <a href="http://httpd.apache.org/">documentation</a> for more information on the different modules and related projects.</p>
+
+url: https://www.digitalocean.com/community/tutorials/how-to-configure-apache-http-with-mpm-event-and-php-fpm-on-freebsd-12-0
+image: https://assets.digitalocean.com/articles/MPMEvent/FastCGIPHP.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean

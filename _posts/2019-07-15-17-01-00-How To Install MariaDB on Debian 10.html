@@ -1,0 +1,148 @@
+---
+layout: post
+title: How To Install MariaDB on Debian 10
+network: digitalocean
+date: July 15, 2019 at 05:01PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-mariadb-on-debian-10
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://mariadb.org/">MariaDB</a> is an open-source database management system, commonly used as an alternative for the MySQL portion of the popular <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mariadb-php-lamp-stack-debian10">LAMP</a> (Linux, Apache, MySQL, PHP/Python/Perl) stack.  It is intended to be a drop-in replacement for MySQL and Debian now only ships with MariaDB packages. If you attempt to install MySQL server related packages, you’ll receive the compatible MariaDB replacement versions instead.</p>
+
+<p>The short version of this installation guide consists of these three steps: </p>
+
+<ul>
+<li>Update your package index using <code>apt</code></li>
+<li>Install the <code>mariadb-server</code> package using <code>apt</code>. The package also pulls in related tools to interact with MariaDB</li>
+<li>Run the included <code>mysql_secure_installation</code> security script to restrict access to the server</li>
+</ul>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install mariadb-server
+</li><li class="line" prefix="$">sudo mysql_secure_installation
+</li></ul></code></pre>
+<p>This tutorial will explain how to install MariaDB version 10.3 on a Debian 10 server, and verify that it is running and has a safe initial configuration.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To follow this tutorial, you will need:</p>
+
+<ul>
+<li>One Debian 10 server set up by following <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">this initial server setup guide</a>, including a non-<strong>root</strong> user with <code>sudo</code> privileges and a firewall.</li>
+</ul>
+
+<h2 id="step-1-—-installing-mariadb">Step 1 — Installing MariaDB</h2>
+
+<p>On Debian 10, MariaDB version 10.3 is included in the APT package repositories by default.  It is marked as the default MySQL variant by the Debian MySQL/MariaDB packaging team.</p>
+
+<p>To install it, update the package index on your server with <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Then install the package:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install mariadb-server
+</li></ul></code></pre>
+<p>These commands will install MariaDB, but will not prompt you to set a password or make any other configuration changes.  Because the default configuration leaves your installation of MariaDB insecure, we will use a script that the <code>mariadb-server</code> package provides to restrict access to the server and remove unused accounts.</p>
+
+<h2 id="step-2-—-configuring-mariadb">Step 2 — Configuring MariaDB</h2>
+
+<p>For new MariaDB installations, the next step is to run the included security script.  This script changes some of the less secure default options. We will use it to block remote <strong>root</strong> logins and to remove unused database users.</p>
+
+<p>Run the security script:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mysql_secure_installation
+</li></ul></code></pre>
+<p>This will take you through a series of prompts where you can make some changes to your MariaDB installation’s security options.  The first prompt will ask you to enter the current database <strong>root</strong> password.  Since we have not set one up yet, press <code>ENTER</code> to indicate "none".</p>
+
+<p>The next prompt asks you whether you'd like to set up a database <strong>root</strong> password.  Type <code>N</code> and then press <code>ENTER</code>.  In Debian, the <strong>root</strong> account for MariaDB is tied closely to automated system maintenance, so we should not change the configured authentication methods for that account.  Doing so would make it possible for a package update to break the database system by removing access to the administrative account.  Later, we will cover how to optionally set up an additional administrative account for password access if socket authentication is not appropriate for your use case.</p>
+
+<p>From there, you can press <code>Y</code> and then <code>ENTER</code> to accept the defaults for all the subsequent questions. This will remove some anonymous users and the test database, disable remote <strong>root</strong> logins, and load these new rules so that MariaDB immediately respects the changes you have made.</p>
+
+<h2 id="step-3-—-optional-adjusting-user-authentication-and-privileges">Step 3 — (Optional) Adjusting User Authentication and Privileges</h2>
+
+<p>In Debian systems running MariaDB 10.3, the <strong>root</strong> MariaDB user is set to authenticate using the <code>unix_socket</code> plugin by default rather than with a password. This allows for some greater security and usability in many cases, but it can also complicate things when you need to allow an external program (e.g., phpMyAdmin) administrative rights.</p>
+
+<p>Because the server uses the <strong>root</strong> account for tasks like log rotation and starting and stopping the server, it is best not to change the <strong>root</strong> account's authentication details.  Changing credentials in the <code>/etc/mysql/debian.cnf</code> configuration file may work initially, but package updates could potentially overwrite those changes.  Instead of modifying the <strong>root</strong> account, the package maintainers recommend creating a separate administrative account for password-based access.</p>
+
+<p>To do so, we will create a new account called <code>admin</code> with the same capabilities as the <strong>root</strong> account, but configured for password authentication.  To do this, open up the MariaDB prompt from your terminal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mysql
+</li></ul></code></pre>
+<p>Now, we will create a new user with <strong>root</strong> privileges and password-based access.  Change the username and password to match your preferences:</p>
+<pre class="code-pre custom_prefix"><code langs="">MariaDB [(none)]&gt; GRANT ALL ON *.* TO '<span class="highlight">admin</span>'@'localhost' IDENTIFIED BY '<span class="highlight">password</span>' WITH GRANT OPTION;
+</code></pre>
+<p>Flush the privileges to ensure that they are saved and available in the current session:</p>
+<pre class="code-pre custom_prefix"><code langs="">MariaDB [(none)]&gt; FLUSH PRIVILEGES;
+</code></pre>
+<p>Following this, exit the MariaDB shell:</p>
+<pre class="code-pre custom_prefix"><code langs="">MariaDB [(none)]&gt; exit
+</code></pre>
+<p>Finally, let's test the MariaDB installation.</p>
+
+<h2 id="step-4-—-testing-mariadb">Step 4 — Testing MariaDB</h2>
+
+<p>When installed from the default repositories, MariaDB should start running automatically. To test this, check its status.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status mariadb
+</li></ul></code></pre>
+<p>You'll receive output that is similar to the following:</p>
+<div class="code-label " title="Output">Output</div><pre class="code-pre "><code langs="">● mariadb.service - MariaDB 10.3.15 database server
+   Loaded: loaded (/lib/systemd/system/mariadb.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Fri 2019-07-12 20:35:29 UTC; 47min ago
+     Docs: man:mysqld(8)
+           https://mariadb.com/kb/en/library/systemd/
+ Main PID: 2036 (mysqld)
+   Status: "Taking your SQL requests now..."
+    Tasks: 30 (limit: 2378)
+   Memory: 76.1M
+   CGroup: /system.slice/mariadb.service
+           └─2036 /usr/sbin/mysqld
+
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: Phase 6/7: Checking and upgrading tables
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: Running 'mysqlcheck' with connection arguments: --socket='/var/run/mysqld/mysqld.sock' --host='localhost' --socket='/var/run/mysqld/mysqld.sock' --host='localhost' --socket='/var/run/mysqld/mysqld.sock'
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: # Connecting to localhost...
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: # Disconnecting from localhost...
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: Processing databases
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: information_schema
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: performance_schema
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: Phase 7/7: Running 'FLUSH PRIVILEGES'
+Jul 12 20:35:29 deb-mariadb1 /etc/mysql/debian-start[2074]: <span class="highlight">OK</span>
+Jul 12 20:35:30 deb-mariadb1 /etc/mysql/debian-start[2132]: Triggering myisam-recover for all MyISAM tables and aria-recover for all Aria tables
+</code></pre>
+<p>If MariaDB isn't running, you can start it with the command <code>sudo systemctl start mariadb</code>.</p>
+
+<p>For an additional check, you can try connecting to the database using the <code>mysqladmin</code> tool, which is a client that lets you run administrative commands.  For example, this command says to connect to MariaDB as <strong>root</strong> and return the version using the Unix socket:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mysqladmin version
+</li></ul></code></pre>
+<p>You should receive output similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>mysqladmin  Ver 9.1 Distrib 10.3.15-MariaDB, for debian-linux-gnu on x86_64
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Server version      10.3.15-MariaDB-1
+Protocol version    10
+Connection      Localhost via UNIX socket
+UNIX socket     /var/run/mysqld/mysqld.sock
+Uptime:         48 min 14 sec
+
+Threads: 7  Questions: 474  Slow queries: 0  Opens: 177  Flush tables: 1  Open tables: 31  Queries per second avg: 0.163
+</code></pre>
+<p>If you configured a separate administrative user with password authentication, you could perform the same operation by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysqladmin -u <span class="highlight">admin</span> -p version
+</li></ul></code></pre>
+<p>This means that MariaDB is up and running and that your user is able to authenticate successfully.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this guide you installed MariaDB to act as an SQL server. During the installation process you also secured the server. Optionally, you also created a separate user to ensure administrative access to MariaDB across package updates.</p>
+
+<p>Now that you have a running and secure MariaDB server, here some examples of next steps that you can take to work with the server:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-import-and-export-databases-in-mysql-or-mariadb">Import and export databases</a></li>
+</ul>
+
+<p>You can also incorporate MariaDB into a larger application stack:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-nginx-mariadb-php-lemp-stack-on-debian-10">How To Install Linux, Nginx, MariaDB, PHP (LEMP stack) on Debian 10</a></li>
+</ul>

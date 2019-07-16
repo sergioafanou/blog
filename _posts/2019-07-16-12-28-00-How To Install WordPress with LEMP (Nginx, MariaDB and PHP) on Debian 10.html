@@ -1,0 +1,250 @@
+---
+layout: post
+title: How To Install WordPress with LEMP (Nginx, MariaDB and PHP) on Debian 10
+network: digitalocean
+date: July 16, 2019 at 12:28PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-wordpress-with-lemp-nginx-mariadb-and-php-on-debian-10
+image: https://assets.digitalocean.com/articles/wordpress_lemp_1604/language_selection.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>WordPress is the most popular CMS (content management system) on the internet. It allows you to easily set up flexible blogs and websites on top of a MySQL-based backend with PHP processing. WordPress has seen incredible adoption and is a great choice for getting a website up and running quickly. After setup, almost all administration can be done through the web frontend.</p>
+
+<p>In this guide, we'll focus on getting a WordPress instance set up on a LEMP stack (Linux, Nginx, MariaDB, and PHP) on a Debian 10 server.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>In order to complete this tutorial, you will need access to a Debian 10 server.</p>
+
+<p>You will need to perform the following tasks before you can start this guide:</p>
+
+<ul>
+<li>  <strong>Create a <code>sudo</code> user on your server</strong>: We will be completing the steps in this guide using a non-root user with <code>sudo</code> privileges. You can create a user with <code>sudo</code> privileges by following our <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Debian 10 initial server setup guide</a>.</li>
+<li>  <strong>Install a LEMP stack</strong>: WordPress will need a web server, a database, and PHP in order to correctly function. Setting up a LEMP stack (Linux, Nginx, MariaDB, and PHP) fulfills all of these requirements. Follow <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-nginx-mariadb-php-lemp-stack-on-debian-10">this guide</a> to install and configure this software.</li>
+<li>  <strong>Secure your site with SSL</strong>: WordPress serves dynamic content and handles user authentication and authorization. TLS/SSL is the technology that allows you to encrypt the traffic from your site so that your connection is secure. This tutorial will assume that you have a domain name for your blog. You can use Let's Encrypt to get a free SSL certificate for your domain. Follow our <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-debian-10">Let's Encrypt guide for Nginx</a> to set this up.</li>
+</ul>
+
+<p>When you are finished with the setup steps, log into your server as your <code>sudo</code> user and continue below.</p>
+
+<h2 id="step-1-—-creating-a-database-and-user-for-wordpress">Step 1 — Creating a Database and User for WordPress</h2>
+
+<p>WordPress needs a MySQL-based database to store and manage site and user information. Our setup uses <a href="https://mariadb.org/">MariaDB</a>, a community fork of the original MySQL project by Oracle. MariaDB is currently the default MySQL-compatible database server available on debian-based package manager repositories. </p>
+
+<p>To get started, log into the MariaDB root (administrative) account. If MariaDB is configured to use the <code>auth_socket</code> authentication plugin, which is the default, you can log into the MariaDB administrative account using <code>sudo</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mariadb
+</li></ul></code></pre>
+<p>If you changed the authentication method to use a password for the MariaDB root account, use the following format instead:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mariadb -u root -p
+</li></ul></code></pre>
+<p>You will be prompted for the password you set for the MariaDB root account.</p>
+
+<p>First, we can create a separate database that WordPress can control. You can name this whatever you would like, but we will be using <code>wordpress</code> in this guide to keep it simple. You can create the database for WordPress by typing:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">CREATE DATABASE <span class="highlight">wordpress</span> DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;
+</li></ul></code></pre>
+<p>Next, we are going to create a separate MariaDB user account that we will use exclusively to operate on our new database. Creating one-function databases and accounts is a good idea from a management and security standpoint. We will use the name <code>wordpress_user</code> in this guide. Feel free to change this if you'd like.</p>
+
+<p>The following command will create this account, set a password, and grant access to the database we created. Remember to choose a strong password for your database user:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">GRANT ALL ON <span class="highlight">wordpress</span>.* TO '<span class="highlight">wordpress_user</span>'@'localhost' IDENTIFIED BY '<span class="highlight">password</span>';
+</li></ul></code></pre>
+<p>You now have a database and a user account, each made specifically for WordPress. We need to flush the privileges so that the current instance of the database server knows about the recent changes we've made:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">FLUSH PRIVILEGES;
+</li></ul></code></pre>
+<p>Exit out of MariaDB by typing:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">EXIT;
+</li></ul></code></pre>
+<p>The MariaDB session will exit, returning you to the regular Linux shell.</p>
+
+<h2 id="step-2-—-installing-additional-php-extensions">Step 2 — Installing Additional PHP Extensions</h2>
+
+<p>When setting up our LEMP stack, we only required a very minimal set of extensions in order to get PHP to communicate with MariaDB. WordPress and many of its plugins leverage additional PHP extensions.</p>
+
+<p>We can download and install some of the most popular PHP extensions for use with WordPress by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install php-curl php-gd php-intl php-mbstring php-soap php-xml php-xmlrpc php-zip
+</li></ul></code></pre>
+<p><span class='note'><strong>Note:</strong> Each WordPress plugin has its own set of requirements. Some may require additional PHP packages to be installed. Check your plugin documentation to discover its PHP requirements.<br></span></p>
+
+<p>When you are finished installing the extensions, restart the PHP-FPM process so that the running PHP processor can leverage the newly installed features:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart php7.3-fpm.service
+</li></ul></code></pre>
+<p>We now have all of the necessary PHP extensions installed on the server.</p>
+
+<h2 id="step-3-—-configuring-nginx">Step 3 — Configuring Nginx</h2>
+
+<p>Next, we will be making a few minor adjustments to our Nginx server block files. Based on the prerequisite tutorials, you should have a configuration file for your site in the <code>/etc/nginx/sites-available/</code> directory configured to respond to your server's domain name and protected by a TLS/SSL certificate. We'll use <code>/etc/nginx/sites-available/<span class="highlight">your_domain</span></code> as an example here, but you should substitute the path to your configuration file where appropriate.</p>
+
+<p>Additionally, we will use <code>/var/www/<span class="highlight">your_domain</span></code> as the root directory of our WordPress install. You should use the web root specified in your own configuration.</p>
+
+<p><span class='note'><strong>Note:</strong> It's possible you are using the <code>/etc/nginx/sites-available/default</code> default configuration (with <code>/var/www/html</code> as your web root). This is fine to use if you're only going to host one website on this server. If not, it's best to split the necessary configuration into logical chunks, one file per site.<br></span></p>
+
+<p>Open your site's Nginx configuration file with <code>sudo</code> privileges to begin:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>We need to add a few <code>location</code> directives within our main <code>server</code> block. After adding SSL certificates your config may have <em>two</em> <code>server</code> blocks. If so, find the one that contains <code>root /var/www/<span class="highlight">your_domain</span></code> and your other <code>location</code> directives and implement your changes there.</p>
+
+<p>Start by creating exact-matching location blocks for requests to <code>/favicon.ico</code> and <code>/robots.txt</code>, both of which we do not want to log requests for.</p>
+
+<p>We will use a regular expression location to match any requests for static files. We will again turn off the logging for these requests and will mark them as highly cacheable since these are typically expensive resources to serve. You can adjust this static files list to contain any other file extensions your site may use:</p>
+<div class="code-label " title="/etc/nginx/sites-available/your_domain">/etc/nginx/sites-available/your_domain</div><pre class="code-pre "><code langs="">server {
+    . . .
+
+    <span class="highlight">location = /favicon.ico { log_not_found off; access_log off; }</span>
+    <span class="highlight">location = /robots.txt { log_not_found off; access_log off; allow all; }</span>
+    <span class="highlight">location ~* \.(css|gif|ico|jpeg|jpg|js|png)$ {</span>
+        <span class="highlight">expires max;</span>
+        <span class="highlight">log_not_found off;</span>
+    <span class="highlight">}</span>
+    . . .
+}
+</code></pre>
+<p>Inside of the existing <code>location /</code> block, we need to adjust the <code>try_files</code> list so that instead of returning a 404 error as the default option, control is passed to the <code>index.php</code> file with the request arguments.</p>
+
+<p>This should look something like this:</p>
+<div class="code-label " title="/etc/nginx/sites-available/wordpress">/etc/nginx/sites-available/wordpress</div><pre class="code-pre "><code langs="">server {
+    . . .
+    location / {
+        <span class="highlight">#</span>try_files $uri $uri/ =404;
+        <span class="highlight">try_files $uri $uri/ /index.php$is_args$args;</span>
+    }
+    . . .
+}
+</code></pre>
+<p>When you are finished, save and close the file.</p>
+
+<p>Now, we can check our configuration for syntax errors by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>If no errors were reported, reload Nginx by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload nginx
+</li></ul></code></pre>
+<p>Next, we will download and set up WordPress itself.</p>
+
+<h2 id="step-4-—-downloading-wordpress">Step 4 — Downloading WordPress</h2>
+
+<p>Now that our server software is configured, we can download and set up WordPress. For security reasons in particular, it is always recommended to get the latest version of WordPress from their site.</p>
+
+<p>Change into a writable directory and then download the compressed release by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li><li class="line" prefix="$">curl -LO https://wordpress.org/latest.tar.gz
+</li></ul></code></pre>
+<p>Extract the compressed file to create the WordPress directory structure:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tar xzvf latest.tar.gz
+</li></ul></code></pre>
+<p>We will be moving these files into our document root momentarily. Before we do that, we can copy over the sample configuration file to the filename that WordPress actually reads:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp /tmp/wordpress/wp-config-sample.php /tmp/wordpress/wp-config.php
+</li></ul></code></pre>
+<p>Now, we can copy the entire contents of the directory into our document root. We are using the <code>-a</code> flag to make sure our permissions are maintained. We are using a dot at the end of our source directory to indicate that everything within the directory should be copied, including any hidden files:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp -a /tmp/wordpress/. /var/www/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Now that our files are in place, we'll assign ownership them to the <code>www-data</code> user and group. This is the user and group that Nginx runs as, and Nginx will need to be able to read and write WordPress files in order to serve the website and perform automatic updates.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R www-data:www-data /var/www/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Our files are now in our server's document root and have the correct ownership, but we still need to complete some more configuration.</p>
+
+<h2 id="step-5-—-setting-up-the-wordpress-configuration-file">Step 5 — Setting up the WordPress Configuration File</h2>
+
+<p>Next, we need to make a few changes to the main WordPress configuration file.</p>
+
+<p>When we open the file, our first order of business will be to adjust the secret keys to provide some security for our installation. WordPress provides a secure generator for these values so that you do not have to try to come up with good values on your own. These are only used internally, so it won't hurt usability to have complex, secure values here.</p>
+
+<p>To grab secure values from the WordPress secret key generator, type:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -s https://api.wordpress.org/secret-key/1.1/salt/
+</li></ul></code></pre>
+<p>You will get back unique values that look something like this:</p>
+
+<p><span class='warning'><strong>Warning:</strong> It is important that you request unique values each time. Do <strong>NOT</strong> copy the values shown below!<br></span></p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>define('AUTH_KEY',         '1jl/vqfs&lt;XhdXoAPz9 <span class="highlight">DO NOT COPY THESE VALUES</span> c_j{iwqD^&lt;+c9.k&lt;J@4H');
+define('SECURE_AUTH_KEY',  'E2N-h2]Dcvp+aS/p7X <span class="highlight">DO NOT COPY THESE VALUES</span> {Ka(f;rv?Pxf})CgLi-3');
+define('LOGGED_IN_KEY',    'W(50,{W^,OPB%PB&lt;JF <span class="highlight">DO NOT COPY THESE VALUES</span> 2;y&amp;,2m%3]R6DUth[;88');
+define('NONCE_KEY',        'll,4UC)7ua+8&lt;!4VM+ <span class="highlight">DO NOT COPY THESE VALUES</span> #`DXF+[$atzM7 o^-C7g');
+define('AUTH_SALT',        'koMrurzOA+|L_lG}kf <span class="highlight">DO NOT COPY THESE VALUES</span>  07VC*Lj*lD&amp;?3w!BT#-');
+define('SECURE_AUTH_SALT', 'p32*p,]z%LZ+pAu:VY <span class="highlight">DO NOT COPY THESE VALUES</span> C-?y+K0DK_+F|0h{!_xY');
+define('LOGGED_IN_SALT',   'i^/G2W7!-1H2OQ+t$3 <span class="highlight">DO NOT COPY THESE VALUES</span> t6**bRVFSD[Hi])-qS`|');
+define('NONCE_SALT',       'Q6]U:K?j4L%Z]}h^q7 <span class="highlight">DO NOT COPY THESE VALUES</span> 1% ^qUswWgn+6&amp;xqHN&amp;%');
+</code></pre>
+<p>These are configuration lines that we can paste directly in our configuration file to set secure keys. Copy the output you received now.</p>
+
+<p>Now, open the WordPress configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/<span class="highlight">your_domain</span>/wp-config.php
+</li></ul></code></pre>
+<p>Find the section that contains the dummy values for those settings. It will look something like this:</p>
+<div class="code-label " title="/var/www/wordpress/wp-config.php">/var/www/wordpress/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('AUTH_KEY',         'put your unique phrase here');
+define('SECURE_AUTH_KEY',  'put your unique phrase here');
+define('LOGGED_IN_KEY',    'put your unique phrase here');
+define('NONCE_KEY',        'put your unique phrase here');
+define('AUTH_SALT',        'put your unique phrase here');
+define('SECURE_AUTH_SALT', 'put your unique phrase here');
+define('LOGGED_IN_SALT',   'put your unique phrase here');
+define('NONCE_SALT',       'put your unique phrase here');
+
+. . .
+</code></pre>
+<p>Delete those lines and paste in the values you copied from the command line:</p>
+<div class="code-label " title="/var/www/wordpress/wp-config.php">/var/www/wordpress/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('AUTH_KEY',         '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('SECURE_AUTH_KEY',  '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('LOGGED_IN_KEY',    '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('NONCE_KEY',        '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('AUTH_SALT',        '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('SECURE_AUTH_SALT', '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('LOGGED_IN_SALT',   '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('NONCE_SALT',       '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+
+. . .
+</code></pre>
+<p>Next, we need to modify some of the database connection settings at the beginning of the file. You need to adjust the database name, the database user, and the associated password that we configured within MariaDB.</p>
+
+<p>The other change we need to make is to set the method that WordPress should use to write to the filesystem. Since we've given the web server permission to write where it needs to, we can explicitly set the filesystem method to "direct". Failure to set this with our current settings would result in WordPress prompting for FTP credentials when we perform some actions. This setting can be added below the database connection settings, or anywhere else in the file:</p>
+<div class="code-label " title="/var/www/wordpress/wp-config.php">/var/www/wordpress/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('DB_NAME', '<span class="highlight">wordpress</span>');
+
+/** MySQL database username */
+define('DB_USER', '<span class="highlight">wordpress_user</span>');
+
+/** MySQL database password */
+define('DB_PASSWORD', '<span class="highlight">password</span>');
+
+. . .
+
+<span class="highlight">define('FS_METHOD', 'direct');</span>
+</code></pre>
+<p>Save and close the file when you are finished.</p>
+
+<h2 id="step-6-—-completing-the-installation-through-the-web-interface">Step 6 — Completing the Installation Through the Web Interface</h2>
+
+<p>Now that the server configuration is complete, we can finish up the installation through the web interface.</p>
+
+<p>In your web browser, navigate to your server's domain name or public IP address:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">server_domain_or_IP</span>
+</code></pre>
+<p>Select the language you would like to use:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lemp_1604/language_selection.png" alt="WordPress language selection"></p>
+
+<p>Next, you will come to the main setup page.</p>
+
+<p>Select a name for your WordPress site and choose a username (it is recommended not to choose something like "admin" for security purposes). A strong password is generated automatically. Save this password or select an alternative strong password.</p>
+
+<p>Enter your email address and select whether you want to discourage search engines from indexing your site:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lemp_1604/setup_installation.png" alt="WordPress setup installation"></p>
+
+<p>When you click ahead, you will be taken to a page that prompts you to log in:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lemp_1604/login_prompt.png" alt="WordPress login prompt"></p>
+
+<p>Once you log in, you will be taken to the WordPress administration dashboard:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_debian10/wordpress_debian10.png" alt="WordPress admin panel"></p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>WordPress should be installed and ready to use! Some common next steps are to choose the permalinks setting for your posts (can be found in <code>Settings &gt; Permalinks</code>) or to select a new theme (in <code>Appearance &gt; Themes</code>). If this is your first time using WordPress, explore the interface a bit to get acquainted with your new CMS, or check the <a href="https://wordpress.org/support/article/first-steps-with-wordpress-b/">First Steps with WordPress</a> guide on their official documentation.</p>

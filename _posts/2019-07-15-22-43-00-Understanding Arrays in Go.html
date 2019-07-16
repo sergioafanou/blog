@@ -1,0 +1,196 @@
+---
+layout: post
+title: Understanding Arrays in Go
+network: digitalocean
+date: July 15, 2019 at 10:43PM
+url: https://www.digitalocean.com/community/tutorials/understanding-arrays-in-go
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>An <em>array</em> in Go is an ordered sequence of elements that has its capacity defined at creation time. Once an array has allocated its size, the size can no longer be changed. Because the size of an array is static, the data structure only needs to allocate memory once, as opposed to a variable length data structure that must dynamically allocate memory so that it can become larger or smaller in the future.</p>
+
+<p>Although the fixed length of arrays can make them somewhat rigid to work with, the one-time memory allocation can increase the speed and performance of your program. Because of this, developers typically use arrays when optimizing programs. In Go, <em>slices</em> are the variable length version of arrays. Slices provide more flexibility and constitute what you would think of as arrays in other languages.</p>
+
+<p>In this article, you will learn how to declare an array, how to call individual elements using indexing, how to slice the array into smaller sets, and the difference between an array and a slice in Go.</p>
+
+<h2 id="defining-an-array">Defining an Array</h2>
+
+<p>Arrays are defined by declaring the size of the array in brackets <code>[ ]</code>, followed by the data type of the elements. An array in Go must have all its elements be the same <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-go">data type</a>. After the data type, you can declare the individual values of the array elements in curly brackets <code>{ }</code>.</p>
+
+<p>The following is the general schema for declaring an array:</p>
+<pre class="code-pre "><code class="code-highlight language-go">[<span class="highlight">capacity</span>]<span class="highlight">data_type</span>{<span class="highlight">element_values</span>}
+</code></pre>
+<p><span class='note'><strong>Note:</strong> It is important to remember that every declaration of a new array creates a distinct type. So, although <code>[2]int</code> and <code>[3]int</code> both have integer elements, their differing capacities make their data types incompatible.<br></span></p>
+
+<p>If you do not declare the values of the array's elements, the default is zero-valued, which means that the array elements of the array will be empty. For integers, this is represented by <code>0</code>, and for strings this is represented by an empty string.</p>
+
+<p>For example, the following array <code>numbers</code> has three integer elements that do not yet have a value:</p>
+<pre class="code-pre "><code class="code-highlight language-go">var numbers [3]int
+</code></pre>
+<p>If you printed <code>numbers</code>, you would recieve the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[0 0 0]
+</code></pre>
+<p>If you would like to assign the values of the elements when you create the array, place the values in curly brackets. An array of strings with set values looks like this:</p>
+<pre class="code-pre "><code class="code-highlight language-go">[4]string{"blue coral", "staghorn coral", "pillar coral", "elkhorn coral"}
+</code></pre>
+<p>You can store an array in a variable and print it out:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral := [4]string{"blue coral", "staghorn coral", "pillar coral", "elkhorn coral"}
+fmt.Println(coral)
+</code></pre>
+<p>Running a program with the preceding lines would give you the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[blue coral staghorn coral pillar coral elkhorn coral]
+</code></pre>
+<p>Notice that there is no delineation between the elements in the array when it is printed, making it difficult to tell where one element ends and another begins. Because of this, it is sometimes helpful to use the <code>fmt.Printf</code> function instead, which can format strings before printing them to the screen. Provide the <code>%q</code> verb with this command to instruct the function to put quotation marks around the values:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Printf("%q\n", coral)
+</code></pre>
+<p>This will result in the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "staghorn coral" "pillar coral" "elkhorn coral"]
+</code></pre>
+<p>Now each item is quoted. The <code>\n</code> verb instructs to the formatter to add a line return at the end.</p>
+
+<p>With a general idea of how to declare arrays and what they consist of, you can now move on to learning how to specify elements in an array with indexes.</p>
+
+<h2 id="indexing-arrays">Indexing Arrays</h2>
+
+<p>Each element in an array can be called individually through indexing. Each element corresponds to an index number, which is an <code>int</code> value starting from the index number <code>0</code> and counting up.</p>
+
+<p>For the <code>coral</code> array from the earlier example, the index breakdown looks like this:</p>
+
+<table><thead>
+<tr>
+<th>"blue coral"</th>
+<th>"staghorn coral"</th>
+<th>"pillar coral"</th>
+<th>"elkhorn coral"</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>3</td>
+</tr>
+</tbody></table>
+
+<p>The first element, the string <code>'blue coral'</code>, starts at index <code>0</code>, and the list ends at index <code>3</code> with the item <code>'elkhorn coral'</code>.</p>
+
+<p>You can call a discrete element of the array by referring to its index number in brackets after the variable in which the array is stored:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[2])
+</code></pre>
+<p>This will print the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>pillar coral
+</code></pre>
+<p>The index numbers for this array range from <code>0</code>–<code>3</code>, so to call any of the elements individually and assign them a value, you could refer to the index numbers like this:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral[0] = "blue coral"
+coral[1] = "staghorn coral"
+coral[2] = "pillar coral"
+coral[3] = "elkhorn coral"
+</code></pre>
+<p>If you call the array <code>coral</code> with an index number greater than <code>3</code>, it will be out of range, and Go will consider the action invalid:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[22])
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>invalid array index 22 (out of bounds for 4-element array)
+</code></pre>
+<p>When indexing an array, you must always use a positive number. Unlike some languages that let you index backwards with a negative number, doing that in Go will result in an error:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[-1])
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>invalid array index -1 (index must be non-negative)
+</code></pre>
+<p>Now that you know how to work with individual elements in an array, you can learn how to slice arrays to select a range of elements.</p>
+
+<h2 id="slicing-arrays">Slicing Arrays</h2>
+
+<p>By using index numbers to determine beginning and endpoints, you can call a subsection of the values within an array. This is called <em>slicing</em> the array. You can do this by creating a range of index numbers separated by a colon, in the form of <code>[<span class="highlight">first_index</span>:<span class="highlight">second_index</span>]</code>.</p>
+
+<p>Let’s say you would like to just print the middle items of <code>coral</code>, without the first and last element. You can do this by creating a slice starting at index <code>1</code> and ending just before index <code>3</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[1:3])
+</code></pre>
+<p>Running a program with this line would yield the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[staghorn coral pillar coral]
+</code></pre>
+<p>When creating a slice, as in <code>[1:3]</code>, the first number is where the slice starts (inclusive), and the second number is the sum of the first number and the total number of elements you would like to retrieve:</p>
+<pre class="code-pre plain"><code langs="">array[starting_index : (starting_index + length_of_slice)]
+</code></pre>
+<p>In this instance, you called the second element (or index 1) as the starting point, and called two elements in total. This is how the calculation would look:</p>
+<pre class="code-pre plain"><code langs="">array[1 : (1 + 2)]
+</code></pre>
+<p>Which is how you arrived at this notation:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral[1:3]
+</code></pre>
+<p>If you want to set the beginning or end of the array as a starting or end point of the slice, you can omit one of the numbers in the <code>array[<span class="highlight">first_index</span>:<span class="highlight">second_index</span>]</code> syntax. For example, if you want to print the first three items of the array <code>coral</code> — which would be <code>"blue coral"</code>, <code>"staghorn coral"</code>, and <code>"pillar coral"</code> — you can do so by typing:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[:3])
+</code></pre>
+<p>This will print:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[blue coral staghorn coral pillar coral]
+</code></pre>
+<p>This printed the beginning of the array, stopping right before index <code>3</code>.</p>
+
+<p>To include all the items at the end of an array, you would reverse the syntax:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[1:])
+</code></pre>
+<p>This would give the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[staghorn coral pillar coral elkhorn coral]
+</code></pre>
+<p>This section discussed calling individual parts of an array by slicing out subsections. Next, you'll learn a specific function that Go uses for arrays: <code>len()</code>.</p>
+
+<h2 id="array-functions">Array Functions</h2>
+
+<p>In Go, <code>len()</code> is a built-in function made to help you work with arrays. Like with strings, you can calculate the length of an array by using <code>len()</code> and passing in the array as a parameter.</p>
+
+<p>For example, to find how many elements are in the <code>coral</code> array, you would use:</p>
+<pre class="code-pre "><code class="code-highlight language-go">len(coral)
+</code></pre>
+<p>If you print out the length for the array <code>coral</code>, you’ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>4
+</code></pre>
+<p>This gives the length of the array <code>4</code> in the <code>int</code> data type, which is correct because the array <code>coral</code> has four items:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral := [4]string{"blue coral", "staghorn coral", "pillar coral", "elkhorn coral"}
+</code></pre>
+<p>If you create an array of integers with more elements, you could use the <code>len()</code> function on this as well:</p>
+<pre class="code-pre "><code class="code-highlight language-go">numbers := [13]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+fmt.Println(len(numbers))
+</code></pre>
+<p>This would result in the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>13
+</code></pre>
+<p>Although these example arrays have relatively few items, the <code>len()</code> function is especially useful when determining how many elements are in very large arrays.</p>
+
+<p>Now that you know how to use <code>len()</code> to output the length of arrays, you can learn how arrays differ from another common data structure: slices.</p>
+
+<h2 id="how-arrays-differ-from-slices">How Arrays Differ from Slices</h2>
+
+<p>As mentioned before, the primary way in which arrays are different from slices is that the size of an array cannot be modified. This means that while you can change the values of elements in an array, you can't make the array larger or smaller after it has been defined. A slice, on the other hand, can alter its length.</p>
+
+<p>Let's consider your <code>coral</code> array:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral := [4]string{"blue coral", "staghorn coral", "pillar coral", "elkhorn coral"}
+</code></pre>
+<p>Say you want to add the item <code>"black coral"</code> to this array. If you try to use the <code>append()</code> function with the array by typing:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral = append(coral, "black coral")
+</code></pre>
+<p>You will receive an error as your output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>first argument to append must be slice; have [4]string
+</code></pre>
+<p>If you create an array and decide that you need it to have a variable length, you can convert it to a slice. To convert an array to a slice, use the slicing process you learned in the <strong>Slicing Arrays</strong> step of this tutorial, except this time select the entire slice by omitting both of the index numbers that would determine the endpoints:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral[:]
+</code></pre>
+<p>Keep in mind that you can't convert the variable <code>coral</code> to a slice itself, since once a variable is defined in Go, its type can't be changed. To work around this, you can copy the entire contents of the array into a new variable as a slice:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coralSlice := coral[:]
+</code></pre>
+<p>If you printed <code>coralSlice</code>, you would receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[blue coral staghorn coral pillar coral elkhorn coral]
+</code></pre>
+<p>Now, try to use <code>append()</code> with the newly converted slice:</p>
+<pre class="code-pre "><code class="code-highlight language-go">newSlice := append(coralSlice, "black coral")
+fmt.Printf("%q\n", newSlice)
+</code></pre>
+<p>This will output the slice with the added element:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "staghorn coral" "pillar coral" "elkhorn coral" "black coral"]
+</code></pre>
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial, you learned that the array data type is a sequenced data type with a fixed length, which makes it faster for Go to process at the cost of flexibility. Arrays also can help with communication on a team of developers: When others collaborate with you on your code, your use of arrays will convey to them that you don’t intend for their lengths to be changed.</p>
+
+<p>With this data type in your tool box, you can now go more in-depth learning the variable length version of this structure: slices.</p>

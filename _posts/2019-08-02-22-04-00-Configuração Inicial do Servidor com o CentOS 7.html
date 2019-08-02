@@ -1,0 +1,193 @@
+---
+layout: post
+title: Configuração Inicial do Servidor com o CentOS 7
+network: digitalocean
+date: August 02, 2019 at 10:04PM
+url: https://www.digitalocean.com/community/tutorials/configuracao-inicial-do-servidor-com-o-centos-7-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Quando você cria inicialmente um novo servidor, existem alguns passos de configuração que você deve tomar no início como parte da configuração básica. Isto aumentará a segurança e a usabilidade do seu servidor e dará uma sólida fundação para as ações subsequentes.</p>
+
+<h2 id="passo-um-—-efetuando-login-como-root">Passo Um — Efetuando login como Root</h2>
+
+<p>Para fazer login em seu servidor, você precisará saber o endereço IP público dele e a senha da conta do usuário "root". Se você ainda não fez login no seu servidor, talvez queira seguir o primeiro tutorial desta série, <a href="https://www.digitalocean.com/community/tutorials/how-to-connect-to-your-droplet-with-ssh">Como se Conectar ao seu Drolet com SSH</a>, que cobre este processo detalhadamente.</p>
+
+<p>Se você ainda não está conectado ao seu servidor, vá em frente e faça login como o usuário <code>root</code> usando o seguinte comando (substitua a palavra realçada pelo endereço IP público do seu servidor):</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="local$">ssh root@<span class="highlight">ENDEREÇO_IP_DO_SERVIDOR</span>
+</li></ul></code></pre>
+<p>Conclua o processo de login aceitando o aviso sobre a autenticidade do host, se ele aparecer, e em seguida, fornecendo sua autenticação para o root (senha ou chave privada). Se esta for a primeira vez que você efetua login no servidor com uma senha, você também será solicitado a alterar a senha do root.</p>
+
+<h3 id="sobre-o-root">Sobre o Root</h3>
+
+<p>O usuário root é o usuário administrativo em um ambiente Linux que possui privilégios muito amplos. Devido aos privilégios elevados da conta root, na verdade você é <em>desencorajado</em> de utilizá-la regularmente. Isto é porque parte do poder inerente à conta root é a capacidade de realizar alterações muito destrutivas, mesmo por acidente.</p>
+
+<p>O próximo passo é configurar uma conta de usuário alternativa com um escopo reduzido de poderes para o trabalho diário. Vamos ensiná-lo como obter aumento de privilégios durante os momentos em que você precisar deles.</p>
+
+<h2 id="passo-dois-—-criando-um-novo-usuário">Passo Dois — Criando um Novo Usuário</h2>
+
+<p>Uma vez conectado como <code>root</code>, estamos preparados para adicionar uma nova conta de usuário que utilizaremos para efetuar logon de agora em diante.</p>
+
+<p>Este exemplo cria um novo usuário chamado "demo", mas você deve substituí-lo por um nome de usuário de sua escolha:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">adduser <span class="highlight">demo</span>
+</li></ul></code></pre>
+<p>Em seguida, atribua uma senha ao novo usuário (novamente, substitua "demo" pelo nome de usuário que você acabou de criar):</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">passwd <span class="highlight">demo</span>
+</li></ul></code></pre>
+<p>Digite uma senha forte e repita-a novamente para verificá-la.</p>
+
+<h2 id="passo-três-—-privilégios-de-root">Passo Três — Privilégios de Root</h2>
+
+<p>Agora, temos uma nova conta de usuário com privilégios regulares de conta. No entanto, às vezes podemos precisar fazer tarefas administrativas. </p>
+
+<p>Para evitar de ter que desconectar nosso usuário regular e efetuar logon novamente com a conta de root, podemos configurar o que é conhecido como "super usuário" ou privilégios de root para nossa conta regular. Isso irá permitir nosso usuário regular executar comandos com privilégios administrativos colocando a palavra <code>sudo</code> antes de cada comando.</p>
+
+<p>Para adicionar esses privilégios para o nosso novo usuário, precisamos adicionar o novo usuário ao grupo "wheel". Por padrão, no CentOS 7, os usuários que pertencem ao grupo "wheel" estão autorizados a utilizar o comando <code>sudo</code>.</p>
+
+<p>Como <code>root</code>, execute este comando para adicionar seu novo usuário ao grupo <em>wheel</em> (substitua a palavra em destaque pelo seu novo usuário):</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">gpasswd -a <span class="highlight">demo</span> wheel
+</li></ul></code></pre>
+<p>Agora seu usuário pode executar comandos com privilégios de super usuário! Para mais informações sobre como isso funciona, confira <a href="https://www.digitalocean.com/community/tutorials/how-to-edit-the-sudoers-file-on-ubuntu-and-centos">nosso tutorial sobre sudoers</a>.</p>
+
+<h2 id="passo-quatro-—-adicionar-autenticação-de-chave-pública-recomendado">Passo Quatro — Adicionar Autenticação de Chave Pública (Recomendado)</h2>
+
+<p>O próximo passo para proteger seu servidor é configurar a autenticação de chave pública para o novo usuário. Configurar isso aumentará a segurança do seu servidor, exigindo uma chave SSH privada para efetuar logon.</p>
+
+<h3 id="gerar-um-par-de-chaves">Gerar um Par de Chaves</h3>
+
+<p>Se você ainda não tem um par de chaves SSH, que consiste em uma chave pública e uma privada, você precisa gerar um. Se você já tiver uma chave que deseje usar, vá para o passo <em>Copiar a Chave Pública</em>.</p>
+
+<p>Para gerar um novo par de chaves, digite o seguinte comando no terminal da sua <strong>máquina local</strong>: </p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="local$">ssh-keygen
+</li></ul></code></pre>
+<p>Supondo que seu usuário local chame-se "localuser", você verá uma saída parecida com a seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="ssh-keygen output">ssh-keygen output</div>Generating public/private rsa key pair.
+Enter file in which to save the key (/Users/<span class="highlight">localuser</span>/.ssh/id_rsa):
+</code></pre>
+<p>Pressione <code>Enter</code> para aceitar este nome de arquivo e o caminho (ou digite um novo nome).</p>
+
+<p>Em seguida, você será solicitado a inserir uma senha para proteger a chave. Você pode inserir uma senha ou deixar a senha em branco.</p>
+
+<p><strong>Nota:</strong> Se você deixar a senha em branco, poderá usar a chave privada para autenticação sem inserir uma senha. Se você inserir uma senha, precisará da chave privada <em>e</em> da senha para efetuar logon. Proteger suas chaves com senhas é mais seguro, mas ambos os métodos têm seus usos e são mais seguros do que a autenticação básica de senha.</p>
+
+<p>Isto gera uma chave privada, <code>id_rsa</code>, e uma chave pública, <code>id_rsa.pub</code>, no diretório <code>.ssh</code> do diretório home do <em>localuser</em>. Lembre-se de que a chave privada não deve ser compartilhada com ninguém que não deva ter acesso aos seus servidores!</p>
+
+<h3 id="copiar-a-chave-pública">Copiar a Chave Pública</h3>
+
+<p>Depois de gerar um par de chaves SSH, você deverá copiar sua chave pública para o novo servidor. Vamos cobrir duas maneiras fáceis de fazer isso.</p>
+
+<span class='note'><p>
+<strong>Nota</strong>: O método <code>ssh-copy-id</code> não funcionará na DigitalOcean se uma chave SSH for selecionada durante a criação do Droplet. Isso ocorre porque a DigitalOcean desativa a autenticação por senha se uma chave SSH estiver presente, e o <code>ssh-copy-id</code> depende da autenticação por senha para copiar a chave.</p>
+
+<p>Se você estiver usando a DigitalOcean e selecionou uma chave SSH durante a criação do Droplet, use a <a href="#op%C3%A7%C3%A3o-2-instalar-manualmente-a-chave">opção 2</a>.<br></p></span>
+
+<h3 id="opção-1-usar-ssh-copy-id">Opção 1: Usar ssh-copy-id</h3>
+
+<p>Se a sua máquina local tiver o script <code>ssh-copy-id</code> instalado, você poderá usá-lo para instalar sua chave pública para qualquer usuário para o qual tenha credenciais de logon.</p>
+
+<p>Execute o script <code>ssh-copy-id</code> especificando o usuário e o endereço IP do servidor no qual você deseja instalar a chave, desta forma:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="local$">ssh-copy-id <span class="highlight">demo</span>@<span class="highlight">ENDEREÇO_IP_DO_SERVIDOR</span>
+</li></ul></code></pre>
+<p>Depois de fornecer sua senha no prompt, sua chave pública será adicionada ao arquivo <code>.ssh/authorized_keys</code> do usuário remoto. A chave privada correspondente agora pode ser usada para efetuar logon no servidor.</p>
+
+<h3 id="opção-2-instalar-manualmente-a-chave">Opção 2: Instalar Manualmente a Chave</h3>
+
+<p>Supondo que você gerou um par de chaves SSH usando o passo anterior, use o seguinte comando <strong>no terminal da sua máquina local</strong> para imprimir sua chave pública (<code>id_rsa.pub</code>):</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="local$">cat ~/.ssh/id_rsa.pub
+</li></ul></code></pre>
+<p>Isso deve imprimir sua chave SSH pública, que deve ser algo como o seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="id_rsa.pub contents">id_rsa.pub contents</div>ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDBGTO0tsVejssuaYR5R3Y/i73SppJAhme1dH7W2c47d4gOqB4izP0+fRLfvbz/tnXFz4iOP/H6eCV05hqUhF+KYRxt9Y8tVMrpDZR2l75o6+xSbUOMu6xN+uVF0T9XzKcxmzTmnV7Na5up3QM3DoSRYX/EP3utr2+zAqpJIfKPLdA74w7g56oYWI9blpnpzxkEd3edVJOivUkpZ4JoenWManvIaSdMTJXMy3MtlQhva+j9CgguyVbUkdzK9KKEuah+pFZvaugtebsU+bllPTB0nlXGIJk98Ie9ZtxuY3nCKneB+KjKiXrAvXUPCI9mWkYS/1rggpFmu3HbXBnWSUdf localuser@machine.local
+</code></pre>
+<p>Selecione a chave pública e copie-a para a sua área de transferência.</p>
+
+<h4 id="adicionar-chave-pública-ao-novo-usuário-remoto">Adicionar Chave Pública ao Novo Usuário Remoto</h4>
+
+<p>Para habilitar o uso da chave SSH para autenticação usando o novo usuário remoto, você deve adicionar a chave pública a um arquivo especial no diretório home do usuário.</p>
+
+<p><strong>No servidor</strong>, como usuário <code>root</code>, digite o seguinte comando para alternar para o novo usuário (substitua pelo seu próprio nome de usuário):</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">su - <span class="highlight">demo</span>
+</li></ul></code></pre>
+<p>Agora você estará no diretório home do seu novo usuário.</p>
+
+<p>Crie um novo diretório chamado <code>.ssh</code> e restrinja suas permissões com os seguintes comandos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir .ssh
+</li><li class="line" prefix="$">chmod 700 .ssh
+</li></ul></code></pre>
+<p>Agora abra um arquivo em <em>.ssh</em> chamado <code>authorized_keys</code> com um editor de texto. Vamos uilizar o <em>vi</em> para editar o arquivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vi .ssh/authorized_keys
+</li></ul></code></pre>
+<p>Entre no modo de insersão, pressionando <code>i</code>, em seguida insira sua chave pública (que deve estar em sua área de transferência) colando-a no editor. Agora pressione <code>ESC</code> para sair do modo de inserção. </p>
+
+<p>Digite <code>:x</code> e depois <code>ENTER</code> para salvar e sair do arquivo. </p>
+
+<p>Agora, restrinja as permissões do arquivo <em>authorized_keys</em> com este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod 600 .ssh/authorized_keys
+</li></ul></code></pre>
+<p>Digite este comando <em>uma vez</em> para retornar ao usuário <code>root</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">exit
+</li></ul></code></pre>
+<p>Agora você pode fazer logon SSH como seu novo usuário, usando a chave privada como autenticação.</p>
+
+<p>Para ler mais sobre como funciona a autenticação de chaves, leia este tutorial: <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-ssh-key-based-authentication-on-a-linux-server">Como Configurar a Autenticação Baseada em Chave SSH em um Servidor Linux</a>.</p>
+
+<h2 id="passo-cinco-—-configurar-o-daemon-ssh">Passo Cinco — Configurar o Daemon SSH</h2>
+
+<p>Agora que temos nossa nova conta, podemos proteger um pouco mais o nosso servidor modificando sua configuração do daemon SSH (o programa que nos permite efetuar logon remotamente) para proibir o acesso SSH remoto à conta <strong>root</strong>.</p>
+
+<p>Comece abrindo o arquivo de configuração com o seu editor de texto como root:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">vi /etc/ssh/sshd_config
+</li></ul></code></pre>
+<p>Aqui, temos a opção de desativar o logon de root via SSH. Esta é geralmente uma configuração mais segura, já que agora podemos acessar nosso servidor através de nossa conta de usuário normal e escalar privilégios quando necessário.</p>
+
+<p>Para desabilitar os logons remotos com o root, precisamos encontrar uma linha que se parece com essa:</p>
+<div class="code-label " title="/etc/ssh/sshd_config (before)">/etc/ssh/sshd_config (before)</div><pre class="code-pre "><code langs="">#PermitRootLogin yes
+</code></pre>
+<p>Dica: Para procurar por esta linha, digite <code>/PermitRoot</code> e depois <code>ENTER</code>. Isso deve trazer o cursor para o caractere "P" nessa linha. </p>
+
+<p>Descomente a linha excluindo o símbolo "#" (pressione <code>Shift-x</code>).</p>
+
+<p>Agora mova o cursor para o "yes" pressionando <code>c</code>.</p>
+
+<p>Então, substitua "yes" pressionando <code>cw</code> e, em seguida, digite "no". Pressione <code>ESC</code> quando tiver terminado de editar. Deve ficar assim:</p>
+<div class="code-label " title="/etc/ssh/sshd_config (after)">/etc/ssh/sshd_config (after)</div><pre class="code-pre "><code langs="">PermitRootLogin no
+</code></pre>
+<p>Desativar o logon remoto pelo root é altamente recomendado em todos os servidores!</p>
+
+<p>Digite <code>:x</code> e depois <code>ENTER</code> para salvar e sair do arquivo.</p>
+
+<h3 id="recarregue-o-ssh">Recarregue o SSH</h3>
+
+<p>Agora que fizemos nossas alterações, precisamos reiniciar o serviço SSH para que ele use nossa nova configuração.</p>
+
+<p>Digite isto para reiniciar o SSH:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">systemctl reload sshd
+</li></ul></code></pre>
+<p>Agora, antes de sairmos do servidor, devemos <strong>testar</strong> nossa nova configuração. Não devemos desconectar até que possamos confirmar que novas conexões podem ser estabelecidas com sucesso.</p>
+
+<p>Abra uma <strong>nova</strong> janela de terminal. Na nova janela, precisamos iniciar uma nova conexão com nosso servidor. Desta vez, em vez de usar a conta root, queremos usar a nova conta que criamos.</p>
+
+<p>Para o servidor que configuramos acima, conecte-se usando este comando. Substitua sua própria informação onde for apropriado:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="local$">ssh <span class="highlight">demo</span>@<span class="highlight">SERVER_IP_ADDRESS</span>
+</li></ul></code></pre>
+<p><strong>Nota:</strong> Se você estiver usando o PuTTY para se conectar aos seus servidores, certifique-se de atualizar o número da <em>porta</em> da sessão para corresponder à configuração atual do seu servidor. </p>
+
+<p>Você será solicitado a informar a senha do novo usuário que você configurou. Depois disso, você estará logado como seu novo usuário.</p>
+
+<p>Lembre-se, se você precisar executar um comando com privilégios de root, digite "sudo" antes dele, desta forma:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo <span class="highlight">comando_a_executar</span>
+</li></ul></code></pre>
+<p>Se tudo estiver bem, você pode sair de suas sessões digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">exit
+</li></ul></code></pre>
+<h2 id="para-onde-ir-a-partir-daqui">Para Onde ir a partir daqui?</h2>
+
+<p>Neste ponto, você tem uma base sólida para seu servidor. Você pode instalar qualquer software que você precisar em seu servidor agora.</p>
+
+<p>Se você não tiver certeza do que deseja fazer com seu servidor, confira o próximo tutorial desta série para <a href="https://www.digitalocean.com/community/tutorials/additional-recommended-steps-for-new-centos-7-servers">Etapas Adicionais Recomendadas para Novos Servidores CentOS 7</a>. Ele cobre coisas como habilitar o <code>fail2ban</code> para reduzir a eficácia de ataques de força bruta, configurações básicas de firewall, NTP e arquivos de swap. Ele também fornece links para tutoriais que mostram como configurar aplicações web comuns.</p>
+
+<p>Se você quer apenas explorar, dê uma olhada no restante da nossa <a href="https://digitalocean.com/community/articles">comunidade</a> para encontrar mais tutoriais. Algumas ideias populares são Configurando uma <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-on-centos-7">pilha LAMP</a> ou uma <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-nginx-mysql-php-lemp-stack-on-centos-7">pilha LEMP</a>, que permitirá que você hospede websites.</p>

@@ -1,0 +1,315 @@
+---
+layout: post
+title: How To Write Packages in Go
+network: digitalocean
+date: August 05, 2019 at 09:50PM
+url: https://www.digitalocean.com/community/tutorials/how-to-write-packages-in-go
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p>A package is made up of Go files that live in the same directory and have the same package statement at the beginning. You can include additional functionality from packages to make your programs more sophisticated. Some packages are available through the Go Standard Library and are therefore installed with your Go installation. Others can be installed with Go’s <code>go get</code> command. You can also build your own Go packages by creating Go files in the same directory across which you want to share code by using the necessary package statement.</p>
+
+<p>This tutorial will guide you through writing Go packages for use within other programming files.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<ul>
+<li>Set up a Go programming environment following one of the tutorials from the <a href="https://www.digitalocean.com/community/tutorial_series/how-to-install-and-set-up-a-local-programming-environment-for-go">How To Install and Set Up a Local Programming Environment for Go</a> series. Create your Go Workspace following Step 5 in the Local Programming Environment tutorials. To follow the example and naming conventions in this article, read the first section Writing and Importing Packages.</li>
+<li>To deepen your knowledge of the GOPATH, read our article <a href="https://www.digitalocean.com/community/tutorials/understanding-the-gopath">Understanding the GOPATH</a>.</li>
+</ul>
+
+<h2 id="writing-and-importing-packages">Writing and Importing Packages</h2>
+
+<p>Writing a package is just like writing any other Go file. Packages can contain definitions of functions, <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-go">types</a>, and <a href="https://www.digitalocean.com/community/tutorials/how-to-use-variables-and-constants-in-go#understanding-variables">variables</a> that can then be used in other Go programs.</p>
+
+<p>Before we create a new package, we need to be in our Go workspace. This is typically under our <code>gopath</code>. For the example, in this tutorial we will call the package <code>greet</code>. To do this, we've created a directory called <code>greet</code> in our <code>gopath</code> under our project space. If our organization were <code>gopherguides</code>, and we wanted to create the <code>greet</code> package under the organization while using Github as our code repository, then our directory would look like this:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+</code></pre>
+<p>The <code>greet</code> directory is within the <code>gopherguides</code> directory:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                └── greet
+</code></pre>
+<p>Finally, we can add the first file in our directory. It is considered common practice that the <code>primary</code> or <code>entry point</code> file in a package is named after the name of the directory. In this case, we would create a file called <code>greet.go</code> inside the <code>greet</code> directory:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                └── greet
+                    └── greet.go
+</code></pre>
+<p>With the file created, we can begin to write our code that we want to reuse or share across projects. In this case, we will create a function called <code>Hello</code> that prints out <code>Hello World</code>.</p>
+
+<p>Open your <code>greet.go</code> file in your text editor and add the following code:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code class="code-highlight language-go">package greet
+
+import "fmt"
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Let's break this first file down. The first line of each file needs the name of the <code>package</code> that you are working in. Since you're in the <code>greet</code> package, you use the <code>package</code> keyword followed by the name of the package:</p>
+<pre class="code-pre "><code class="code-highlight language-go">package greet
+</code></pre>
+<p>This will tell the compiler to treat everything in the file as being part of the <code>greet</code> package.</p>
+
+<p>Next you declare any other packages you need to use with the <code>import</code> statement. You're only using one in this file—the <code>fmt</code> package:</p>
+<pre class="code-pre "><code class="code-highlight language-go">import "fmt"
+</code></pre>
+<p>Lastly, you create the function <code>Hello</code>. It will use the <code>fmt</code> package to print out <code>Hello, World!</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Now that you've written the <code>greet</code> package, you can use it in any other package you create. Let's create a new package in which you'll use your <code>greet</code> package.</p>
+
+<p>You're going to create a package called <code>example</code>, which means you need a directory called <code>example</code>. Create this package in your <code>gopherguides</code> organization, so the directory structure looks like so:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                    └── example
+</code></pre>
+<p>Now that you have your directory for your new package, you can create the entry point file. Because this is going to be an executable program, it is considered best practice to name the entry point file <code>main.go</code>:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                └── example
+                    └── main.go
+</code></pre>
+<p>In your text editor, open <code>main.go</code> and add the following code to call the <code>greet</code> package:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "github.com/gopherguides/greet"
+
+func main() {
+    greet.Hello()
+}
+</code></pre>
+<p>Because you're importing a package, you need to call the function by referencing the package name in dot notation. <em>Dot notation</em> is the practice of putting a period <code>.</code> between the name of the package you are using and the resource within that package that you want to use. For instance, in your <code>greet</code> package, you have the <code>Hello</code> function as a resource. If you want to call that resource, you use the dot notation of <code>greet.Hello()</code>.</p>
+
+<p>Now, you can open your terminal and run the program on the command line:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>When you do, you’ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+</code></pre>
+<p>To see how you can use variables in a package, let’s add a variable definition in your <code>greet.go</code> file:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+<span class="highlight">var Shark = "Sammy"</span>
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Next, open your <code>main.go</code> file and add the following highlighted line to call the variable from <code>greet.go</code> in a <code>fmt.Println()</code> function:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    <span class="highlight">fmt.Println(greet.Shark)</span>
+}
+</code></pre>
+<p>Once you run the program again:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>You’ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+Sammy
+</code></pre>
+<p>Finally, let’s also define a type in the <code>greet.go</code> file. You’ll create the type <code>Octopus</code> with <code>name</code> and <code>color</code> fields, and a function that will print out the fields when called:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+var Shark = "Sammy"
+
+<span class="highlight">type Octopus struct {</span>
+    <span class="highlight">Name  string</span>
+    <span class="highlight">Color string</span>
+<span class="highlight">}</span>
+
+<span class="highlight">func (o Octopus) String() string {</span>
+    <span class="highlight">return fmt.Sprintf("The octopus's name is %q and is the color %s.", o.Name, o.Color)</span>
+<span class="highlight">}</span>
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Open <code>main.go</code> to create an instance of that type at the end of the file:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    fmt.Println(greet.Shark)
+
+    <span class="highlight">oct := greet.Octopus{</span>
+        <span class="highlight">Name:  "Jesse",</span>
+        <span class="highlight">Color: "orange",</span>
+    <span class="highlight">}</span>
+
+    <span class="highlight">fmt.Println(oct.String())</span>
+}
+</code></pre>
+<p>Once you've created an instance of <code>Octopus</code> type with <code>oct := greet.Octopus</code>, you can access the functions and fields of the type within the <code>main.go</code> file’s namespace. This lets you write <code>oct.String()</code> on the last line without invoking <code>greet</code>. You could also, for example, call one of the types fields such as <code>oct.Color</code> without referencing the name of the <code>greet</code> package.</p>
+
+<p>The <code>String</code> method on the <code>Octopus</code> type uses the <code>fmt.Sprintf</code> function to create a sentence, and <code>returns</code> the result, a string, to the caller (in this case, your main program).</p>
+
+<p>When you run the program, you’ll receive the following output:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+Sammy
+The octopus's name is "Jesse" and is the color orange.
+</code></pre>
+<p>By creating the <code>String</code> method on <code>Octopus</code>, you now have a reusable way to print out information about your custom type. If you want to change the behavior of this method in the future, you only have to edit this one method.</p>
+
+<h2 id="exported-code">Exported Code</h2>
+
+<p>You may have noticed that all of the declarations in the <code>greet.go</code> file you called were capitalized. Go does not have the concept of <code>public</code>, <code>private</code>, or <code>protected</code> modifiers like other languages do. External visibility is controlled by capitalization. Types, variables, functions, and so on, that start with a capital letter are available, publicly, outside the current package. A symbol that is visible outside its package is considered to be <code>exported</code>.</p>
+
+<p>If you add a new method to <code>Octopus</code> called <code>reset</code>, you can call it from within the <code>greet</code> package, but not from your <code>main.go</code> file, which is outside the <code>greet</code> package:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+var Shark = "Sammy"
+
+type Octopus struct {
+    Name  string
+    Color string
+}
+
+func (o Octopus) String() string {
+    return fmt.Sprintf("The octopus's name is %q and is the color %s.", o.Name, o.Color)
+}
+
+<span class="highlight">func (o Octopus) reset() {</span>
+    <span class="highlight">o.Name = ""</span>
+    <span class="highlight">o.Color = ""</span>
+<span class="highlight">}</span>
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+
+</code></pre>
+<p>If you try to call <code>reset</code> from the <code>main.go</code> file:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    fmt.Println(greet.Shark)
+
+    oct := greet.Octopus{
+        Name:  "Jesse",
+        Color: "orange",
+    }
+
+    fmt.Println(oct.String())
+
+    <span class="highlight">oct.reset()</span>
+}
+</code></pre>
+<p>You'll receive the following compilation error:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>oct.reset undefined (cannot refer to unexported field or method greet.Octopus.reset)
+</code></pre>
+<p>To <code>export</code> the <code>reset</code> functionality from <code>Octopus</code>, capitalize the <code>R</code> in <code>reset</code>:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+var Shark = "Sammy"
+
+type Octopus struct {
+    Name  string
+    Color string
+}
+
+func (o Octopus) String() string {
+    return fmt.Sprintf("The octopus's name is %q and is the color %s.", o.Name, o.Color)
+}
+
+func (o Octopus) <span class="highlight">R</span>eset() {
+    o.Name = ""
+    o.Color = ""
+}
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>As a result you can call <code>Reset</code> from your other package without getting an error:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    fmt.Println(greet.Shark)
+
+    oct := greet.Octopus{
+        Name:  "Jesse",
+        Color: "orange",
+    }
+
+    fmt.Println(oct.String())
+
+    <span class="highlight">oct.Reset()</span>
+
+    fmt.Println(oct.String())
+}
+</code></pre>
+<p>Now if you run the program:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>You will receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+Sammy
+The octopus's name is "Jesse" and is the color orange
+The octopus's name is "" and is the color .
+</code></pre>
+<p>By calling <code>Reset</code>, you cleared out all the information in the <code>Name</code> and <code>Color</code> fields. When you call the <code>String</code> method, it will print nothing where <code>Name</code> and <code>Color</code> normally appear because the fields are now empty.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Writing a Go package is the same as writing any other Go file, but placing it in another directory allows you to isolate the code to be reused elsewhere. This tutorial covered how to write definitions within a package, demonstrated how to make use of those definitions within another Go programming file, and explained the options for where to keep the package in order to access it.</p>

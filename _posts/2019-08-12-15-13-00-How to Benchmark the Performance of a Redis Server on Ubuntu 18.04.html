@@ -1,0 +1,248 @@
+---
+layout: post
+title: How to Benchmark the Performance of a Redis Server on Ubuntu 18.04
+network: digitalocean
+date: August 12, 2019 at 03:13PM
+url: https://www.digitalocean.com/community/tutorials/how-to-perform-redis-benchmark-tests
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h2 id="introduction">Introduction</h2>
+
+<p>Benchmarking is an important practice when it comes to analyzing the overall performance of database servers. It's helpful for identifying bottlenecks as well as opportunities for improvement within those systems. </p>
+
+<p><a href="https://redis.io/">Redis</a> is an in-memory data store that can be used as database, cache and message broker. It supports from simple to complex data structures including hashes, strings, sorted sets, bitmaps, geospatial data, among other types. In this guide, we'll demonstrate how to benchmark the performance of a Redis server running on Ubuntu 18.04, using a few different tools and methods. </p>
+
+<h3 id="prerequisites">Prerequisites</h3>
+
+<p>To follow this guide, you'll need:</p>
+
+<ul>
+<li>One Ubuntu 18.04 server with a non-root sudo user and a basic firewall configured. To set this up, you can follow our <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup Guide for Ubuntu 18.04</a>. </li>
+<li>Redis installed on your server, as explained in our guide on <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-redis-on-ubuntu-18-04">How to Install and Secure Redis on Ubuntu 18.04</a>. </li>
+</ul>
+
+<p><span class='note'><strong>Note:</strong> The commands demonstrated in this tutorial were executed on a dedicated Redis server running on a 4GB DigitalOcean Droplet.<br></span></p>
+
+<h2 id="using-the-included-redis-benchmark-tool">Using the Included <code>redis-benchmark</code> Tool</h2>
+
+<p>Redis comes with a benchmark tool called <code>redis-benchmark</code>. This program can be used to simulate an arbitrary number of clients connecting at the same time and performing actions on the server, measuring how long it takes for the requests to be completed. The resulting data will give you an idea of the average number of requests that your Redis server is able to handle per second.</p>
+
+<p>The following list details some of the  common command options used with <code>redis-benchmark</code>:</p>
+
+<ul>
+<li><code>-h</code>: Redis host. Default is <code>127.0.0.1</code>.</li>
+<li><code>-p</code>: Redis port. Default is <code>6379</code>.</li>
+<li><code>-a</code>: If your server requires authentication, you can use this option to provide the password.</li>
+<li><code>-c</code>: Number of clients (parallel connections) to simulate. Default value is 50.</li>
+<li><code>-n</code>: How many requests to make. Default is 100000.</li>
+<li><code>-d</code>: Data size for <code>SET</code> and <code>GET</code> values, measured in bytes. Default is 3.</li>
+<li><code>-t</code>: Run only a subset of tests. For instance, you can use <code>-t get,set</code> to benchmark the performance of <code>GET</code> and <code>SET</code> commands.</li>
+<li><code>-P</code>: Use pipelining for performance improvements.</li>
+<li><code>-q</code>: Quiet mode, shows only the average <em>requests per second</em> information.</li>
+</ul>
+
+<p>For instance, if you want to check the average number of requests per second that your local Redis server can handle, you can use:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-benchmark -q 
+</li></ul></code></pre>
+<p>You will get output similar to this, but with different numbers:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>PING_INLINE: 85178.88 requests per second
+PING_BULK: 83056.48 requests per second
+SET: 72202.16 requests per second
+GET: 94607.38 requests per second
+INCR: 84961.77 requests per second
+LPUSH: 78988.94 requests per second
+RPUSH: 88652.48 requests per second
+LPOP: 87950.75 requests per second
+RPOP: 80971.66 requests per second
+SADD: 80192.46 requests per second
+HSET: 84317.03 requests per second
+SPOP: 78125.00 requests per second
+LPUSH (needed to benchmark LRANGE): 84175.09 requests per second
+LRANGE_100 (first 100 elements): 52383.45 requests per second
+LRANGE_300 (first 300 elements): 21547.08 requests per second
+LRANGE_500 (first 450 elements): 14471.78 requests per second
+LRANGE_600 (first 600 elements): 9383.50 requests per second
+MSET (10 keys): 71225.07 requests per second
+
+</code></pre>
+<p>You can also limit the tests to a subset of commands of your choice using the <code>-t</code> parameter. The following command shows the averages for the <code>GET</code> and <code>SET</code> commands only:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-benchmark <span class="highlight">-t set,get</span> -q
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>SET: 76687.12 requests per second
+GET: 82576.38 requests per second
+</code></pre>
+<p>The default options will use 50 parallel connections to create 100000 requests to the Redis server. If you want to increase the number of parallel connections to simulate a peak in usage, you can use the <code>-c</code> option for that:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-benchmark -t set,get -q <span class="highlight">-c 1000</span>
+</li></ul></code></pre>
+<p>Because this will use 1000 concurrent connections instead of the default 50, you should expect a decrease in performance:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>SET: 69444.45 requests per second
+GET: 70821.53 requests per second
+</code></pre>
+<p>If you want detailed information in the output, you can remove the <code>-q</code> option. The following command will use 100 parallel connections to run 1000000 SET requests on the server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-benchmark -t set -c 100 -n 1000000
+</li></ul></code></pre>
+<p>You will get output similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>====== SET ======
+  1000000 requests completed in 11.29 seconds
+  100 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+95.22% &lt;= 1 milliseconds
+98.97% &lt;= 2 milliseconds
+99.86% &lt;= 3 milliseconds
+99.95% &lt;= 4 milliseconds
+99.99% &lt;= 5 milliseconds
+99.99% &lt;= 6 milliseconds
+100.00% &lt;= 7 milliseconds
+100.00% &lt;= 8 milliseconds
+100.00% &lt;= 8 milliseconds
+88605.35 requests per second
+
+</code></pre>
+<p>The default settings use 3 bytes for key values. You can change this with the option <code>-d</code>. The following command will benchmark <code>GET</code> and <code>SET</code> commands using 1MB key values:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-benchmark -t set,get <span class="highlight">-d 1000000</span> -n 1000 -q
+</li></ul></code></pre>
+<p>Because the server is working with a much bigger payload this time, a significant decrease of performance is expected:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>SET: 1642.04 requests per second
+GET: 822.37 requests per second
+</code></pre>
+<p>It is important to realize that even though these numbers are useful as a quick way to evaluate the performance of a Redis instance, they don't represent the maximum throughput a Redis instance can sustain. By using <em><a href="https://redis.io/topics/pipelining">pipelining</a></em>, applications can send multiple commands at once in order to improve the number of requests per second the server can handle. With <code>redis-benchmark</code>, you can use the <code>-P</code> option to simulate real world applications that make use of this Redis feature. </p>
+
+<p>To compare the difference, first run the <code>redis-benchmark</code> command with default values and no pipelining, for the <code>GET</code> and <code>SET</code> tests:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-benchmark -t get,set -q
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>SET: 86281.27 requests per second
+GET: 89847.26 requests per second
+</code></pre>
+<p>The next command will run the same tests, but will pipeline 8 commands together:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-benchmark -t get,set -q <span class="highlight">-P 8</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>SET: 653594.81 requests per second
+GET: 793650.75 requests per second
+</code></pre>
+<p>As you can see from the output, there is a substantial performance improvement with the use of pipelining. </p>
+
+<h2 id="checking-latency-with-redis-cli">Checking Latency with <code>redis-cli</code></h2>
+
+<p>If you'd like a simple measurement of the average time a request takes to receive a response, you can use the Redis client to check for the average server latency. In the context of Redis, latency is a measure of how long does a <code>ping</code> command take to receive a response from the server.</p>
+
+<p>The following command will show real-time latency stats for your Redis server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-cli --latency
+</li></ul></code></pre>
+<p>You'll get output similar to this, showing an increasing number of samples and a variable average latency:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>min: 0, max: 1, avg: 0.18 (970 samples)
+</code></pre>
+<p>This command will keep running indefinitely. You can stop it with a <code>CTRL+C</code>.</p>
+
+<p>To monitor latency over a certain period of time, you can use:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-cli --latency-history
+</li></ul></code></pre>
+<p>This will track latency averages over time, with a configurable interval that is set to 15 seconds by default. You will get output similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>min: 0, max: 1, avg: 0.18 (1449 samples) -- 15.01 seconds range
+min: 0, max: 1, avg: 0.16 (1449 samples) -- 15.00 seconds range
+min: 0, max: 1, avg: 0.17 (1449 samples) -- 15.00 seconds range
+min: 0, max: 1, avg: 0.17 (1444 samples) -- 15.01 seconds range
+min: 0, max: 1, avg: 0.17 (1446 samples) -- 15.01 seconds range
+min: 0, max: 1, avg: 0.17 (1449 samples) -- 15.00 seconds range
+min: 0, max: 1, avg: 0.16 (1444 samples) -- 15.00 seconds range
+min: 0, max: 1, avg: 0.17 (1445 samples) -- 15.01 seconds range
+min: 0, max: 1, avg: 0.16 (1445 samples) -- 15.01 seconds range
+...
+</code></pre>
+<p>Because the Redis server on our example is idle, there's not much variation between latency samples. If you have a peak in usage, however, this should be reflected as an increase in latency within the results. </p>
+
+<p>If you'd like to measure the <em>system</em> latency only, you can use <code>--intrinsic-latency</code> for that. The intrinsic latency is inherent to the environment, depending on factors such as hardware, kernel, server neighbors and other factors that aren't controlled by Redis. </p>
+
+<p>You can see the intrinsic latency as a baseline for your overall Redis performance. The following command will check for the intrinsic system latency, running a test for 30 seconds:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">redis-cli --intrinsic-latency 30
+</li></ul></code></pre>
+<p>You should get output similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>…
+
+498723744 total runs (avg latency: 0.0602 microseconds / 60.15 nanoseconds per run).
+Worst run took 22975x longer than the average latency.
+</code></pre>
+<p>Comparing both latency tests can be helpful for identifying hardware or system bottlenecks that could affect the performance of your Redis server. Considering the total latency for a request to our example server has an average of 0.18 microseconds to complete, an intrinsic latency of 0.06 microseconds means that one third of the total request time is spent by the system in processes that aren't controlled by Redis.</p>
+
+<h2 id="using-the-memtier-benchmark-tool">Using the Memtier Benchmark Tool</h2>
+
+<p><a href="https://github.com/RedisLabs/memtier_benchmark">Memtier</a> is a high-throughput benchmark tool for Redis and <a href="https://memcached.org/">Memcached</a> created by Redis Labs. Although very similar to <code>redis-benchmark</code> in various aspects, Memtier has several configuration options that can be tuned to better emulate the kind of load you might expect on your Redis server, in addition to offering cluster support.</p>
+
+<p>To get Memtier installed on your server, you'll need to compile the software from source. First, install the dependencies necessary to compile the code:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install build-essential autoconf automake libpcre3-dev libevent-dev pkg-config zlib1g-dev
+</li></ul></code></pre>
+<p>Next, go to your home directory and clone the <code>memtier_benchmark</code> project from its <a href="https://github.com/RedisLabs/memtier_benchmark">Github repository</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd
+</li><li class="line" prefix="$">git clone https://github.com/RedisLabs/memtier_benchmark.git
+</li></ul></code></pre>
+<p>Navigate to the project directory and run the <code>autoreconf</code> command to generate the application configuration scripts:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd memtier_benchmark
+</li><li class="line" prefix="$">autoreconf -ivf
+</li></ul></code></pre>
+<p>Run the <code>configure</code> script in order to generate the application artifacts required for compiling:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./configure
+</li></ul></code></pre>
+<p>Now run <code>make</code> to compile the application:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">make
+</li></ul></code></pre>
+<p>Once the build is finished, you can test the executable with: </p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./memtier_benchmark --version
+</li></ul></code></pre>
+<p>This will give you the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>memtier_benchmark 1.2.17
+Copyright (C) 2011-2017 Redis Labs Ltd.
+This is free software.  You may redistribute copies of it under the terms of
+the GNU General Public License &lt;http://www.gnu.org/licenses/gpl.html&gt;.
+There is NO WARRANTY, to the extent permitted by law.
+</code></pre>
+<p>The following list contains some of the most common options used with the <code>memtier_benchmark</code> command:</p>
+
+<ul>
+<li><code>-s</code>: Server host. Default is <strong>localhost</strong>.</li>
+<li><code>-p</code>: Server port. Default is <code>6379</code>.</li>
+<li><code>-a</code>: Authenticate requests using the provided password.</li>
+<li><code>-n</code>: Number of requests per client (default is 10000).</li>
+<li><code>-c</code>: Number of clients (default is 50).</li>
+<li><code>-t</code>: Number of threads (default is 4).</li>
+<li><code>--pipeline</code>: Enable pipelining.</li>
+<li><code>--ratio</code>: Ratio between <code>SET</code> and <code>GET</code> commands, default is 1:10.</li>
+<li><code>--hide-histogram</code>: Hides detailed output information.</li>
+</ul>
+
+<p>Most of these options are very similar to the options present in <code>redis-benchmark</code>, but Memtier tests performance in a different way. To simulate common real-world environments better, the default benchmark performed by <code>memtier_benchmark</code> will test for <code>GET</code> and <code>SET</code> requests only, on a ratio of 1 to 10. With 10 GET operations for each SET operation in the test, this arrangement is more representative of a common web application using Redis as a database or cache. You can adjust the ratio value with the option <code>--ratio</code>.</p>
+
+<p>The following command runs <code>memtier_benchmark</code> with default settings, while providing only high-level output information:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./memtier_benchmark --hide-histogram
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Note</strong>: if you have configured your Redis server to require authentication, you should provide the <code>-a</code> option along with your Redis password to the <code>memtier_benchmark</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./memtier_benchmark --hide-histogram -a <span class="highlight">your_redis_password</span>
+</li></ul></code></pre>
+<p></p></span>
+
+<p>You'll see output similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+
+4         Threads
+50        Connections per thread
+10000     Requests per client
+
+
+ALL STATS
+=========================================================================
+Type         Ops/sec     Hits/sec   Misses/sec      Latency       KB/sec 
+-------------------------------------------------------------------------
+Sets         8258.50          ---          ---      2.19800       636.05 
+Gets        82494.28     41483.10     41011.18      2.19800      4590.88 
+Waits           0.00          ---          ---      0.00000          --- 
+Totals      90752.78     41483.10     41011.18      2.19800      5226.93 
+</code></pre>
+<p>According to this run of <code>memtier_benchmark</code>, our Redis server can execute about 90 thousand operations per second in a 1:10 <code>SET</code>/<code>GET</code> ratio.</p>
+
+<p>It's important to note that each benchmark tool has its own algorithm for performance testing and data presentation. For that reason, it's normal to have slightly different results on the same server, even when using similar settings.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this guide, we demonstrated how to perform benchmark tests on a Redis server using two distinct tools: the included <code>redis-benchmark</code>, and the <code>memtier_benchmark</code> tool developed by Redis Labs. We also saw how to check for the server latency using <code>redis-cli</code>. Based on the data obtained from these tests, you'll have a better understanding of what to expect from your Redis server in terms of performance, and what are the bottlenecks of your current setup.</p>

@@ -1,0 +1,151 @@
+---
+layout: post
+title: How To Install Webmin on Debian 10
+network: digitalocean
+date: August 20, 2019 at 10:38PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-webmin-on-debian-10
+image: https://assets.digitalocean.com/articles/webmin_debian_10/webmin_dashboard_box.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="http://www.webmin.com/">Webmin</a> is a modern web control panel that allows you to administer your Linux server through a browser-based interface.  With Webmin, you can manage user accounts, configure DNS settings, and change settings for common packages on the fly.</p>
+
+<p>In this tutorial, you'll install and configure Webmin on your server and secure access to the interface with a valid certificate from <a href="https://letsencrypt.org/">Let's Encrypt</a>. You'll then use Webmin to add new user accounts, and update all packages on your server from the dashboard.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To complete this tutorial, you will need:</p>
+
+<ul>
+<li>One Debian 10 server. This server should have a non-root user with sudo privileges and a UFW firewall configured. Set this up by following our <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Debian 10 initial server setup guide</a>.</li>
+<li>Apache installed by following our tutorial on <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-debian-10">How To Install the Apache Web Server on Debian 10</a>. As you follow this prerequisite guide, be sure to <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-debian-10#step-5-%E2%80%94-setting-up-virtual-hosts-(recommended)">configure a virtual host</a>.</li>
+<li>A Fully-Qualified Domain Name (FQDN), with a DNS <strong>A</strong> record pointing to the IP address of your server. To configure this, follow <a href="https://www.digitalocean.com/docs/networking/dns/">these instructions on DNS hosting on DigitalOcean</a>. </li>
+</ul>
+
+<h2 id="step-1-—-installing-webmin">Step 1 — Installing Webmin</h2>
+
+<p>First, we need to add the Webmin repository so that we can install and update Webmin using our package manager. We do this by adding the repository to the <code>/etc/apt/sources.list</code> file.</p>
+
+<p>Open the file in your preferred editor. Here, we'll use <code>nano</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apt/sources.list
+</li></ul></code></pre>
+<p>Then add this line to the bottom of the file to add the new repository:</p>
+<div class="code-label " title="/etc/apt/sources.list">/etc/apt/sources.list</div><pre class="code-pre "><code langs=""> . . . 
+<span class="highlight">deb http://download.webmin.com/download/repository sarge contrib</span>
+</code></pre>
+<p>Save the file and exit the editor. If you used <code>nano</code>, do so by pressing <code>CTRL+X</code>, <code>Y</code>, then <code>ENTER</code>.</p>
+
+<p>Next, you'll add the Webmin PGP key so that your system will trust the new repository. In order to do that, though, you must install the <code>gnupg1</code> package, which is GNU's tool for secure communication and data storage.</p>
+
+<p>Update your server's package index if you've not done so recently:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Then install <code>gnupg1</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install gnupg1
+</li></ul></code></pre>
+<p>Following that, download the Webmin PGP key with <code>wget</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget http://www.webmin.com/jcameron-key.asc
+</li></ul></code></pre>
+<p>Then add the package key:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-key add jcameron-key.asc
+</li></ul></code></pre>
+<p>Next, update the list of packages again in order to include the now-trusted Webmin repository:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update 
+</li></ul></code></pre>
+<p>Then install Webmin:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install webmin 
+</li></ul></code></pre>
+<p>Once the installation finishes, you'll be presented with the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+Webmin install complete. You can now login to 
+https://<span class="highlight">your_server</span>:10000 as root with your 
+root password, or as any user who can use sudo.
+</code></pre>
+<span class='note'><p>
+<strong>Note:</strong> If you installed and enabled <code>ufw</code> during the prerequisite step, you will need to run the following command in order to allow Webmin through the firewall:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 10000
+</li></ul></code></pre>
+<p>For extra security, you may want to configure your firewall to only allow access to this port from certain IP ranges.<br></p></span>
+
+<p>Let's secure access to Webmin by adding a valid certificate.</p>
+
+<h2 id="step-2-—-adding-a-valid-certificate-with-let-39-s-encrypt">Step 2 — Adding a Valid Certificate with Let's Encrypt</h2>
+
+<p>Webmin is already configured to use HTTPS, but it uses a self-signed, untrusted certificate. Let's replace it with a valid certificate from Let's Encrypt. </p>
+
+<p>Navigate to <code>https://<span class="highlight">your_domain</span>:10000</code> in your web browser, replacing <code><span class="highlight">your_domain</span></code> with the domain name pointing to your server's IP address. </p>
+
+<p><span class='note'><strong>Note:</strong> When logging in for the first time, you will see an "Invalid SSL" warning. This warning may say something different depending on your browser, but the reason for it is that the server has generated a self-signed certificate. Allow the exception and proceed to your domain so you can replace the self-signed certificate with one from Let's Encrypt.<br></span></p>
+
+<p>You'll be presented with a login screen. Sign in with the non-root user you created while fulfilling the prerequisites for this tutorial.</p>
+
+<p>Once you log in, the first screen you will see is the Webmin dashboard. Before you can apply a valid certificate, you have to set the server's hostname. Look for the <strong>System hostname</strong> field and click on the link to the right, as shown in the following figure:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/webmin_debian_10/webmin_dashboard_box.png" alt="Image showing where the link is on the Webmin dashboard"></p>
+
+<p>This will take you to the <strong>Hostname and DNS Client</strong> page. Locate the <strong>Hostname</strong> field, and enter your Fully-Qualified Domain Name into the field. Then click the <strong>Save</strong> button at the bottom of the page to apply the setting.</p>
+
+<p>After you've set your hostname, click on the <strong>Webmin</strong> dropdown menu in the left-hand navigation bar, and then click on <strong>Webmin Configuration</strong>.</p>
+
+<p>From the <strong>Webmin Configuration</strong> page, select <strong>SSL Encryption</strong> from the list of icons, and then click on the <strong>Let's Encrypt</strong> tab. You'll see a screen like the following figure:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/webmin_debian_10/webmin_ssl_encryption.png" alt="Image showing the Let's Encrypt tab of the SSL Encryption section"> </p>
+
+<p>On this page, you'll tell Webmin how to obtain and renew your certificate. Let's Encrypt certificates expire after 3 months, but you can instruct Webmin to automatically attempt to renew the Let's Encrypt certificate every month. Let's Encrypt looks for a verification file on the server, so we'll configure Webmin to place the verification file inside the folder <code>/var/www/<span class="highlight">your_domain</span></code>, which is the folder that the Apache web server you configured in the prerequisites uses. Follow these steps to set up your certificate:</p>
+
+<ol>
+<li>Fill in <strong>Hostnames for certificate</strong> with your FQDN.</li>
+<li>For <strong>Website root directory for validation file</strong>, select the <strong>Other Directory</strong> button and enter your website's document root. Assuming you followed the <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-debian-10">prerequisite Apache tutorial</a> this will be <code>/var/www/<span class="highlight">your_domain</span></code>. </li>
+<li>For <strong>Months between automatic renewal</strong> section, deselect the <strong>Only renew manually</strong> option by typing <code>1</code> into the input box, and select the radio button to the left of the input box.</li>
+</ol>
+
+<p>Click the <strong>Request Certificate</strong> button. After a few seconds, you will see a confirmation screen.</p>
+
+<p>To use the new certificate, click the <strong>Return to Webmin configuration</strong> button on the confirmation screen. From that page, scroll down and click the <strong>Restart Webmin</strong> button. Wait around 30 seconds, and then reload the page and log in again. Your browser should now indicate that the certificate is valid.</p>
+
+<h2 id="step-3-–-using-webmin">Step 3 – Using Webmin</h2>
+
+<p>You've now set up a secured working instance of Webmin. Let's look at how to use it.</p>
+
+<p>Webmin has many different modules that can control everything from the BIND DNS Server to something as simple as adding users to the system.  Let's look at how to create a new user, and then explore how to update your system's packages using Webmin.</p>
+
+<h3 id="managing-users-and-groups">Managing Users and Groups</h3>
+
+<p>Let's explore how to manage the users and groups on your server. </p>
+
+<p>First, click the <strong>System</strong> dropdown menu in the left-hand sidebar, and then click the link for <strong>Users and Groups</strong>. From here, you can add and manage users and groups. </p>
+
+<p>Let's create a new user called <strong>deploy</strong> which you can use to host web applications. When creating a user, you can set options for password expiry, the user's shell, and whether or not they are allowed a home directory.</p>
+
+<p>To add a user, click <strong>Create a new user</strong>, which is located at the top of the users table. This displays the <strong>Create User</strong> screen, where you can supply the username, password, groups and other options. Follow these instructions to create the user:</p>
+
+<ol>
+<li>Fill in <strong>Username</strong> with <code>deploy</code>.</li>
+<li>Select <strong>Automatic</strong> for <strong>User ID</strong>.</li>
+<li>Fill in <strong>Real Name</strong> with a descriptive name like <code>Deployment user</code>.</li>
+<li>For <strong>Home Directory</strong>, select <strong>Automatic</strong>.</li>
+<li>For <strong>Shell</strong>, select <strong>/bin/bash</strong> from the dropdown list.</li>
+<li>For <strong>Password</strong>, select <strong>Normal Password</strong> and type in a password of your choice.</li>
+<li>Jump down to <strong>Primary Group</strong> and select <strong>New group with same name as user</strong>.</li>
+<li>For <strong>Secondary Group</strong>, select <strong>sudo</strong> from the <strong>All groups</strong> list. This should automatically be added to the <strong>In groups</strong> list, but if it isn't press the <strong>-&gt;</strong> button to add it.</li>
+</ol>
+
+<p>After making those selections, press <strong>Create</strong>. This will create the <strong>deploy</strong> user in short order.</p>
+
+<p>Next, let's look at how to install updates to our system.</p>
+
+<h3 id="updating-packages">Updating Packages</h3>
+
+<p>Webmin lets you update all of your packages through its user interface. To update all of your packages, first, click the <strong>Dashboard</strong> button above the left-hand sidebar, and then locate the <strong>Package updates</strong> field. If there are updates available, you'll see a link that states the number of available updates.</p>
+
+<p>Click this link, and then press <strong>Update selected packages</strong> to start the update.  You may be asked to reboot the server, which you can also do through the Webmin interface.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>You now have a secured working instance of Webmin and you've used the interface to create a user and update packages. Webmin gives you access to many things you'd normally need to access through the console, and it organizes them in an intuitive way. For example, if you have Apache installed, you would find the configuration tab for it under <strong>Servers</strong>, and then <strong>Apache</strong>. </p>
+
+<p>Explore the interface, or read the <a href="http://doxfer.webmin.com/Webmin/Main_Page">Official Webmin wiki</a> to learn more about managing your system with Webmin.</p>

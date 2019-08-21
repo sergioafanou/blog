@@ -1,0 +1,452 @@
+---
+layout: post
+title: How To Sync and Share Your Files with Seafile on Debian 10
+network: digitalocean
+date: August 21, 2019 at 09:06PM
+url: https://www.digitalocean.com/community/tutorials/how-to-sync-and-share-your-files-with-seafile-on-debian-10
+image: https://assets.digitalocean.com/articles/seafile_1804/step5a.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://www.seafile.com/en/home/">Seafile</a> is an open-source, self-hosted, file synchronization and sharing platform. Users can store and optionally encrypt data on their own servers with storage space as the only limitation. With Seafile you can share files and folders using cross-platform syncing and password-protected links to files with expiration dates. A file-versioning feature means that users can restore deleted and modified files or folders.</p>
+
+<p>In this tutorial, you will install and configure Seafile on a Debian 10 server. You will use MariaDB (the default MySQL variant on Debian 10) to store data for the different components of Seafile, and Apache as the proxy server to handle the web traffic. After completing this tutorial, you will be able use the web interface to access Seafile from desktop or mobile clients, allowing you to sync and share your files with other users or groups on the server or with the public.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide, you'll need the following:</p>
+
+<ul>
+<li>One Debian 10 server with a minimum of 2GB of RAM set up by following this <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Initial Server Setup with Debian 10</a> tutorial, including a sudo non-root user and a firewall.</li>
+<li>An Apache web server with a virtual host configured for the registered domain by following <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-debian-10">How To Install the Apache Web Server on Debian 10</a>. As you follow this guide, be sure to <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-debian-10#step-5-%E2%80%94-setting-up-virtual-hosts-(recommended)">set up a virtual host</a> that points to your domain name.</li>
+<li>A MariaDB database server installed and configured. Follow the steps in the <a href="https://www.digitalocean.com/community/tutorials/how-to-install-mariadb-on-debian-10">How To Install MariaDB on Debian 10</a> tutorial to set this up. Skip Step 3 of this tutorial — "(Optional) Adjusting User Authentication and Privileges". You will only be making local connections to the database server, so changing the authentication method for the root user is not necessary.</li>
+<li>An SSL certificate installed on your server by following this <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-debian-10">How To Secure Apache with Let's Encrypt on Debian 10</a> tutorial.</li>
+<li>A fully registered domain name. This tutorial will use <code><span class="highlight">your_domain</span></code> throughout.</li>
+<li><p>Both of the following DNS records set up for your server. You can follow this <a href="https://www.digitalocean.com/docs/networking/dns/">introduction to DigitalOcean DNS</a> for details on how to add them.</p>
+
+<ul>
+<li>An A record with <code><span class="highlight">your_domain</span></code> pointing to your server's public IP address.</li>
+<li>An A record with <code><span class="highlight">www.your_domain</span></code> pointing to your server's public IP address.</li>
+</ul></li>
+</ul>
+
+<h2 id="step-1-—-creating-databases-for-the-seafile-components">Step 1 — Creating Databases for the Seafile Components</h2>
+
+<p>Seafile requires three components in order to work properly:</p>
+
+<ul>
+<li><strong>Seahub</strong>: Seafile's web frontend, written in Python using the <a href="https://www.djangoproject.com/">Django</a> web framework. From Seahub you can access, manage, and share your files using a web browser.</li>
+<li><strong>Seafile server</strong>: The data service daemon that manages the raw file upload, download, and synchronization. You do not interact with the server directly, but instead use a client program or the Seahub web interface.</li>
+<li><strong>Ccnet server</strong>: The RPC service daemon to enable internal communication between the different components of Seafile. For example, when you use Seahub, it is able to access data from the Seafile server using the Ccnet RPC service.</li>
+</ul>
+
+<p>Each of these components stores its data separately in its own database. In this step you will create the three MariaDB databases and a user before proceeding to set up the server.</p>
+
+<p>First, log in to the server using SSH with your username and IP address:</p>
+<pre class="code-pre  local-environment"><code langs="">ssh <span class="highlight">sammy</span>@<span class="highlight">your_server_ip</span>
+</code></pre>
+<p>Connect to the MariaDB database server as administrator (root):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mysql
+</li></ul></code></pre>
+<p>At the MariaDB prompt, use the following SQL command to create the database user:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">CREATE USER '<span class="highlight">sammy</span>'@'localhost' IDENTIFIED BY '<span class="highlight">password</span>';
+</li></ul></code></pre>
+<p>Next, you will create the following databases to store the data of the three Seafile components:</p>
+
+<ul>
+<li><code><span class="highlight">ccnet-db</span></code> for the Ccnet server.</li>
+<li><code><span class="highlight">seahub-db</span></code> for the Seahub web frontend.</li>
+<li><code><span class="highlight">seafile-db</span></code> for the Seafile file server.</li>
+</ul>
+
+<p>At the MariaDB prompt, create your databases:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">CREATE DATABASE '<span class="highlight">ccnet-db</span>' CHARACTER SET = 'utf8';
+</li><li class="line" prefix="MariaDB [(none)]&gt;">CREATE DATABASE '<span class="highlight">seafile-db</span>' CHARACTER SET = 'utf8';
+</li><li class="line" prefix="MariaDB [(none)]&gt;">CREATE DATABASE '<span class="highlight">seahub-db</span>' CHARACTER SET = 'utf8';
+</li></ul></code></pre>
+<p>Then, grant all privileges to your database user to access and make changes in these databases:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">GRANT ALL PRIVILEGES ON '<span class="highlight">ccnet-db</span>'.* to '<span class="highlight">sammy</span>'@localhost;
+</li><li class="line" prefix="MariaDB [(none)]&gt;">GRANT ALL PRIVILEGES ON '<span class="highlight">seafile-db</span>'.* to '<span class="highlight">sammy</span>'@localhost;
+</li><li class="line" prefix="MariaDB [(none)]&gt;">GRANT ALL PRIVILEGES ON '<span class="highlight">seahub-db</span>'.* to '<span class="highlight">sammy</span>'@localhost;
+</li></ul></code></pre>
+<p>Exit the MariaDB prompt by typing <code>exit</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">exit
+</li></ul></code></pre>
+<p>Now that you have created a user and the databases required to store the data for each of the Seafile components, you will install dependencies to download the Seafile server package.</p>
+
+<h2 id="step-2-—-installing-dependencies-and-downloading-seafile">Step 2 — Installing Dependencies and Downloading Seafile</h2>
+
+<p>Some parts of Seafile are written in Python and therefore require additional Python modules and programs to work. In this step, you will install these required dependencies before downloading and extracting the Seafile server package.</p>
+
+<p>To install the dependencies using <code>apt</code> run the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python-setuptools python-pip python-urllib3 python-requests python-mysqldb ffmpeg
+</li></ul></code></pre>
+<p>The <code>python-setuptools</code> and <code>python-pip</code> dependencies oversee installing and managing Python packages. The <code>python-urllib3</code> and <code>python-requests</code> packages make requests to websites. Finally, the <code>python-mysqldb</code> is a library for using MariaDB from Python and <code>ffmpeg</code> handles multimedia files.</p>
+
+<p>Seafile requires <code>Pillow</code>, a python library for image processing, and <code>moviepy</code> to handle movie file thumbnails. These modules are not available in the Debian package repository, so instead install them with <code>pip</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo pip install Pillow moviepy
+</li></ul></code></pre>
+<p>Now that you have installed the necessary dependencies, you can download the Seafile server package.</p>
+
+<p>Seafile creates additional directories during setup. To keep them all organized, create a new directory and change into it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir seafile
+</li><li class="line" prefix="$">cd seafile
+</li></ul></code></pre>
+<p>You can now download the latest version (<code><span class="highlight">7.0.4</span></code> as of this writing) of the Seafile server from <a href="https://www.seafile.com/en/download">the project website</a> by running the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://download.seadrive.org/seafile-server_<span class="highlight">7.0.4</span>_x86-64.tar.gz
+</li></ul></code></pre>
+<p>Seafile distributes the download as a compressed tar archive, which means you will need to extract it before proceeding. Extract the archive using <code>tar</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tar -zxvf seafile-server_<span class="highlight">7.0.4</span>_x86-64.tar.gz
+</li></ul></code></pre>
+<p>Now change into the extracted directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd seafile-server-<span class="highlight">7.0.4</span>
+</li></ul></code></pre>
+<p>At this stage, you have downloaded and extracted the Seafile server package and have also installed the necessary dependencies. You are now ready to configure the Seafile server.</p>
+
+<h2 id="step-3-—-configuring-the-seafile-server">Step 3 — Configuring the Seafile Server</h2>
+
+<p>Seafile needs some information about your setup before you start the services for the first time. This includes details like the domain name, the database configuration, and the path where it will store data. To initiate the series of question prompts to provide this information, you can run the script <code>setup_seafile_mysql.sh</code>, which is included in the archive you extracted in the previous step.</p>
+
+<p>Run the script using <code>bash</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">bash setup-seafile-mysql.sh
+</li></ul></code></pre>
+<p>Press <code>ENTER</code> to continue when prompted.</p>
+
+<p>The script will now prompt you with a series of questions. Wherever defaults are mentioned, pressing the <code>ENTER</code> key will use that value.</p>
+
+<p>This tutorial uses <code><span class="highlight">Seafile</span></code> as the server name, but you can change it if you'd like:</p>
+<pre class="code-pre "><code langs="">Question 1
+
+What is the name of the server?
+It will be displayed on the client. 3 - 15 letters or digits
+[ server name ] <span class="highlight">Seafile</span>
+</code></pre>
+<p>For <code>Question 2</code>, enter the domain name for this Seafile instance.</p>
+<pre class="code-pre "><code langs="">Question 2
+
+What is the ip or domain of the server?.
+For example: www.mycompany.com, 192.168.1.101
+[ This server's ip or domain ] <span class="highlight">your_domain</span>
+</code></pre>
+<p>Press <code>ENTER</code> to accept the default value for <code>Question 3</code>. If you have set up external storage, for example, using NFS or block storage, you will need to specify the path to that location here instead.</p>
+<pre class="code-pre "><code langs="">Question 3
+
+Where do you want to put your seafile data?
+Please use a volume with enough free space
+[ default "/home/<span class="highlight">sammy</span>/seafile/seafile-data" ]
+</code></pre>
+<p>For <code>Question 4</code> press <code>ENTER</code> to accept the default port number.</p>
+<pre class="code-pre "><code langs="">Question 4
+
+Which port do you want to use for the seafile fileserver?
+[ default "8082" ]
+</code></pre>
+<p>The next prompt allows you to confirm the database configuration. You can create new databases or use existing databases for setup. For this tutorial you have created the necessary databases in Step 1, so select option <code>2</code> here.</p>
+<pre class="code-pre "><code langs="">-------------------------------------------------------
+Please choose a way to initialize seafile databases:
+-------------------------------------------------------
+
+[1] Create new ccnet/seafile/seahub databases
+[2] Use existing ccnet/seafile/seahub databases
+
+[ 1 or 2 ] <span class="highlight">2</span>
+</code></pre>
+<p>Questions 6–9 relate to the MariaDB database server. You need to provide the username and password of the MySQL user that you created in Step 1, but you can press <code>ENTER</code> to accept the default values for <code>host</code> and <code>port</code>.</p>
+<pre class="code-pre "><code langs="">
+What is the host of mysql server?
+
+[ default "localhost" ]
+
+What is the port of mysql server?
+
+[ default "3306" ]
+
+Which mysql user to use for seafile?
+
+[ mysql user for seafile ] <span class="highlight">sammy</span>
+
+What is the password for mysql user "seafile"?
+
+[ password for seafile ] <span class="highlight">password</span>
+</code></pre>
+<p>After providing the password, the script will request the names of the Seafile databases. Use <code><span class="highlight">ccnet-db</span></code>, <code><span class="highlight">seafile-db</span></code>, and <code><span class="highlight">seahub-db</span></code> for this tutorial. The script will then verify if there is a successful connection to the databases before proceeding to display a summary of the initial configuration.</p>
+<pre class="code-pre "><code langs="">Enter the existing database name for ccnet:
+[ ccnet database ] <span class="highlight">ccnet-db</span>
+
+verifying user "sammy" access to database <span class="highlight">ccnet-db</span> ...  done
+
+Enter the existing database name for seafile:
+[ seafile database ] <span class="highlight">seafile-db</span>
+
+verifying user "sammy" access to database <span class="highlight">seafile-db</span> ...  done
+
+Enter the existing database name for seahub:
+[ seahub database ] <span class="highlight">seahub-db</span>
+
+verifying user "<span class="highlight">sammy</span>For this tutorial you have" access to database <span class="highlight">seahub-db</span> ...  done
+
+---------------------------------
+This is your configuration
+---------------------------------
+
+    server name:            Seafile
+    server ip/domain:       <span class="highlight">your_domain</span>
+
+    seafile data dir:       /home/<span class="highlight">sammy</span>/seafile/seafile-data
+    fileserver port:        8082
+
+    database:               use existing
+    ccnet database:         <span class="highlight">ccnet-db</span>
+    seafile database:       <span class="highlight">seafile-db</span>
+    seahub database:        <span class="highlight">seahub-db</span>
+    database user:          <span class="highlight">sammy</span>
+
+--------------------------------
+Press ENTER to continue, or Ctrl-C to abort
+---------------------------------
+</code></pre>
+<p>Press <code>ENTER</code> to confirm.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Generating ccnet configuration ...
+done
+Successly create configuration dir /home/sammy/seafile/ccnet.
+
+Generating seafile configuration ...                
+done
+
+Generating seahub configuration ...
+----------------------------------------
+Now creating seahub database tables ...
+----------------------------------------
+creating seafile-server-latest symbolic link ...  done
+
+-----------------------------------------------------------------
+Your seafile server configuration has been finished successfully.
+-----------------------------------------------------------------
+run seafile server:     ./seafile.sh { start | stop | restart }
+run seahub  server:     ./seahub.sh  { start &lt;port&gt; | stop | restart &lt;port&gt; }
+-----------------------------------------------------------------
+If you are behind a firewall, remember to allow input/output of these tcp ports:
+-----------------------------------------------------------------
+port of seafile fileserver:   8082
+port of seahub:               8000
+
+When problems occur, Refer to
+        https://github.com/haiwen/seafile/wiki
+for information.
+</code></pre>
+<p>You will be running Seafile behind Apache, which you've already allowed through your server's firewall. Hence, you don't need to worry about opening ports <code>8082</code> and <code>8000</code> as well and you can ignore that part of the output.</p>
+
+<p>You have completed the initial configuration of the server. In the next step, you will configure the Apache web server before starting the Seafile services.</p>
+
+<h2 id="step-4-—-configuring-the-apache-web-server">Step 4 — Configuring the Apache Web Server</h2>
+
+<p>In this step, you will configure the Apache web server to forward all requests to Seafile. Using Apache in this manner allows you to use a URL without a port number, enable HTTPS connections to Seafile, and make use of the caching functionality that Apache provides for better performance.</p>
+
+<p>To begin forwarding requests, you will need to enable the <code>proxy_http</code> module in the Apache configuration. This module provides features for proxying HTTP and HTTPS requests. The following command will enable the module:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod proxy_http
+</li></ul></code></pre>
+<p><span class='note'><strong>Note:</strong> The Apache <strong>rewrite</strong> and <strong>ssl</strong> modules are also required for this setup. You have already enabled these modules as part of configuring Let's Encrypt in the second Apache tutorial listed in the prerequisites section.<br></span></p>
+
+<p>Next, update the virtual host configuration of <code><span class="highlight">your_domain</span></code> to forward requests to the Seafile file server and to the Seahub web interface.</p>
+
+<p>Open the configuration file in a text editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-enabled/<span class="highlight">your_domain</span>-le-ssl.conf
+</li></ul></code></pre>
+<p>The lines from <code>ServerAdmin</code> to <code>SSLCertificateKeyFile</code> are part of the initial Apache and Let's Encrypt configuration that you set up in the prerequisite tutorials. Add the highlighted content, beginning at <code>Alias</code> and ending with the <code>ProxyPassReverse</code> directive:</p>
+<div class="code-label " title="/etc/apache2/sites-enabled/your_domain-le-ssl.conf">/etc/apache2/sites-enabled/your_domain-le-ssl.conf</div><pre class="code-pre "><code class="code-highlight language-apache">
+&lt;IfModule mod_ssl.c&gt;
+&lt;VirtualHost *:443&gt;
+    ServerAdmin <span class="highlight">admin@your_email_domain</span>
+    ServerName <span class="highlight">your_domain</span>
+    ServerAlias www.<span class="highlight">your_domain</span>
+    DocumentRoot /var/www/<span class="highlight">your_domain</span>/html
+    ErrorLog ${APACHE_LOG_DIR}/<span class="highlight">your_domain</span>-error.log
+    CustomLog ${APACHE_LOG_DIR}/<span class="highlight">your_domain</span>-access.log combined
+
+    Include /etc/letsencrypt/options-ssl-apache.conf
+    SSLCertificateFile /etc/letsencrypt/live/<span class="highlight">your_domain</span>/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/<span class="highlight">your_domain</span>/privkey.pem
+
+    <span class="highlight">Alias /media  /home/</span>sammy<span class="highlight">/seafile/seafile-server-latest/seahub/media</span>
+    <span class="highlight">&lt;Location /media&gt;</span>
+        <span class="highlight">Require all granted</span>
+    <span class="highlight">&lt;/Location&gt;</span>
+
+    <span class="highlight"># seafile fileserver</span>
+    <span class="highlight">ProxyPass /seafhttp http://127.0.0.1:8082</span>
+    <span class="highlight">ProxyPassReverse /seafhttp http://127.0.0.1:8082</span>
+    <span class="highlight">RewriteEngine On</span>
+    <span class="highlight">RewriteRule ^/seafhttp - [QSA,L]</span>
+
+    <span class="highlight"># seahub web interface</span>
+    <span class="highlight">SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1</span>
+    <span class="highlight">ProxyPass / http://127.0.0.1:8000/</span>
+    <span class="highlight">ProxyPassReverse / http://127.0.0.1:8000/</span>
+&lt;/VirtualHost&gt;
+&lt;/IfModule&gt;
+</code></pre>
+<p>The Alias directive maps the URL path <code><span class="highlight">your_domain</span>/media</code> to a local path in the file system that Seafile uses. The following <code>Location</code> directive enables access to content in this directory. The <code>ProxyPass</code> and <code>ProxyPassReverse</code> directives make Apache act as a reverse proxy for this host, forwarding requests to <code>/</code> and <code>/seafhttp</code> to the Seafile web interface and file server running on local host ports <code>8000</code> and <code>8082</code> respectively. The <code>RewriteRule</code> directive passes all requests to <code>/seafhttp</code> unchanged and stops processing further rules (<code>[QSA,L]</code>).</p>
+
+<p>Save and exit the file.</p>
+
+<p>Test if there are any syntax errors in the virtual host configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>If it reports <code>Syntax OK</code>, then there are no issues with your configuration. Restart Apache for the changes to take effect:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>You have now configured Apache to act as a reverse proxy for the Seafile file server and Seahub. Next, you will update the URLs in Seafile's configuration before starting the services.</p>
+
+<h2 id="step-5-—-updating-seafile-39-s-configuration-and-starting-services">Step 5 — Updating Seafile's Configuration and Starting Services</h2>
+
+<p>As you are now using Apache to proxy all requests to Seafile, you will need to update the URLs in Seafile's configuration files in the <code>conf</code> directory using a text editor before you start the Seafile service.</p>
+
+<p>Open <code>ccnet.conf</code> in a text editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /home/<span class="highlight">sammy</span>/seafile/conf/ccnet.conf
+</li></ul></code></pre>
+<p>Near the top of the file, within the <code>[General]</code> block, is the <code>SERVICE_URL</code> directive. It will look like this:</p>
+<div class="code-label " title="Update /home/sammy/seafile/conf/ccnet.conf">Update /home/sammy/seafile/conf/ccnet.conf</div><pre class="code-pre "><code langs="">. . .
+SERVICE_URL=http://www.example.com:8000
+. . .
+</code></pre>
+<p>Modify this setting to point to your domain. Be sure that the URL you provide uses the HTTPS protocol, and that it does not include any port number:</p>
+<div class="code-label " title="Update /home/sammy/seafile/conf/ccnet.conf">Update /home/sammy/seafile/conf/ccnet.conf</div><pre class="code-pre "><code langs="">. . .
+SERVICE_URL = <span class="highlight">https</span>://<span class="highlight">your_domain</span>
+. . .
+</code></pre>
+<p>Save and exit the file once you have added the content.</p>
+
+<p>Now open <code>seahub_settings.py</code> in a text editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /home/<span class="highlight">sammy</span>/seafile/conf/seahub_settings.py
+</li></ul></code></pre>
+<p>Add a <code>FILE_SERVER_ROOT</code> setting in the file to specify the path where the file server is listening for file uploads and downloads:</p>
+<div class="code-label " title="Update /home/sammy/seafile/conf/seahub_settings.py">Update /home/sammy/seafile/conf/seahub_settings.py</div><pre class="code-pre "><code langs=""># -*- coding: utf-8 -*-
+SECRET_KEY = "..."
+<span class="highlight">FILE_SERVER_ROOT = 'https://</span>your_domain<span class="highlight">/seafhttp'</span>
+# ...
+</code></pre>
+<p>Save and exit <code>seahub_settings.py</code>.</p>
+
+<p>Now you can start the Seafile service and the Seahub interface:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /home/<span class="highlight">sammy</span>/seafile/seafile-server-<span class="highlight">7.0.4</span>
+</li><li class="line" prefix="$">./seafile.sh start
+</li><li class="line" prefix="$">./seahub.sh start
+</li></ul></code></pre>
+<p>As this is the first time you have started the Seahub service, it will prompt you to create an admin account. Enter a valid email address and a password for this admin user:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>What is the email for the admin account?
+[ admin email ] <span class="highlight">admin@your_email_domain</span>
+
+What is the password for the admin account?
+[ admin password ] <span class="highlight">password-here</span>
+
+Enter the password again:
+[ admin password again ] <span class="highlight">password-here</span>
+
+----------------------------------------
+Successfully created seafile admin
+----------------------------------------
+Seahub is started
+
+Done.
+</code></pre>
+<p>Open <code>https://<span class="highlight">your_domain</span></code> in a web browser and log in using your Seafile admin email address and password.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/seafile_1804/step5a.png" alt="Login screen of the Seafile web interface"></p>
+
+<p>Once logged in successfully, you can access the admin interface or create new users.</p>
+
+<p>Now that you have verified the web interface is working correctly, you can enable these services to start automatically at system boot in the next step.</p>
+
+<h2 id="step-6-—-enabling-the-seafile-server-to-start-at-system-boot">Step 6 — Enabling the Seafile Server to Start at System Boot</h2>
+
+<p>To enable the file server and the web interface to start automatically at boot, you can create their respective <code>systemd</code> service files and activate them.</p>
+
+<p>Create a <code>systemd</code> service file for the Seafile file server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/seafile.service
+</li></ul></code></pre>
+<p>Add the following content to the file:</p>
+<div class="code-label " title="Create /etc/systemd/system/seafile.service">Create /etc/systemd/system/seafile.service</div><pre class="code-pre systemd"><code langs="">[Unit]
+Description=Seafile
+After=network.target mysql.service
+
+[Service]
+Type=forking
+ExecStart=/home/<span class="highlight">sammy</span>/seafile/seafile-server-latest/seafile.sh start
+ExecStop=/home/<span class="highlight">sammy</span>/seafile/seafile-server-latest/seafile.sh stop
+User=<span class="highlight">sammy</span>
+Group=<span class="highlight">sammy</span>
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>Here, the <code>ExectStart</code> and <code>ExecStop</code> lines indicate the commands that run to start and stop the Seafile service. The service will run with <code><span class="highlight">sammy</span></code> as the <code>User</code> and <code>Group</code>. The <code>After</code> line specifies that the Seafile service will start after the networking and MariaDB service has started.</p>
+
+<p>Save <code>seafile.service</code> and exit.</p>
+
+<p>Create a <code>systemd</code> service file for the Seahub web interface:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/seahub.service
+</li></ul></code></pre>
+<p>This is similar to the Seafile service. The only difference is that the web interface is started after the Seafile service. Add the following content to this file:</p>
+<div class="code-label " title="Create /etc/systemd/system/seahub.service">Create /etc/systemd/system/seahub.service</div><pre class="code-pre systemd"><code langs="">[Unit]
+Description=Seafile hub
+After=network.target seafile.service
+
+[Service]
+Type=forking
+ExecStart=/home/<span class="highlight">sammy</span>/seafile/seafile-server-latest/seahub.sh start
+ExecStop=/home/<span class="highlight">sammy</span>/seafile/seafile-server-latest/seahub.sh stop
+User=<span class="highlight">sammy</span>
+Group=<span class="highlight">sammy</span>
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>Save <code>seahub.service</code> and exit.</p>
+
+<p>You can learn more about systemd unit files in the <a href="https://www.digitalocean.com/community/tutorials/understanding-systemd-units-and-unit-files">Understanding Systemd Units and Unit Files</a> tutorial.</p>
+
+<p>Finally, to enable both the Seafile and Seahub services to start automatically at boot, run the following commands:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable seafile.service
+</li><li class="line" prefix="$">sudo systemctl enable seahub.service
+</li></ul></code></pre>
+<p>When the server is rebooted, Seafile will start automatically.</p>
+
+<p>At this point, you have completed setting up the server, and can now test each of the services.</p>
+
+<h2 id="step-7-—-testing-file-syncing-and-sharing-functionality">Step 7 — Testing File Syncing and Sharing Functionality</h2>
+
+<p>In this step, you will test the file synchronization and sharing functionality of the server you have set up and ensure they are working correctly. To do this, you will need to install the Seafile client program on a separate computer and/or a mobile device.</p>
+
+<p>Visit the <a href="https://www.seafile.com/en/download/">download</a> page on the Seafile website and follow the instructions to install the latest version of the client program on your computer. Seafile clients are available for the various distributions of Linux (Ubuntu, Debian, Fedora, Centos/RHEL, Arch Linux), MacOS, and Windows. Mobile clients are available for Android and iPhone/iPad devices from the respective app stores.</p>
+
+<p>Once you have installed the Seafile client, you can test the file synchronization and sharing functionality.</p>
+
+<p>Open the Seafile client program on your computer or device. Accept the default location for the Seafile folder and click <strong>Next</strong>.</p>
+
+<p>In the next window, enter the server address, username, and password, then click <strong>Login</strong>.</p>
+
+<p>At the home page, right click on <strong>My Library</strong> and click <strong>Sync this library</strong>. Accept the default value for the location on your computer or device.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/seafile_1804/step7a.png" alt="Seafile client — Sync the default library"></p>
+
+<p>Add a file, for example a document or a photo, into the <strong>My Library</strong> folder. After some time, the file will upload to the server. The following screenshot shows the file <strong>photo.jpg</strong> copied to the <strong>My Library</strong> folder.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/seafile_1804/step7b.png" alt="Add a file to the default library from the computer"></p>
+
+<p>Now, log in to the web interface at <code>https://<span class="highlight">your_domain</span></code> and verify that your file is present on the server.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/seafile_1804/step7c.png" alt="My Library page to verify file sync"></p>
+
+<p>Click on <strong>Share</strong> next to the file to generate a download link for this file that you can share.</p>
+
+<p>You have verified that the file synchronization is working correctly and that you can use Seafile to sync and share files and folders from multiple devices.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial you set up a private instance of a Seafile server. Now you can start using the server to synchronize files, add users and groups, and share files between them or with the public without relying on an external service.</p>
+
+<p>When a new release of the server is available, please consult the <a href="https://manual.seafile.com/deploy/upgrade.html">upgrade</a> section of the manual for steps to perform an upgrade.</p>

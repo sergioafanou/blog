@@ -1,0 +1,205 @@
+---
+layout: post
+title: How To Rewrite URLs with mod_rewrite for Apache on Debian 10
+network: digitalocean
+date: August 22, 2019 at 05:40PM
+url: https://www.digitalocean.com/community/tutorials/how-to-rewrite-urls-with-mod-rewrite-for-apache-on-debian-10
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>Apache&rsquo;s <code>mod_rewrite</code> module lets you rewrite URLs in a cleaner fashion, translating human-readable paths into code-friendly query strings. It also lets you rewrite URLs based on conditions.</p>
+
+<p>An <code>.htaccess</code> file lets you create and apply rewrite rules without accessing server configuration files. By placing the <code>.htaccess</code> file in the root of your web site, you can manage rewrites on a per-site or per-directory basis.</p>
+
+<p>In this tutorial, you&rsquo;ll enable <code>mod_rewrite</code> and use <code>.htaccess</code> files to create a basic URL redirection, and then explore a couple of advanced use cases.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To follow this tutorial, you will need:</p>
+
+<ul>
+<li><p>One Debian 10 server set up by following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Debian 10 initial server setup guide</a>, including a sudo non-root user and a firewall.</p></li>
+<li><p>Apache installed by following Steps 1 and 2 of <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-debian-10">How To Install the Apache Web Server on Debian 10</a>.</p></li>
+</ul>
+
+<h2 id="step-1-—-enabling-mod_rewrite">Step 1 — Enabling mod_rewrite</h2>
+
+<p>In order for Apache to understand rewrite rules, we first need to activate <code>mod_rewrite</code>. It&rsquo;s already installed, but it&rsquo;s disabled on a default Apache installation. Use the <code>a2enmod</code> command to enable the module:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod rewrite
+</li></ul></code></pre>
+<p>This will activate the module or alert you that the module is already enabled. To put these changes into effect, restart Apache:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p><code>mod_rewrite</code> is now fully enabled. In the next step we will set up an <code>.htaccess</code> file that we&rsquo;ll use to define rewrite rules for redirects.</p>
+
+<h2 id="step-2-—-setting-up-htaccess">Step 2 — Setting Up .htaccess</h2>
+
+<p>An <code>.htaccess</code> file allows us to modify our rewrite rules without accessing server configuration files. For this reason, <code>.htaccess</code> is critical to your web application&rsquo;s security. The period that precedes the filename ensures that the file is hidden.</p>
+
+<span class='note'><p>
+<strong>Note:</strong> Any rules that you can put in an <code>.htaccess</code> file can also be put directly into server configuration files. In fact, the <a href="http://httpd.apache.org/docs/2.4/howto/htaccess.html">official Apache documentation</a> recommends using server configuration files instead of <code>.htaccess</code> thanks to faster processing times.</p>
+
+<p>However, in this simple example, the performance increase will be negligible. Additionally, setting rules in <code>.htaccess</code> is convenient, especially with multiple websites on the same server. It does not require a server restart for changes to take effect or root privileges to edit rules, simplifying maintenance and the process of making changes with an unprivileged account. Popular open-source software like Wordpress and Joomla rely on <code>.htaccess</code> files to make modifications and additional rules on demand.<br></p></span>
+
+<p>Before you start using <code>.htaccess</code> files, you&rsquo;ll need to set up and secure a few more settings.</p>
+
+<p>By default, Apache prohibits using an <code>.htaccess</code> file to apply rewrite rules, so first you need to allow changes to the file. Open the default Apache configuration file using <code>nano</code> or your favorite text editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/000-default.conf
+</li></ul></code></pre>
+<p>Inside that file, you will find a <code>&lt;VirtualHost *:80&gt;</code> block starting on the first line. Inside of that block, add the following new block so your configuration file looks like the following. Make sure that all blocks are properly indented:</p>
+<div class="code-label " title="/etc/apache2/sites-available/000-default.conf">/etc/apache2/sites-available/000-default.conf</div><pre class="code-pre "><code langs="">&lt;VirtualHost *:80&gt;
+    <span class="highlight">&lt;Directory /var/www/html&gt;</span>
+        <span class="highlight">Options Indexes FollowSymLinks</span>
+        <span class="highlight">AllowOverride All</span>
+        <span class="highlight">Require all granted</span>
+    <span class="highlight">&lt;/Directory&gt;</span>
+
+    . . .
+&lt;/VirtualHost&gt;
+</code></pre>
+<p>Save and close the file. If you used <code>nano</code>, do so by pressing <code>CTRL+X</code>, <code>Y</code>, then <code>ENTER</code>.</p>
+
+<p>Then, check your configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>If there are no errors, restart Apache to put your changes into effect:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>Now, create an <code>.htaccess</code> file in the web root:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/.htaccess
+</li></ul></code></pre>
+<p>Add this line at the top of the new file to activate the rewrite engine.</p>
+<div class="code-label " title="/var/www/html/.htaccess">/var/www/html/.htaccess</div><pre class="code-pre "><code langs="">RewriteEngine on
+</code></pre>
+<p>Save the file and exit.</p>
+
+<p>You now have an operational <code>.htaccess</code> file that you can use to govern your web application&rsquo;s routing rules. In the next step, we will create a sample website file that we&rsquo;ll use to demonstrate rewrite rules.</p>
+
+<h2 id="step-3-—-configuring-url-rewrites">Step 3 — Configuring URL Rewrites</h2>
+
+<p>Here, we will set up a basic URL rewrite which converts pretty URLs into actual paths to pages. Specifically, we will allow users to access <code>http://<span class="highlight">your_server_ip</span>/about</code>, and display a page called <code>about.html</code>.</p>
+
+<p>Begin by creating a file named <code>about.html</code> in the web root:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/about.html
+</li></ul></code></pre>
+<p>Copy the following HTML code into the file, then save and close it.</p>
+<div class="code-label " title="/var/www/html/about.html">/var/www/html/about.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;About Us&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;h1&gt;About Us&lt;/h1&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>You can access this page at <code>http://<span class="highlight">your_server_ip</span>/about.html</code>, but notice that if you try to access <code>http://<span class="highlight">your_server_ip</span>/about</code>, you will see a <strong>404 Not Found</strong> error. To access the page using <code>/about</code> instead, we&rsquo;ll create a rewrite rule.</p>
+
+<p>All <code>RewriteRules</code> follow this format:</p>
+<div class="code-label " title="General RewriteRule structure">General RewriteRule structure</div><pre class="code-pre "><code langs="">RewriteRule pattern substitution [flags]
+</code></pre>
+<ul>
+<li><code>RewriteRule</code> specifies the directive.</li>
+<li><code>pattern</code> is a <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-regular-expressions">regular expression</a> that matches the desired string from the URL, which is what the viewer types in the browser.</li>
+<li><code>substitution</code> is the path to the actual URL, i.e. the path of the file Apache serves.</li>
+<li><code>flags</code> are optional parameters that can modify how the rule works.</li>
+</ul>
+
+<p>Let&rsquo;s create our URL rewrite rule. Open up the <code>.htaccess</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/.htaccess
+</li></ul></code></pre>
+<p>After the first line, add the following <code>RewriteRule</code> and save the file:</p>
+<div class="code-label " title="/var/www/html/.htaccess">/var/www/html/.htaccess</div><pre class="code-pre "><code langs="">RewriteEngine on
+<span class="highlight">RewriteRule ^about$ about.html [NC]</span>
+</code></pre>
+<p>In this case, <code>^about$</code> is the pattern, <code>about.html</code> is the substitution, and <code>[NC]</code> is a flag. Our example uses a few characters with special meaning:</p>
+
+<ul>
+<li><code>^</code> indicates the start of the URL, after <code><span class="highlight">your_server_ip</span>/</code>.</li>
+<li><code>$</code> indicates the end of the URL.</li>
+<li><code>about</code> matches the string &ldquo;about&rdquo;.</li>
+<li><code>about.html</code> is the actual file that the user accesses.</li>
+<li><code>[NC]</code> is a flag that makes the rule case insensitive.</li>
+</ul>
+
+<p>You can now access <code>http://<span class="highlight">your_server_ip</span>/about</code> in your browser. In fact, with the rule shown above, the following URLs will also point to <code>about.html</code>:</p>
+
+<ul>
+<li><code>http://<span class="highlight">your_server_ip</span>/about</code>, because of the rule definition.</li>
+<li><code>http://<span class="highlight">your_server_ip</span>/About</code>, because the rule is case insensitive.</li>
+<li><code>http://<span class="highlight">your_server_ip</span>/about.html</code>, because the original filename will always work.</li>
+</ul>
+
+<p>However, the following will not work:</p>
+
+<ul>
+<li><code>http://<span class="highlight">your_server_ip</span>/about/</code>, because the rule explicitly states that there may be nothing after <code>about</code>, since the <code>$</code> character appears after <code>about</code>.</li>
+<li><code>http://<span class="highlight">your_server_ip</span>/contact</code>, because it won&rsquo;t match the <code>about</code> string in the rule.</li>
+</ul>
+
+<p>You now have an operational <code>.htaccess</code> file with a basic rule that you can modify and extend to your needs. In the following sections, we will show two additional examples of commonly used directives.</p>
+
+<h2 id="example-1-—-simplifying-query-strings-with-rewriterule">Example 1 — Simplifying Query Strings with RewriteRule</h2>
+
+<p>Web applications often make use of <em>query strings</em>, which are appended to a URL using a question mark (<code>?</code>) after the address. Separate parameters are delimited using an ampersand (<code>&amp;</code>). Query strings may be used for passing additional data between individual application pages.</p>
+
+<p>For example, a search result page written in PHP may use a URL like <code>http://example.com/results.php?item=shirt&amp;season=summer</code>. In this example, two additional parameters are passed to the imaginary <code>result.php</code> application script: <code>item</code>, with the value <code>shirt</code>, and <code>season</code> with the value <code>summer</code>. The application may use the query string information to build the right page for the visitor.</p>
+
+<p>Apache rewrite rules are often employed to simplify such long and unpleasant links as the example above into <em>friendly URLs</em> that are easier to type and interpret visually. In this example, we would like to simplify the above link to become <code>http://example.com/shirt/summer</code>. The <code>shirt</code> and <code>summer</code> parameter values are still in the address, but without the query string and script name.</p>
+
+<p>Here&rsquo;s one rule to implement this:</p>
+<div class="code-label " title="Simple substition">Simple substition</div><pre class="code-pre "><code langs="">RewriteRule ^<span class="highlight">shirt</span>/<span class="highlight">summer</span>$ results.php?item=<span class="highlight">shirt</span>&amp;season=<span class="highlight">summer</span> [QSA]
+</code></pre>
+<p>The <code>shirt/summer</code> is explicitly matched in the requested address and Apache is told to serve <code>results.php?item=shirt&amp;season=summer</code> instead. </p>
+
+<p>The <code>[QSA]</code> flags are commonly used in rewrite rules. They tell Apache to append any additional query string to the served URL, so if the visitor types <code>http://example.com/shirt/summer?<span class="highlight">page=2</span></code> the server will respond with <code>results.php?item=shirt&amp;season=summer<span class="highlight">&amp;page=2</span></code>. Without it, the additional query string would get discarded.</p>
+
+<p>While this method achieves the desired effect, both the item name and season are hardcoded into the rule. This means the rule will not work for any other items, like <code>pants</code>, or seasons, like <code>winter</code>.</p>
+
+<p>To make the rule more generic, we can use <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-regular-expressions">regular expressions</a> to match parts of the original address and use those parts in a substitution pattern. The modified rule will then look like this:</p>
+<div class="code-label " title="Simple substition">Simple substition</div><pre class="code-pre "><code langs="">RewriteRule ^<span class="highlight">([A-Za-z0-9]+)</span>/<span class="highlight">(summer|winter|fall|spring)</span> results.php?item=$1&amp;season=$2 [QSA]
+</code></pre>
+<p>The first regular expression group in parenthesis matches a string containing alphanumeric characters and numbers like <code>shirt</code> or <code>pants</code> and saves the matched fragment as the <code>$1</code> variable. The second regular expression group in parentheses matches exactly <code>summer</code>, <code>winter</code>, <code>fall</code>, or <code>spring</code>, and similarly saves the matched fragment as <code>$2</code>.</p>
+
+<p>The matched fragments are then used in the resulting URL in <code>item</code> and <code>season</code> variables instead of the hardcoded <code>shirt</code> and <code>summer</code> values we used before.</p>
+
+<p>The above will convert, for example, <code>http://example.com/pants/summer</code> into <code>http://example.com/results.php?item=pants&amp;season=summer</code>. This example is also future proof, allowing multiple items and seasons to be correctly rewritten using a single rule.</p>
+
+<h2 id="example-2-—-adding-conditions-with-logic-using-rewriteconds">Example 2 — Adding Conditions with Logic Using RewriteConds</h2>
+
+<p>Rewrite rules are not necessarily always evaluated one by one without any limitations. The <code>RewriteCond</code> directive lets us add conditions to our rewrite rules to control when the rules will be processed. All <code>RewriteConds</code> abide by the following format:</p>
+<div class="code-label " title="General RewriteCond structure">General RewriteCond structure</div><pre class="code-pre "><code langs="">RewriteCond TestString Condition [Flags]
+</code></pre>
+<ul>
+<li><code>RewriteCond</code> specifies the <code>RewriteCond</code> directive.</li>
+<li><code>TestString</code> is the string to test against.</li>
+<li><code>Condition</code> is the pattern or condition to match.</li>
+<li><code>Flags</code> are optional parameters that may modify the condition and evaluation rules.</li>
+</ul>
+
+<p>If a <code>RewriteCond</code> evaluates to true, the next <code>RewriteRule</code> will be considered. If it doesn&rsquo;t, the rule will be discarded. Multiple <code>RewriteConds</code> may be used one after another, though all must evaluate to true for the next rule to be considered.</p>
+
+<p>As an example, let&rsquo;s assume you would like to redirect all requests to non-existent files or directories on your site back to the home page instead of showing the standard <strong>404 Not Found</strong> error page. This can be achieved with following conditions rules:</p>
+<div class="code-label " title="Redirect all requests to non-existent files and directories to home page">Redirect all requests to non-existent files and directories to home page</div><pre class="code-pre "><code langs="">RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /
+</code></pre>
+<p>With the above:</p>
+
+<ul>
+<li><code>%{REQUEST_FILENAME}</code> is the string to check. In this case, it&rsquo;s the requested filename, which is a system variable available for every request.</li>
+<li><code>-f</code> is a built-in condition which verifies if the requested name exists on disk and is a file. The <code>!</code> is a negation operator. Combined, <code>!-f</code> evaluates to true only if the specified name does not exist or is not a file.</li>
+<li>Similarly, <code>!-d</code> evaluates to true only if the specified name does not exist or is not a directory.</li>
+</ul>
+
+<p>The <code>RewriteRule</code> on the final line will come into effect only for requests to non-existent files or directories. The <code>RewriteRule</code> itself is very simple and redirects every request to the <code>/</code> website root.</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p><code>mod_rewrite</code> lets you create human-readable URLs. In this tutorial, you learned how to use the <code>RewriteRule</code> directive to redirect URLs, including ones with query strings. You also learned how to conditionally redirect URLs using the <code>RewriteCond</code> directive.</p>
+
+<p>If you&rsquo;d like to learn more about <code>mod_rewrite</code>, take a look at <a href="http://httpd.apache.org/docs/current/rewrite/intro.html">Apache&rsquo;s mod_rewrite Introduction</a> and <a href="http://httpd.apache.org/docs/current/mod/mod_rewrite.html">Apache&rsquo;s official documentation for mod_rewrite</a>.</p>

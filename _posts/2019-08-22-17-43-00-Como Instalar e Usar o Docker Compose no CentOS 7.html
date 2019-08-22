@@ -1,0 +1,227 @@
+---
+layout: post
+title: Como Instalar e Usar o Docker Compose no CentOS 7
+network: digitalocean
+date: August 22, 2019 at 05:43PM
+url: https://www.digitalocean.com/community/tutorials/como-instalar-e-usar-o-docker-compose-no-centos-7-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://docs.docker.com/">Docker</a> é uma ótima ferramenta para automatizar o deployment de aplicações Linux dentro de containers de software, mas para aproveitar realmente ao máximo seu potencial, é melhor se cada componente de sua aplicação for executado em seu próprio container. Para aplicações complexas com muitos componentes, orquestrar todos os containers para iniciar e encerrar juntos (para não mencionar ter que falar uns com os outros) pode rapidamente tornar-se problemático.</p>
+
+<p>A comunidade Docker apareceu com uma solução popular chamada <a href="http://www.fig.sh/">Fig</a>, que permitia usar um único arquivo YAML para orquestrar todos os containers e configurações do Docker. Isso se tornou tão popular que a equipe do Docker decidiu fazer o <em>Docker Compose</em> com base nos fontes do Fig, que agora está obsoleto. O Docker Compose torna mais fácil para os usuários orquestrarem os processos de containers do Docker, incluindo inicialização, encerramento e configuração de links e volumes dentro de containers.</p>
+
+<p>Neste tutorial, você instalará a versão mais recente do Docker Compose para ajudá-lo a gerenciar aplicações de vários containers e explorará os comandos básicos do software.</p>
+
+<h2 id="conceitos-de-docker-e-docker-compose">Conceitos de Docker e Docker Compose</h2>
+
+<p>A utilização do Docker Compose requer uma combinação de vários conceitos diferentes do Docker em um, portanto, antes de começarmos, vamos analisar alguns dos vários conceitos envolvidos. Se você já estiver familiarizado com os conceitos do Docker, como volumes, links e port forwarding, você pode querer ir em frente e pular para a próxima seção.</p>
+
+<h3 id="imagens-docker">Imagens Docker</h3>
+
+<p>Cada container Docker é uma instância local de uma imagem Docker. Você pode pensar em uma imagem Docker como uma instalação completa do Linux. Geralmente, uma instalação mínima contém apenas o mínimo de pacotes necessários para executar a imagem. Essas imagens usam o kernel do sistema host, mas como elas estão rodando dentro de um container Docker e só veem seu próprio sistema de arquivos, é perfeitamente possível executar uma distribuição como o CentOS em um host Ubuntu (ou vice-versa).</p>
+
+<p>A maioria das imagens Docker é distribuída através do <a href="https://hub.docker.com/">Docker Hub</a>, que é mantido pela equipe do Docker. Os projetos open source mais populares têm uma imagem correspondente carregada no Registro Docker, que você pode usar para fazer o deploy do software. Quando possível, é melhor pegar imagens "oficiais", pois elas são garantidas pela equipe do Docker e seguem as práticas recomendadas do Docker.</p>
+
+<h3 id="comunicação-entre-imagens-docker">Comunicação Entre Imagens Docker</h3>
+
+<p>Os containers Docker são isolados da máquina host, o que significa que, por padrão, a máquina host não tem acesso ao sistema de arquivos dentro do container, nem a qualquer meio de comunicação com ele por meio da rede. Isso pode dificultar a configuração e o trabalho com a imagem em execução em um container Docker.</p>
+
+<p>O Docker tem três maneiras principais de contornar isso. O primeiro e mais comum é fazer com que o Docker especifique variáveis de ambiente que serão definidas dentro do container. O código em execução no container Docker verificará os valores dessas variáveis de ambiente na inicialização e os utilizará para se configurar adequadamente.</p>
+
+<p>Outro método comumente usado é um <a href="https://www.digitalocean.com/community/tutorials/how-to-work-with-docker-data-volumes-on-ubuntu-14-04">Docker data volume</a>. Os volumes Docker vêm em dois tipos - internos e compartilhados.</p>
+
+<p>Especificar um volume interno significa apenas que, para uma pasta que você especificar para um determinado container Docker, os dados persistirão quando o container for removido. Por exemplo, se você quisesse ter certeza de que seus arquivos de log persistam, você poderia especificar um volume <code>/var/log</code> interno.</p>
+
+<p>Um volume compartilhado mapeia uma pasta dentro de um container Docker para uma pasta na máquina host. Isso permite que você <a href="https://www.digitalocean.com/community/tutorials/how-to-share-data-between-docker-containers">compartilhe arquivos</a> facilmente entre o container Docker e a máquina host.</p>
+
+<p>A terceira maneira de se comunicar com um container Docker é pela rede. O Docker permite a comunicação entre diferentes containers por meio de <code>links</code>, bem como o port forwarding ou encaminhamento de portas, permitindo que você encaminhe portas de dentro do container Docker para portas no servidor host. Por exemplo, você pode criar um link para permitir que os containers do WordPress e do MariaDB se comuniquem entre si e usem o encaminhamento de porta para expor o WordPress ao mundo externo, para que os usuários possam se conectar a ele.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para seguir este artigo, você precisará do seguinte:</p>
+
+<ul>
+<li><p>Um servidor CentOS 7, configurado com um usuário não-root com privilégios sudo (veja <a href="https://www.digitalocean.com/community/tutorials/configuracao-inicial-do-servidor-com-o-centos-7-pt">Configuração Inicial do Servidor com o CentOS 7</a> para detalhes).</p></li>
+<li><p>Docker instalado com as instruções do Passo 1 e Passo 2 do tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-centos-7-pt">Como instalar e usar o Docker no CentOS 7</a></p></li>
+</ul>
+
+<p>Uma vez que estes requisitos estejam atentidos, você estará pronto para seguir adiante.</p>
+
+<h2 id="passo-1-—-instalando-o-docker-compose">Passo 1 — Instalando o Docker Compose</h2>
+
+<p>Para obter a versão mais recente, tome conhecimento dos <a href="https://docs.docker.com/compose/install/">docs do Docker</a> e instale o Docker Compose a partir do binário no repositório GitHub do Docker.</p>
+
+<p>Verifique a <a href="https://github.com/docker/compose/releases">release atual</a> e se necessário, atualize-a no comando abaixo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo curl -L "https://github.com/docker/compose/releases/download/<span class="highlight">1.23.2</span>/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+</li></ul></code></pre>
+<p>Em seguida, defina as permissões para tornar o binário executável:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod +x /usr/local/bin/docker-compose
+</li></ul></code></pre>
+<p>Logo após, verifique se a instalação foi bem-sucedida, checando a versão</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose --version
+</li></ul></code></pre>
+<p>Isso imprimirá a versão que você instalou:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>docker-compose version <span class="highlight">1.23.2</span>, build 1110ad01
+</code></pre>
+<p>Agora que você tem o Docker Compose instalado, você está pronto para executar um exemplo de "Hello World".</p>
+
+<h2 id="passo-2-—-executando-um-container-com-o-docker-compose">Passo 2 — Executando um Container com o Docker Compose</h2>
+
+<p>O registro público do Docker, o Docker Hub, inclui uma imagem simples "Hello World" para demonstração e teste. Ela ilustra a configuração mínima necessária para executar um container usando o Docker Compose: um arquivo YAML que chama uma única imagem.</p>
+
+<p>Primeiro, crie um diretório para o nosso arquivo YAML:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir hello-world
+</li></ul></code></pre>
+<p>Em seguida, mude para o diretório:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd hello-world
+</li></ul></code></pre>
+<p>Agora crie o arquivo YAML usando seu editor de texto favorito. Este tutorial usará o vi:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vi docker-compose.yml
+</li></ul></code></pre>
+<p>Entre no modo de inserção, pressionando <code>i</code>, depois coloque o seguinte conteúdo no arquivo:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre "><code langs="">my-test:
+  image: hello-world
+</code></pre>
+<p>A primeira linha fará parte do nome do container. A segunda linha especifica qual imagem usar para criar o container. Quando você executar o comando <code>docker-compose up</code>, ele procurará uma imagem local com o nome especificado, <code>hello-world</code>.</p>
+
+<p>Com isso pronto, pressione <code>ESC</code> para sair do modo de inserção. Digite <code>:x</code> e depois <code>ENTER</code> para salvar e sair do arquivo.</p>
+
+<p>Para procurar manualmente as imagens no seu sistema, use o comando <code>docker images</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker images
+</li></ul></code></pre>
+<p>Quando não há imagens locais, apenas os cabeçalhos das colunas são exibidos:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+</code></pre>
+<p>Agora, ainda no diretório <code>~/hello-world</code>, execute o seguinte comando para criar o container:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up
+</li></ul></code></pre>
+<p>Na primeira vez que executarmos o comando, se não houver uma imagem local chamada <code>hello-world</code>, o Docker Compose vai baixá-la do repositório público do Docker Hub:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Pulling my-test (hello-world:)...
+latest: Pulling from library/hello-world
+1b930d010525: Pull complete
+. . .
+</code></pre>
+<p>Depois de baixar a imagem, o <code>docker-compose</code> cria um container, anexa e executa o programa <a href="https://github.com/docker-library/hello-world/blob/85fd7ab65e079b08019032479a3f306964a28f4d/hello-world/Dockerfile">hello</a>, que por sua vez confirma que a instalação parece estar funcionando:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+Creating helloworld_my-test_1...
+Attaching to helloworld_my-test_1
+my-test_1 | 
+my-test_1 | Hello from Docker.
+my-test_1 | This message shows that your installation appears to be working correctly.
+my-test_1 | 
+. . .
+</code></pre>
+<p>Em seguida, imprimirá uma explicação do que ele fez:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+my-test_1  | To generate this message, Docker took the following steps:
+my-test_1  |  1. The Docker client contacted the Docker daemon.
+my-test_1  |  2. The Docker daemon pulled the "hello-world" image from the Docker Hub.
+my-test_1  |     (amd64)
+my-test_1  |  3. The Docker daemon created a new container from that image which runs the
+my-test_1  |     executable that produces the output you are currently reading.
+my-test_1  |  4. The Docker daemon streamed that output to the Docker client, which sent it
+my-test_1  |     to your terminal.
+. . .
+</code></pre>
+<p>Os containers Docker só são executados enquanto o comando estiver ativo, portanto, assim que o <code>hello</code> terminar a execução, o container finaliza. Conseqüentemente, quando você olha para os processos ativos, os cabeçalhos de coluna aparecerão, mas o container <code>hello-world</code> não será listado porque não está em execução:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS                      PORTS               NAMES
+</code></pre>
+<p>Use a flag <code>-a</code> para mostrar todos os containers, não apenas os ativos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps -a
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS                      PORTS               NAMES
+50a99a0beebd        hello-world         "/hello"            3 minutes ago       Exited (0) 3 minutes ago                       hello-world_my-test_1
+</code></pre>
+<p>Agora que você testou a execução de um container, é possível explorar alguns dos comandos básicos do Docker Compose.</p>
+
+<h2 id="passo-3-—-aprendendo-os-comandos-do-docker-compose">Passo 3 — Aprendendo os Comandos do Docker Compose</h2>
+
+<p>Para começar com o Docker Compose, esta seção irá examinar os comandos gerais que a ferramenta <code>docker-compose</code> suporta.</p>
+
+<p>O comando <code>docker-compose</code> funciona em uma base por diretório. Você pode ter vários grupos de containers do Docker em execução em uma máquina — basta criar um diretório para cada container e um arquivo <code>docker-compose.yml</code> para cada diretório.</p>
+
+<p>Até agora você tem executado o <code>docker-compose up</code> por conta própria, a partir do qual você pode usar o <code>CTRL-C</code> para fechar o container. Isso permite que as mensagens de debug sejam exibidas na janela do terminal. Isso não é o ideal; quando rodando em produção, é mais robusto ter o <code>docker-compose</code> agindo mais como um serviço. Uma maneira simples de fazer isso é adicionar a opção <code>-d</code> quando você fizer um <code>up</code> em sua sessão:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>O <code>docker-compose</code> agora será executado em segundo plano ou background.</p>
+
+<p>Para mostrar seu grupo de containers Docker (estejam interrompidos ou em execução no momento), use o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose ps -a
+</li></ul></code></pre>
+<p>Se um container for interrompido, o <code>State</code> será listado como <code>Exited</code>, conforme mostrado no exemplo a seguir:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>        Name            Command   State    Ports
+------------------------------------------------
+hello-world_my-test_1   /hello    Exit 0        
+</code></pre>
+<p>Um container em execução mostrará <code>Up</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>     Name              Command          State        Ports      
+---------------------------------------------------------------
+nginx_nginx_1   nginx -g daemon off;   <span class="highlight">Up</span>      443/tcp, 80/tcp 
+</code></pre>
+<p>Para parar todos os containers Docker em execução para um grupo de aplicações, digite o seguinte comando no mesmo diretório que o arquivo <code>docker-compose.yml</code> que você usou para iniciar o grupo Docker:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose stop
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> <code>docker-compose kill</code> também está disponível se você precisar fechar as coisas de maneira forçada.<br></span></p>
+
+<p>Em alguns casos, os containers Docker armazenarão suas informações antigas em um volume interno. Se você quiser começar do zero, você pode usar o comando <code>rm</code> para excluir totalmente todos os containers que compõem o seu grupo de containers:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose rm 
+</li></ul></code></pre>
+<p>Se você tentar qualquer um desses comandos a partir de um diretório diferente do diretório que contém um container Docker e um arquivo <code>.yml</code>, ele retornará um erro:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ERROR:
+        Can't find a suitable configuration file in this directory or any
+        parent. Are you in the right directory?
+
+        Supported filenames: docker-compose.yml, docker-compose.yaml
+</code></pre>
+<p>Esta seção abordou o básico sobre como manipular containers com o Docker Compose. Se você precisasse obter maior controle sobre seus containers, você poderia acessar o sistema de arquivos do container e trabalhar a partir de um prompt de comando dentro de seu container, um processo descrito na próxima seção.</p>
+
+<h2 id="passo-4-—-acessando-o-sistema-de-arquivos-do-container-docker">Passo 4 — Acessando o Sistema de Arquivos do Container Docker</h2>
+
+<p>Para trabalhar no prompt de comando dentro de um container e acessar seu sistema de arquivos, você pode usar o comando <code>docker exec</code>.</p>
+
+<p>O exemplo "Hello World" sai depois de ser executado, portanto, para testar o <code>docker exec</code>, inicie um container que continuará em execução. Para os fins deste tutorial, use a <a href="https://hub.docker.com/_/nginx/">imagem Nginx</a> do Docker Hub. </p>
+
+<p>Crie um novo diretório chamado <code>nginx</code> e vá até ele:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/nginx
+</li><li class="line" prefix="$">cd ~/nginx
+</li></ul></code></pre>
+<p>Em seguida, crie um arquivo <code>docker-compose.yml</code> em seu novo diretório e abra-o em um editor de texto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vi docker-compose.yml
+</li></ul></code></pre>
+<p>Em seguida, adicione as seguintes linhas ao arquivo:</p>
+<div class="code-label " title="~/nginx/docker-compose.yml">~/nginx/docker-compose.yml</div><pre class="code-pre "><code langs="">nginx:
+  image: nginx
+</code></pre>
+<p>Salve o arquivo e saia. Inicie o container Nginx como um processo em background com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>O Docker Compose fará o download da imagem Nginx e o container será iniciado em background.</p>
+
+<p>Agora você precisará do <code>CONTAINER ID</code> para o container. Liste todos os containers que estão em execução com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps
+</li></ul></code></pre>
+<p>Você verá algo semelhante ao seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output of `docker ps`">Output of `docker ps`</div>CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS               NAMES
+b86b6699714c        nginx               "nginx -g 'daemon of…"   20 seconds ago      Up 19 seconds       80/tcp              nginx_nginx_1
+</code></pre>
+<p>Se você quisesse fazer uma alteração no sistema de arquivos dentro deste container, você pegaria seu ID (neste exemplo <code>b86b6699714c</code>) e usaria <code>docker exec</code> para iniciar um shell dentro do container:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker exec -it <span class="highlight">b86b6699714c</span> /bin/bash
+</li></ul></code></pre>
+<p>A opção <code>-t</code> abre um terminal, e a opção <code>-i</code> o torna interativo. <code>/bin/bash</code> abre um shell bash para o container em execução.</p>
+
+<p>Você verá um prompt bash para o container semelhante a:</p>
+<pre class="code-pre "><code langs="">root@<span class="highlight">b86b6699714c</span>:/#
+</code></pre>
+<p>A partir daqui, você pode trabalhar no prompt de comando dentro do seu container. No entanto, lembre-se de que, a menos que você esteja em um diretório salvo como parte de um volume de dados, suas alterações desaparecerão assim que o container for reiniciado. Além disso, lembre-se de que a maioria das imagens Docker é criada com instalações mínimas do Linux, portanto, alguns dos utilitários e ferramentas de linha de comando aos quais você está acostumado podem não estar presentes.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora você instalou o Docker Compose, testou sua instalação executando um exemplo "Hello World" e explorou alguns comandos básicos.</p>
+
+<p>Embora o exemplo "Hello World" tenha confirmado sua instalação, a configuração simples não mostra um dos principais benefícios do Docker Compose — a capacidade de ligar e desligar um grupo de containers Docker ao mesmo tempo. Para ver o poder do Docker Compose em ação, confira <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-a-containerized-node-js-application-with-nginx-let-s-encrypt-and-docker-compose">How To Secure a Containerized Node.js Application with Nginx, Let's Encrypt, and Docker Compose</a> e <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-a-continuous-integration-testing-environment-with-docker-and-docker-compose-on-ubuntu-16-04">How To Configure a Continuous Integration Testing Environment with Docker and Docker Compose on Ubuntu 16.04</a>. Embora estes tutoriais sejam voltados para o Ubuntu 16.04 e 18.04, os passos podem ser adaptados para o CentOS 7.</p>

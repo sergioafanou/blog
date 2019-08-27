@@ -1,0 +1,960 @@
+---
+layout: post
+title: How To Embed a React Application in WordPress on Ubuntu 18.04
+network: digitalocean
+date: August 23, 2019 at 04:33PM
+url: https://www.digitalocean.com/community/tutorials/how-to-embed-a-react-application-in-wordpress-on-ubuntu-18-04
+image: https://assets.digitalocean.com/articles/cart_65391/WP_Admin_Plugins_Page.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/organizations/electronic-frontier-foundation-inc">Electronic Frontier Foundation</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://wordpress.com/">WordPress</a> is a popular content management system that, according to W3Techs (Web Technology Surveys), powers <a href="https://w3techs.com/technologies/details/cm-wordpress/all/all">over 33% of websites on the Internet</a>. One reason it is so popular is that it is easy to set up with clear, straight-forward documentation. In addition, there are a great deal of community resources supporting WordPress developers. WordPress can solve many use-cases with an inexpensive or even free out-of-the-box solution. Finally, WordPress comes with a well-defined plugin system, which allows developers to write custom code to add their own functionality. This plugin system is well-documented, works well, and as you will see later in this tutorial, is easy to use.</p>
+
+<p>Developers who want to deliver the richest, most interactive experiences can use <a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-javascript">JavaScript</a>, supported by frameworks such as <a href="https://reactjs.org/">React</a>. React is a JavaScript library that is designed to make it easy for developers to create dynamic, interactive UIs that go above and beyond a typical static page or form. Created by Facebook, and thus well maintained for security, stability, and ease of use, React is popular because it is has good documentation and a well-established, community-driven ecosystem of documentation and plugins.</p>
+
+<p>This tutorial will walk you through best practices for embedding a React application in a WordPress site. For its example, it will use a common use case: creating a widget intended to be embedded on multiple pages and sometimes multiple times on a page. On the server side, it will be implemented as a <a href="https://codex.wordpress.org/Shortcode">WordPress shortcode</a>. A shortcode is like an HTML tag, but it uses square brackets (<code>[&hellip;]</code>) instead of angle brackets (<code>&lt;&hellip;&gt;</code>). Instead of rendering an HTML element directly, it invokes a PHP function, which in turn renders HTML, interpolated with data from the database.</p>
+
+<p>By the end of this tutorial, you will have created your own shortcode, inserted it into a page in WP Admin, and published that page. On that page, you will be able to see your React widget displayed by the browser.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>In order to follow this tutorial, you must have:</p>
+
+<ul>
+<li>An Ubuntu 18.04 server set up with the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup with Ubuntu 18.04</a> tutorial to configure a firewall for your server along with a new user who has root privileges.</li>
+<li>A fully registered domain name. This tutorial will use <code><span class="highlight">your_domain</span></code> as an example throughout. You can purchase a domain name on <a href="https://namecheap.com">Namecheap</a>, get one for free on <a href="http://www.freenom.com/en/index.html">Freenom</a>, or use the domain registrar of your choice.</li>
+<li><p>Both of the following DNS records set up for your server. You can follow <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">this introduction to DigitalOcean DNS</a> for details on how to add them.</p>
+
+<ul>
+<li>An A record with <code><span class="highlight">your_domain</span></code> pointing to your server&rsquo;s public IP address.</li>
+<li>An A record with <code>www.<span class="highlight">your_domain</span></code> pointing to your server&rsquo;s public IP address.</li>
+</ul></li>
+<li><p>Installations of Apache, MySQL, and PHP on your server. You can get this by following <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">How To Install Linux, Apache, MySQL, PHP (LAMP) stack on Ubuntu 18.04</a>.</p></li>
+<li><p>Secured Apache with <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a> by following <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-ubuntu-18-04">How To Secure Apache with Let&rsquo;s Encrypt on Ubuntu 18.04</a> to generate a free SSL certificate.</p></li>
+<li><p>A WordPress installation, which you can get by following <a href="https://www.digitalocean.com/community/tutorials/how-to-install-wordpress-with-lamp-on-ubuntu-18-04">How To Install WordPress with LAMP on Ubuntu 18.04</a> and its prerequisites.</p></li>
+<li><p>Installation of <a href="https://nodejs.org/en/">Node.js</a> by following the &ldquo;Installing Using a PPA&rdquo; option in <a href="https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-ubuntu-18-04#installing-using-a-ppa">How To Install Node.js on Ubuntu 18.04</a>. This tutorial will be using version <code>11.15.0</code>, so when using <code>curl</code> to download the installation script, replace <code>10.x</code> with <code>11.x</code> to follow along with the procedure in this tutorial.</p></li>
+</ul>
+
+<h2 id="step-1-—-updating-and-configuring-filesystem-permissions">Step 1 — Updating and Configuring Filesystem Permissions</h2>
+
+<p>When logged in as the non-root user created in the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup with Ubuntu 18.04</a> prerequisite, you will not have access to view or edit any files in the WordPress directory. This is a problem, as you will be adding and modifying files later to create your WordPress plugin and your React application. To fix this problem, in this step you will update your WordPress configuration so that you have access to edit your WordPress files.</p>
+
+<p>Run the following command, substituting <code><span class="highlight">sammy</span></code> for the name of your non-root user and <code>/var/www/<span class="highlight">wordpress</span></code> for the path to your WordPress directory (which is the Apache document root folder you created in the prerequisite):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R <span class="highlight">sammy</span>:www-data /var/www/<span class="highlight">wordpress</span>
+</li></ul></code></pre>
+<p>Let&rsquo;s break down this command:</p>
+
+<ul>
+<li><code>sudo</code> — This allows you to execute this command as <code>root</code>, since you are modifying files <code><span class="highlight">sammy</span></code> does not have access to.</li>
+<li><code>chown</code> — This command changes file ownership.</li>
+<li><code>-R</code> — This flag changes the ownership recursively, including all subfolders and files.</li>
+<li><code><span class="highlight">sammy</span>:www-data</code> — This sets the owner as your non-root user (<code><span class="highlight">sammy</span></code>) and keeps the group as <code>www-data</code> so that Apache can still access the files in order to serve them.</li>
+<li><code>/var/www/<span class="highlight">wordpress</span></code> — This specifies the path to your WordPress directory. This is the directory on which the ownership will change.</li>
+</ul>
+
+<p>To verify that this command was successful, list out the contents of the WordPress directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -la /var/www/<span class="highlight">wordpress</span>
+</li></ul></code></pre>
+<p>You will see a listing of the contents of the directory:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>total 216
+drwxr-x---  5 <span class="highlight">sammy</span> www-data  4096 Apr 13 15:42 .
+drwxr-xr-x  4 root  root      4096 Apr 13 15:39 ..
+-rw-r-----  1 <span class="highlight">sammy</span> www-data   235 Apr 13 15:54 .htaccess
+-rw-r-----  1 <span class="highlight">sammy</span> www-data   420 Nov 30  2017 index.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data 19935 Jan  1 20:37 license.txt
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  7425 Jan  9 02:56 readme.html
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  6919 Jan 12 06:41 wp-activate.php
+drwxr-x---  9 <span class="highlight">sammy</span> www-data  4096 Mar 13 00:18 wp-admin
+-rw-r-----  1 <span class="highlight">sammy</span> www-data   369 Nov 30  2017 wp-blog-header.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  2283 Jan 21 01:34 wp-comments-post.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  2898 Jan  8 04:30 wp-config-sample.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  3214 Apr 13 15:42 wp-config.php
+drwxr-x---  6 <span class="highlight">sammy</span> www-data  4096 Apr 13 15:54 wp-content
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  3847 Jan  9 08:37 wp-cron.php
+drwxr-x--- 19 <span class="highlight">sammy</span> www-data 12288 Mar 13 00:18 wp-includes
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  2502 Jan 16 05:29 wp-links-opml.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  3306 Nov 30  2017 wp-load.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data 38883 Jan 12 06:41 wp-login.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  8403 Nov 30  2017 wp-mail.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data 17947 Jan 30 11:01 wp-settings.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data 31085 Jan 16 16:51 wp-signup.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  4764 Nov 30  2017 wp-trackback.php
+-rw-r-----  1 <span class="highlight">sammy</span> www-data  3068 Aug 17  2018 xmlrpc.php
+</code></pre>
+<p>These files are the ones included in the WordPress core in the file named <code>latest.tar.gz</code> that you downloaded from <a href="https://wordpress.org/"><code>wordpress.org</code></a> in the prerequisite <a href="https://www.digitalocean.com/community/tutorials/how-to-embed-a-react-application-in-wordpress-on-ubuntu-18-04">How To Install WordPress with LAMP on Ubuntu 18.04</a>. If the permissions appear as they do in the preceding output, this means that your files and directories have been updated correctly.</p>
+
+<p>In this step, you updated your WordPress installation to give yourself access to edit its files. In the next step, you will use that access to create files that will compose a WordPress plugin.</p>
+
+<h2 id="step-2-—-creating-a-basic-wordpress-plugin">Step 2 — Creating a Basic WordPress Plugin</h2>
+
+<p>Now that you have access to modify files in the WordPress directory, you will create a basic WordPress plugin and add it to the installation. This will allow React to interact with WordPress later in the tutorial.</p>
+
+<p>A WordPress plugin can be as simple as:</p>
+
+<ol>
+<li>A directory inside <code>wp-content/plugins</code>.</li>
+<li>A file inside that directory with the same name and a <code>.php</code> file extension.</li>
+<li>A special comment at the top of that file that provides WordPress with important plugin metadata.</li>
+</ol>
+
+<p>To make a plugin for the React code you will write later, start by creating a directory for the WordPress plugin. For simplicity, this tutorial will name the plugin <code><span class="highlight">react-wordpress</span></code>. Run the following command, replacing <code><span class="highlight">wordpress</span></code> with your Apache document root:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir /var/www/<span class="highlight">wordpress</span>/wp-content/plugins/<span class="highlight">react-wordpress</span>
+</li></ul></code></pre>
+<p>Then, navigate to the newly-created directory. Subsequent commands will be executed from here.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /var/www/<span class="highlight">wordpress</span>/wp-content/plugins/<span class="highlight">react-wordpress</span>
+</li></ul></code></pre>
+<p>Let&rsquo;s create the plugin file now. This tutorial will use nano, invoked with the command <code>nano</code>, as the command line text editor for all files. You are also free to use any other text editor of your choice, such as <a href="https://en.wikipedia.org/wiki/Pico_(text_editor)">Pico</a>, <a href="https://www.digitalocean.com/community/tutorials/installing-and-using-the-vim-text-editor-on-a-cloud-server">Vim</a>, or <a href="https://www.gnu.org/software/emacs/">Emacs</a>.</p>
+
+<p>Open up <code><span class="highlight">react-wordpress</span>.php</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano <span class="highlight">react-wordpress</span>.php
+</li></ul></code></pre>
+<p>Add the following lines to your file to create the start of the plugin:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php">/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php</div><pre class="code-pre "><code class="code-highlight language-php">&lt;?php
+/**
+ * @wordpress-plugin
+ * Plugin Name:       Embedding React In Wordpress
+ */
+
+defined( 'ABSPATH' ) or die( 'Direct script access disallowed.' );
+</code></pre>
+<p>The commented section at the top provides metadata for the plugin, and the line that checks for the <code>ABSPATH</code> constant prevents a bad actor from accessing this script directly by its URL. <code>ABSPATH</code> is the absolute path to your WordPress root directory, so if <code>ABSPATH</code> is defined, you can be sure the file was loaded through the WordPress environment.</p>
+
+<p><span class='note'><strong>Note:</strong> Many fields are available for a plugin metadata comment, but only <code>Plugin Name</code> is required. See the <a href="https://developer.wordpress.org/plugins/plugin-basics/header-requirements/">Header Requirements</a> page in the WordPress documentation for more details.<br></span></p>
+
+<p>Next, open up a web browser and navigate to the <strong>Plugins</strong> page of your domain (<code>https://<span class="highlight">your_domain</span>/wp-admin/plugins.php</code>). You will see your plugin listed along with WordPress&rsquo;s default plugins:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/WP_Admin_Plugins_Page.png" alt="WP Admin Plugins Page"></p>
+
+<p>Click <strong>Activate</strong> to enable your plugin.</p>
+
+<p>Once you have activated your plugin, the row containing your plugin will be highlighted in blue, with a blue border on the left, and instead of a link below it that says <strong>Activate</strong>, there will be one that says <strong>Deactivate</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/WP_Admin_Plugins_Page_After_Plugin_Activation.png" alt="WP Admin Plugins Page After Plugin Activation"></p>
+
+<p>Next, you will establish the structure of your plugin.</p>
+
+<p>Go back to your terminal to open <code><span class="highlight">react-wordpress</span>.php</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano <span class="highlight">react-wordpress</span>.php
+</li></ul></code></pre>
+<p>Then update it to add the following highlighted lines, which define useful constants:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php">/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php</div><pre class="code-pre "><code langs="">&lt;?php
+/**
+ * <a href="https://www.digitalocean.com/community/users/wordpress-plugin" class="username-tag">@wordpress-plugin</a>
+ * Plugin Name:       Embedding React In Wordpress
+ */
+
+defined( 'ABSPATH' ) or die( 'Direct script access diallowed.' );
+
+<span class="highlight">define( 'ERW_WIDGET_PATH', plugin_dir_path( __FILE__ ) . '/widget' );</span>
+<span class="highlight">define( 'ERW_ASSET_MANIFEST', ERW_WIDGET_PATH . '/build/asset-manifest.json' );</span>
+<span class="highlight">define( 'ERW_INCLUDES', plugin_dir_path( __FILE__ ) . '/includes' );</span>
+</code></pre>
+<p>In the newly added lines, you defined three constants:</p>
+
+<ol>
+<li><code>ERW_WIDGET_PATH</code> — This will be the path to the React application.</li>
+<li><code>ERW_ASSET_MANIFEST</code> — This is the path to the React asset manifest, a file that contains the list of JavaScript and CSS files that need to be included on the page for your application to work.</li>
+<li><code>ERW_INCLUDES</code> — This subdirectory will contain all of the PHP files.</li>
+</ol>
+
+<p>Note that each <code>define()</code> refers to <code>plugin_dir_path( __FILE__ )</code>. That stands for the directory path to that file.</p>
+
+<p>After adding the constant definitions, save the file and exit the editor.</p>
+
+<p><span class='note'><strong>Note:</strong> It is important to <a href="https://en.wikipedia.org/wiki/Namespace">namespace</a> your constants. In this case we are using the namespace <code>ERW_</code>, which stands for <strong>Embedding React in WordPress</strong>. Prefixing variables with this namespace ensures they are unique so that they don&rsquo;t conflict with constants defined in other plugins.<br></span></p>
+
+<p>To create the <code>includes/</code> folder, which will contain the other PHP files, start at the top level of the plugin directory, <code>/var/www/<span class="highlight">your_domain</span>/wp-content/plugins/<span class="highlight">react-wordpress</span></code>. Then, create the folder:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir includes
+</li></ul></code></pre>
+<p>Now that you&rsquo;ve scaffolded the PHP-related files and folders needed to make a WordPress plugin, you will create the initial files and folders for React.</p>
+
+<h2 id="step-3-—-initializing-the-react-application">Step 3 — Initializing the React Application</h2>
+
+<p>In this step, you will use <a href="https://github.com/facebook/create-react-app">Create React App</a> to initialize your React application.</p>
+
+<p>This tutorial was tested using Create React App version <code>3.0.1</code>. Version <code>3.0.0</code> made breaking changes to the structure of <code>asset-manifest.json</code>, so this earlier version is not compatible with this tutorial without modifications. To ensure you are using the version expected here, run this command to install Create React App:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo npm install --global create-react-app@3.0.1
+</li></ul></code></pre>
+<p>This command will install version <code>3.0.1</code> of Create React App. The <code>--global</code> flag will install it system-wide. Installing system-wide ensures that when you run <code>create-react-app</code> (or <code>npx create-react-app</code>) without any path specified, you will use the version that you just installed.</p>
+
+<p>After installing Create React App, use it to create the React application. This tutorial will name the app <code><span class="highlight">widget</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo create-react-app <span class="highlight">widget</span>
+</li></ul></code></pre>
+<p>This command uses <a href="https://www.npmjs.com/package/npx">npx</a>, which is a binary that ships with <a href="https://www.npmjs.com/">NPM</a>. It is designed to make it easy to use CLI tools and other executables that are hosted on NPM. It will install those tools if they are not found locally.</p>
+
+<p>The <code>create-react-app</code> command will generate a project folder and all of the necessary files for a basic React app. This includes an <code>index.html</code> file, starting JavaScript, CSS, and test files, and a <code>package.json</code> for defining your project and dependencies. It pre-includes dependencies and scripts that let you build your application for production without needing to install and configure any additional build tools.</p>
+
+<p>Once you have set up the <code><span class="highlight">widget</span></code> app, the output in the terminal will look something like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>&hellip;
+Success! Created <span class="highlight">widget</span> at /var/www/<span class="highlight">wordpress</span>/wp-content/plugins/<span class="highlight">react-wordpress</span>/<span class="highlight">widget</span>
+Inside that directory, you can run several commands:
+
+  npm start
+    Starts the development server.
+
+  npm run build
+    Bundles the app into static files for production.
+
+  npm test
+    Starts the test runner.
+
+  npm run eject
+    Removes this tool and copies build dependencies, configuration files
+    and scripts into the app directory. If you do this, you can’t go back!
+
+We suggest that you begin by typing:
+
+  cd <span class="highlight">widget</span>
+  npm start
+
+Happy hacking!
+</code></pre>
+<p>Next, navigate to the newly created directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">widget</span>
+</li></ul></code></pre>
+<p>You will now be able to build your application using the <a href="https://github.com/facebook/create-react-app#npm-run-build-or-yarn-build">default build command</a>, <code>npm run build</code>. This <code>build</code> command looks at the file <code>package.json</code> under the key <code>scripts</code> for a script named <code>build</code>:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/package.json">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/package.json</div><pre class="code-pre "><code langs="">{
+  "name": "widget",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "react": "^16.9.0",
+    "react-dom": "^16.9.0",
+    "react-scripts": "3.1.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    <span class="highlight">"build": "react-scripts build",</span>
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": {
+    "production": [
+      "&gt;0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
+</code></pre>
+<p>This calls the <code>react-scripts.js</code> executable provided by the <code>react-scripts</code> node module, which is one of the core components provided by <code>create-react-app</code>. This in turn calls the build script, which uses <a href="https://webpack.js.org/">webpack</a> to compile your project files into static asset files your browser understands. It does this by:</p>
+
+<ul>
+<li>Resolving dependencies.</li>
+<li>Compiling <a href="https://sass-lang.com/">SASS</a> files into CSS and JSX or <a href="https://www.typescriptlang.org/">TypeScript</a> into JavaScript.</li>
+<li>Transforming <a href="https://www.w3schools.com/js/js_es6.asp">ES6</a> syntax into <a href="https://www.w3schools.com/js/js_es5.asp">ES5</a> syntax with better cross-browser compatibility.</li>
+</ul>
+
+<p>Now that you know a bit about <code>build</code>, run the command in your terminal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo npm run build
+</li></ul></code></pre>
+<p>Once the command completes, you will receive output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>&gt; <span class="highlight">widget</span>@0.1.0 build /var/www/<span class="highlight">wordpress</span>/wp-content/plugins/<span class="highlight">react-wordpress</span>/<span class="highlight">widget</span>
+&gt; react-scripts build
+
+Creating an optimized production build&hellip;
+Compiled successfully.
+
+File sizes after gzip:
+
+  36.83 KB (+43 B)  build/static/js/2.6efc73d3.chunk.js
+  762 B (+44 B)     build/static/js/runtime~main.a8a9905a.js
+  710 B (+38 B)     build/static/js/main.2d1d08c1.chunk.js
+  539 B (+44 B)     build/static/css/main.30ddb8d4.chunk.css
+
+The project was built assuming it is hosted at the server root.
+You can control this with the homepage field in your package.json.
+For example, add this to build it for GitHub Pages:
+
+  "homepage" : "http://myname.github.io/myapp",
+
+The build folder is ready to be deployed.
+You may serve it with a static server:
+
+  npm install -g serve
+  serve -s build
+
+Find out more about deployment here:
+
+  https://bit.ly/CRA-deploy
+
+</code></pre>
+<p>Your project is now built, but before moving to the next step, it is a best practice to ensure that your application only loads if it is present.</p>
+
+<p>React uses an HTML element in the DOM inside of which it renders the application. This is called the <code>target</code> element. By default, this element has the ID <code>root</code>. To ensure that this <code>root</code> node is the app you are creating, alter <code>src/index.js</code> to check the ID of the <code>target</code> for the namespaced <code>erw-root</code>. To do this, first open <code>src/index.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano src/index.js
+</li></ul></code></pre>
+<p>Modify and add the highlighted lines:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js</div><pre class="code-pre "><code langs="">import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import App from './App';
+import * as serviceWorker from './serviceWorker';
+
+<span class="highlight">const target = document.getElementById('erw-root');</span>
+<span class="highlight">if (target) { ReactDOM.render(&lt;App /&gt;, target); }</span>
+
+serviceWorker.unregister();
+</code></pre>
+<p>Finally, save and quit the file when you are done editing.</p>
+
+<p>In this file, you made two important changes to the default <code>index.js</code> file:</p>
+
+<ol>
+<li>You changed the target element from <code>&lt;div id="root"&gt;&lt;/div&gt;</code> to <code>&lt;div id="erw-root"&gt;&lt;/div&gt;</code> so it is namespaced for your application.</li>
+<li>You enclosed the call to <code>ReactDOM.render()</code> in an <code>if (&hellip;)</code> statement so that the app is only loaded if it is present.</li>
+</ol>
+
+<p><span class='note'><strong>Note:</strong> If you expect the widget to be present on every page, you may also wish to add a line of error handling, which prints a message to the console if an element with ID <code>erw-root</code> is not found. However, this tutorial will omit this step. A line like this would produce a console error on every page that does not have the element, including ones in which you are not planning to include the element. These multiple JavaScript console errors can risk lowering the search engine rankings for your site.<br></span></p>
+
+<p>After changing any JavaScript or CSS file in your <code>src/</code> directory, it is important to recompile your app so that your changes are incorporated. To rebuild your app, run:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo npm run build
+</li></ul></code></pre>
+<p>Now your <code>build/</code> directory contains a working React application in the form of JavaScript and CSS files. The next step involves setting up some PHP files that will enqueue your JavaScript and CSS in the page.</p>
+
+<h2 id="step-4-—-enqueueing-the-javascript-and-css-files">Step 4 — Enqueueing the JavaScript and CSS Files</h2>
+
+<p>In this step, you will use WordPress actions and filters to:</p>
+
+<ol>
+<li>Output the script-enqueueing code at the appropriate time in the WordPress page load cycle.</li>
+<li><a href="https://developer.wordpress.org/themes/basics/including-css-javascript/">Enqueue your JavaScript and CSS files</a> in a way that least impacts page load speed.</li>
+</ol>
+
+<p>WordPress uses <a href="https://developer.wordpress.org/plugins/hooks/"><em>actions and filters</em></a> as its primary hooks. Actions make it possible to execute code at a specified time in the page load cycle, and filters modify specific behavior by changing the return value of functions you do not otherwise own.</p>
+
+<p>To use these hooks, you will create a PHP file that will contain the code that parses the asset manifest. This is the same file you will use later to enqueue all of the assets so the scripts are written into the <code>&lt;head&gt;</code> tag.</p>
+
+<p>Before creating the file, use the following command to navigate out of the directory containing your React app and into the top-level <code>react-wordpress</code> plugin directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /var/www/<span class="highlight">wordpress</span>/wp-content/plugins/<span class="highlight">react-wordpress</span>
+</li></ul></code></pre>
+<p>Create the <code>enqueue.php</code> file inside the <code>includes/</code> folder:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano includes/enqueue.php
+</li></ul></code></pre>
+<p>Start by placing the opening <code>&lt;?php</code> tag at the top of the file. Also add the line that checks for <code>ABSPATH</code>, which as discussed before is a best practice in every PHP file:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/includes/enqueue.php">/var/www/wordpress/wp-content/plugins/react-wordpress/includes/enqueue.php</div><pre class="code-pre "><code class="code-highlight language-php">&lt;?php
+// This file enqueues scripts and styles
+
+defined( 'ABSPATH' ) or die( 'Direct script access disallowed.' );
+</code></pre>
+<p>Save and quit this file.</p>
+
+<p>Then, update <code>react-wordpress.php</code> to require <code>enqueue.php</code> from the project. First, open up the file for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano react-wordpress.php
+</li></ul></code></pre>
+<p>Add the following highlighted line:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php">/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php</div><pre class="code-pre "><code langs="">&lt;?php
+/**
+ * <a href="https://www.digitalocean.com/community/users/wordpress-plugin" class="username-tag">@wordpress-plugin</a>
+ * Plugin Name:       Embedding React In Wordpress
+ */
+
+defined( 'ABSPATH' ) or die( 'Direct script access diallowed.' );
+
+define( 'ERW_WIDGET_PATH', plugin_dir_path( __FILE__ ) . '/widget' );
+define( 'ERW_ASSET_MANIFEST', ERW_WIDGET_PATH . '/build/asset-manifest.json' );
+define( 'ERW_INCLUDES', plugin_dir_path( __FILE__ ) . '/includes' );
+
+<span class="highlight">require_once( ERW_INCLUDES . '/enqueue.php' );</span>
+</code></pre>
+<p>It is a common pattern in WordPress plugins to require other PHP files from the <code>includes/</code> directory in order to split important tasks into chunks. The <code>require_once()</code> function parses the contents of the file passed as an argument as though that file&rsquo;s PHP code were written right there inline. Unlike the similar command <code>include</code>, <code>require</code> will raise an exception if the file you are trying to require cannot be found. Using <code>require_once()</code> (as opposed to just <code>require()</code>) ensures that <code>enqueue.php</code> will not be parsed multiple times if the directive <code>require_once( ERW_INCLUDES . '/enqueue.php' );</code> is given multiple times.</p>
+
+<p>Save and exit the file.</p>
+
+<p>Now reopen <code>includes/enqueue.php</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano includes/enqueue.php
+</li></ul></code></pre>
+<p>Then, add the following highlighted code:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/includes/enqueue.php">/var/www/wordpress/wp-content/plugins/react-wordpress/includes/enqueue.php</div><pre class="code-pre "><code langs="">&lt;?php
+// This file enqueues scripts and styles
+
+defined( 'ABSPATH' ) or die( 'Direct script access diallowed.' );
+
+<span class="highlight">add_action( 'init', function() {</span>
+
+<span class="highlight">  add_filter( 'script_loader_tag', function( $tag, $handle ) {</span>
+<span class="highlight">    if ( ! preg_match( '/^erw-/', $handle ) ) { return $tag; }</span>
+<span class="highlight">    return str_replace( ' src', ' async defer src', $tag );</span>
+<span class="highlight">  }, 10, 2 );</span>
+
+<span class="highlight">  add_action( 'wp_enqueue_scripts', function() {</span>
+
+<span class="highlight">  });</span>
+<span class="highlight">});</span>
+</code></pre>
+<p>Adding a function to the <code>init</code> action means that this code will be run during the <code>init</code> phase of the load process, which is after your theme and other plugins have loaded.</p>
+
+<p>Setting the <code>async</code> and <code>defer</code> attributes on the <code>&lt;script&gt;</code> tags using the <code>script_loader_tag</code> filter tells the browser to load the scripts asynchronously instead of blocking DOM construction and page rendering.</p>
+
+<p>The <code>wp_enqueue_scripts</code> action then enqueues front-end items. See <a href="https://codex.wordpress.org/Plugin_API/Action_Reference/wp_enqueue_scripts">this page</a> for more details.</p>
+
+<p>Be sure to write the file and exit.</p>
+
+<p>You have now told WordPress to write script and stylesheet tags to the page. In this next step, you will parse a file called the asset manifest. This will give you the paths to all of the files that you&rsquo;ll need to enqueue.</p>
+
+<h2 id="step-5-—-parsing-the-asset-manifest">Step 5 — Parsing the Asset Manifest</h2>
+
+<p>In this step, you will parse the asset manifest generated by the React build into a list of JavaScript and CSS files.</p>
+
+<p>When you build the application, the React build script will build your project into multiple JavaScript and CSS files. The files quantity and names will vary from one build to the next, as each one includes a hash of the file&rsquo;s contents. The asset manifest provides the name of each file generated in the last build along with the path to that file. By parsing it programatically, you are guaranteed that script and stylesheet tags you write to the page will always point to the right files, even when the names change.</p>
+
+<p>First, examine the <code>asset-manifest.json</code> with the <code>cat</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat <span class="highlight">widget</span>/build/asset-manifest.json
+</li></ul></code></pre>
+<p>It will look something like this:</p>
+<pre class="code-pre "><code class="code-highlight language-json"><div class="secondary-code-label " title="Output">Output</div>{
+  "files": {
+    "main.css": "/static/css/main.2cce8147.chunk.css",
+    "main.js": "/static/js/main.a284ff71.chunk.js",
+    "main.js.map": "/static/js/main.a284ff71.chunk.js.map",
+    "runtime~main.js": "/static/js/runtime~main.fa565546.js",
+    "runtime~main.js.map": "/static/js/runtime~main.fa565546.js.map",
+    "static/js/2.9ca06fd6.chunk.js": "/static/js/2.9ca06fd6.chunk.js",
+    "static/js/2.9ca06fd6.chunk.js.map": "/static/js/2.9ca06fd6.chunk.js.map",
+    "index.html": "/index.html",
+    "precache-manifest.e40c3c7a647ca45e36eb20f8e1a654ee.js": "/precache-manifest.e40c3c7a647ca45e36eb20f8e1a654ee.js",
+    "service-worker.js": "/service-worker.js",
+    "static/css/main.2cce8147.chunk.css.map": "/static/css/main.2cce8147.chunk.css.map",
+    "static/media/logo.svg": "/static/media/logo.5d5d9eef.svg"
+  }
+}
+</code></pre>
+<p>To parse it, your code will look for object keys that end with <code>.js</code> and <code>.css</code>. </p>
+
+<p>Open up your <code>enqueue.php</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano includes/enqueue.php
+</li></ul></code></pre>
+<p>Add the highlighted snippet:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/includes/enqueue.php">/var/www/wordpress/wp-content/plugins/react-wordpress/includes/enqueue.php</div><pre class="code-pre "><code langs="">&lt;?php
+// This file enqueues scripts and styles
+
+defined( 'ABSPATH' ) or die( 'Direct script access disallowed.' );
+
+add_action( 'init', function() {
+
+  add_filter( 'script_loader_tag', function( $tag, $handle ) {
+    if ( ! preg_match( '/^erw-/', $handle ) ) { return $tag; }
+    return str_replace( ' src', ' async defer src', $tag );
+  }, 10, 2 );
+
+  add_action( 'wp_enqueue_scripts', function() {
+
+<span class="highlight">    $asset_manifest = json_decode( file_get_contents( ERW_ASSET_MANIFEST ), true )['files'];</span>
+
+<span class="highlight">    if ( isset( $asset_manifest[ 'main.css' ] ) ) {</span>
+<span class="highlight">      wp_enqueue_style( 'erw', get_site_url() . $asset_manifest[ 'main.css' ] );</span>
+<span class="highlight">    }</span>
+
+<span class="highlight">    wp_enqueue_script( 'erw-runtime', get_site_url() . $asset_manifest[ 'runtime~main.js' ], array(), null, true );</span>
+
+<span class="highlight">    wp_enqueue_script( 'erw-main', get_site_url() . $asset_manifest[ 'main.js' ], array('erw-runtime'), null, true );</span>
+
+<span class="highlight">    foreach ( $asset_manifest as $key =&gt; $value ) {</span>
+<span class="highlight">      if ( preg_match( '@static/js/(.*)\.chunk\.js@', $key, $matches ) ) {</span>
+<span class="highlight">        if ( $matches &amp;&amp; is_array( $matches ) &amp;&amp; count( $matches ) === 2 ) {</span>
+<span class="highlight">          $name = "erw-" . preg_replace( '/[^A-Za-z0-9_]/', '-', $matches[1] );</span>
+<span class="highlight">          wp_enqueue_script( $name, get_site_url() . $value, array( 'erw-main' ), null, true );</span>
+<span class="highlight">        }</span>
+<span class="highlight">      }</span>
+
+<span class="highlight">      if ( preg_match( '@static/css/(.*)\.chunk\.css@', $key, $matches ) ) {</span>
+<span class="highlight">        if ( $matches &amp;&amp; is_array( $matches ) &amp;&amp; count( $matches ) == 2 ) {</span>
+<span class="highlight">          $name = "erw-" . preg_replace( '/[^A-Za-z0-9_]/', '-', $matches[1] );</span>
+<span class="highlight">          wp_enqueue_style( $name, get_site_url() . $value, array( 'erw' ), null );</span>
+<span class="highlight">        }</span>
+<span class="highlight">      }</span>
+<span class="highlight">    }</span>
+
+  });
+});
+</code></pre>
+<p>When you are done, write and quit the file.</p>
+
+<p>The highlighted code does the following:</p>
+
+<ol>
+<li>Reads the asset manifest file and parses it as a JSON file. It accesses the content stored at the key <code>'files'</code> and stores it to the <code>$asset_manifest</code> variable.</li>
+<li>Enqueues the main CSS file if it exists.</li>
+<li>Enqueues the React runtime first, then the main JavaScript file, setting the runtime as a dependency to ensure it is loaded in the page first.</li>
+<li>Parses the asset manifest file list for any JavaScript files named <code>static/js/&lt;hash&gt;.chunk.js</code> and enqueues them in the page after the main file.</li>
+<li>Parses the asset manifest file list for any CSS files named <code>static/css/&lt;hash&gt;.chunk.css</code> and enqueues them in the page after the main CSS file.</li>
+</ol>
+
+<p><span class='note'><strong>Note:</strong> Using <code>wp_enqueue_script()</code> and <code>wp_enqueue_style</code> will cause <code>&lt;script&gt;</code> and <code>&lt;link&gt;</code> tags for the enqueued files to appear in every page. The last argument <code>true</code> tells WordPress to place the file below the page content footer instead of at the bottom of the <code>&lt;head&gt;</code> element. This is important so that loading the JavaScript files doesn&rsquo;t slow down the rest of the page.<br></span></p>
+
+<p>In this step, you isolated the filepaths of the scripts and styles used by your app. In the next step, you will ensure that those filepaths point to your React app&rsquo;s <code>build</code> directory and that none of your source files are accessible from the browser.</p>
+
+<h2 id="step-6-—-serving-and-securing-static-files">Step 6 — Serving and Securing Static Files</h2>
+
+<p>At this point, you have told WordPress which JavaScript and CSS files to load and where to find them. However, if you visit <code>https://<span class="highlight">your_domain</span></code> in the browser and look at the JavaScript console, you will see HTTP 404 errors. (Check out <a href="https://www.digitalocean.com/community/tutorials/how-to-use-the-javascript-developer-console">this article</a> for more info on how to use the JavaScript console.)</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/404_Errors_in_the_JavaScript_Console.png" alt="404 Errors in the JavaScript Console"></p>
+
+<p>This is because the URL route to the file (e.g., <code>/static/js/main.2d1d08c1.chunk.js</code>) does not match the actual path to the file (e.g., <code>/wp-content/plugins/<span class="highlight">react-wordpress</span>/<span class="highlight">widget</span>/build/static/js/main.2d1d08c1.chunk.js</code>).</p>
+
+<p>In this step, you will correct this issue by telling React where the build directory is located. You will also add an Apache rewrite rule to the <code>.htaccess</code> file to protect your source files from being viewed in the browser.</p>
+
+<p>To give React the correct path to your app, open <code>package.json</code> inside of your React application&rsquo;s directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano <span class="highlight">widget</span>/package.json
+</li></ul></code></pre>
+<p>Then, add the highlighted <code>homepage</code> line:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/package.json">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/package.json</div><pre class="code-pre "><code langs="">{
+  "name": "widget",
+  "version": "0.1.0",
+  "private": true,
+  <span class="highlight">"homepage": "/wp-content/plugins/react-wordpress/widget/build",</span>
+  "dependencies": {
+    "react": "^16.9.0",
+    "react-dom": "^16.9.0",
+    "react-scripts": "3.1.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": {
+    "production": [
+      "&gt;0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
+</code></pre>
+<p>Write and quit the file. Then, rebuild your React application. Move to the top level of <code><span class="highlight">widget</span>/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">widget</span>
+</li></ul></code></pre>
+<p>Then run the <code>build</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo npm run build
+</li></ul></code></pre>
+<p>After the build command completes, inspect the asset manifest by outputting its contents to the terminal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat build/asset-manifest.json
+</li></ul></code></pre>
+<p>You will see that the file paths have all changed:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/build/asset-manifest.json">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/build/asset-manifest.json</div><pre class="code-pre "><code class="code-highlight language-json">{
+  "files": {
+    "main.css": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/css/main.2cce8147.chunk.css",
+    "main.js": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/js/main.a28d856a.chunk.js",
+    "main.js.map": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/js/main.a28d856a.chunk.js.map",
+    "runtime~main.js": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/js/runtime~main.2df87c4b.js",
+    "runtime~main.js.map": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/js/runtime~main.2df87c4b.js.map",
+    "static/js/2.9ca06fd6.chunk.js": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/js/2.9ca06fd6.chunk.js",
+    "static/js/2.9ca06fd6.chunk.js.map": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/js/2.9ca06fd6.chunk.js.map",
+    "index.html": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>index.html",
+    "precache-manifest.233e0a9875cf4d2df27d6280d12b780d.js": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>precache-manifest.233e0a9875cf4d2df27d6280d12b780d.js",
+    "service-worker.js": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>service-worker.js",
+    "static/css/main.2cce8147.chunk.css.map": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/css/main.2cce8147.chunk.css.map",
+    "static/media/logo.svg": "<span class="highlight">/wp-content/plugins/react-wordpress/widget/build/</span>static/media/logo.5d5d9eef.svg"
+  }
+}
+</code></pre>
+<p>This tells your app where to find the correct files, but also presents a problem: It exposes the path to your app&rsquo;s <code>src</code> directory, and somebody who is familiar with <code>create-react-app</code> could visit <code>https://<span class="highlight">your_domain</span>/wp-content/plugins/<span class="highlight">react-wordpress</span>/<span class="highlight">widget</span>/src/index.js</code> and start exploring the source files for your app. Try it yourself!</p>
+
+<p>To protect the paths you do not want users to access, add an Apache rewrite rule to your WordPress&rsquo;s <code>.htaccess</code> file.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/<span class="highlight">wordpress</span>/.htaccess
+</li></ul></code></pre>
+<p>Add the four highlighted lines:</p>
+<div class="code-label " title="/var/www/wordpress/.htaccess">/var/www/wordpress/.htaccess</div><pre class="code-pre htaccess"><code langs=""><span class="highlight">&lt;IfModule mod_rewrite.c&gt;</span>
+<span class="highlight">RewriteRule ^wp-content/plugins/react-wordpress/widget/(build|public)/(.*) - [L]</span>
+<span class="highlight">RewriteRule ^wp-content/plugins/react-wordpress/widget/* totally-bogus-erw.php [L]</span>
+<span class="highlight">&lt;/IfModule&gt;</span>
+
+# BEGIN WordPress
+&lt;IfModule mod_rewrite.c&gt;
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+&lt;/IfModule&gt;
+
+# END WordPress
+</code></pre>
+<p>This tells Apache to allow browser requests to anything at <code>wp-content/plugins/<span class="highlight">react-wordpress</span>/<span class="highlight">widget</span>/build/</code> or <code>wp-content/<span class="highlight">react-wordpress</span>/<span class="highlight">widget</span>/public/</code>. Anything else will redirect to <code>totally-bogus-erw.php</code>. Unless you have a file named <code>totally-bogus-erw.php</code> at your top level, this request will be handled by WordPress, which will render a 404 error. </p>
+
+<p>There are WordPress plugins, such as <a href="https://wordpress.org/plugins/stream/">Stream</a>, that will monitor request activity and log 404s. In the logs, the request will show the IP address and the page requested when the user received the 404. Watching for <code>totally-bogus-erw.php</code> will tell you if a specific IP address is trying to crawl your React app&rsquo;s <code>src</code> directory.</p>
+
+<p>Be sure to write and quit the file.</p>
+
+<p>Now that you have established the routing necessary to load your JavaScript and CSS files onto the page, it is time to use a shortcode to add HTML elements to the page that the JavaScript will interact with to render your app.</p>
+
+<h2 id="step-7-—-creating-a-shortcode">Step 7 — Creating a Shortcode</h2>
+
+<p>Shortcodes make it possible to insert complex HTML blocks interpolated with server-side data, with very simple in-page syntax. In this step, you will create and register a WordPress shortcode and use that to embed your application in the page.</p>
+
+<p>Navigate to the top level of your plugin:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /var/www/<span class="highlight">wordpress</span>/wp-content/plugins/<span class="highlight">react-wordpress</span>/
+</li></ul></code></pre>
+<p>Create a new PHP file that will contain the shortcode:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">touch includes/shortcode.php
+</li></ul></code></pre>
+<p>Then, edit your main PHP file so that <code>includes/shortcode.php</code> is required when your plugin loads. First open <code>react-wordpress.php</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano react-wordpress.php
+</li></ul></code></pre>
+<p>Then add the following highlighted line:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php">/var/www/wordpress/wp-content/plugins/react-wordpress/react-wordpress.php</div><pre class="code-pre "><code langs="">&lt;?php
+/**
+ * <a href="https://www.digitalocean.com/community/users/wordpress-plugin" class="username-tag">@wordpress-plugin</a>
+ * Plugin Name:       Embedding React In Wordpress
+ */
+
+defined( 'ABSPATH' ) or die( 'Direct script access diallowed.' );
+
+define( 'ERW_WIDGET_PATH', plugin_dir_path( __FILE__ ) . '/widget' );
+define( 'ERW_ASSET_MANIFEST', ERW_WIDGET_PATH . '/build/asset-manifest.json' );
+define( 'ERW_INCLUDES', plugin_dir_path( __FILE__ ) . '/includes' );
+
+require_once( ERW_INCLUDES . '/enqueue.php' );
+<span class="highlight">require_once( ERW_INCLUDES . '/shortcode.php' );</span>
+</code></pre>
+<p>Write and quit the file.</p>
+
+<p>Now, open the newly created shortcode file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano includes/shortcode.php
+</li></ul></code></pre>
+<p>Add the following code:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php">/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php</div><pre class="code-pre "><code class="code-highlight language-php">&lt;?php
+// This file enqueues a shortcode.
+
+defined( 'ABSPATH' ) or die( 'Direct script access disallowed.' );
+
+add_shortcode( 'erw_widget', function( $atts ) {
+  $default_atts = array();
+  $args = shortcode_atts( $default_atts, $atts );
+
+  return "&lt;div id='erw-root'&gt;&lt;/div&gt;";
+});
+</code></pre>
+<p>This code contains mostly boilerplate. It registers a shortcode named <code>erw_widget</code> that, when invoked, prints <code>&lt;div id="erw-root"&gt;&lt;/div&gt;</code>, the React app&rsquo;s root element, to the page.</p>
+
+<p>Save and quit <code>shortcode.php</code>.</p>
+
+<p>To see the React app in action, you will need to create a new WordPress page and add the shortcode to it. </p>
+
+<p>Navigate to <code>https://<span class="highlight">your_domain</span>/wp-admin</code> in a web browser. At the very top of the page, you&rsquo;ll see a black bar that has the WordPress logo on the left, followed by a house icon, the name of your site, a comment bubble icon and number, and another link that says <strong>+ New</strong>. Hover over the <strong>+ New</strong> button and a menu will drop down. Click the menu item that says <strong>Page</strong>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Create_a_Page.png" alt="Create a Page"></p>
+
+<p>When the screen loads, your cursor will be focused in the text box that says <strong>Add title</strong>. Click there and start typing to give the new page a relevant title. This tutorial will use <strong>My React App</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Giving_the_Page_a_Title.png" alt="Giving the Page a Title"></p>
+
+<p>Assuming you are using the <a href="https://wordpress.org/gutenberg/">WordPress Gutenberg editor</a>, you will see a line of text near the top of the page, below the title, that reads <strong>Start writing or type / to choose a block</strong>. When you hover over that text, three symbols will appear on the right. Choose the nearest one that resembles <code>[/]</code> to add a shortcode block:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Adding_a_Shortcode_Block.png" alt="Adding a Shortcode Block"></p>
+
+<p>Type the shortcode <code>[erw_widget]</code> into the newly-added text area. Then, click the blue <strong>Publish&hellip;</strong> button in the upper right corner of the window, then press <strong>Publish</strong> to confirm.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Type_in_Your_Shortcode_and_Publish.png" alt="Type in Your Shortcode and Publish"></p>
+
+<p>You will see a green bar confirming that the page has been published. Click the <strong>View Page</strong> link:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Click_Link_to_View_Page.png" alt="Click Link to View Page"></p>
+
+<p>On the screen, you will see your app:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Working_React_App.png" alt="Working React App"></p>
+
+<p>Now that you have a basic React app rendering in the page, you can customize that app with options provided server-side by an admin.</p>
+
+<h2 id="step-8-—-injecting-server-generated-settings">Step 8 — Injecting Server-Generated Settings</h2>
+
+<p>In this step, you will inject settings into the application using both server-generated data and user-provided data. This will enable you to display dynamic data in your application and to use the widget multiple times in a page.</p>
+
+<p>First, open the <code>index.js</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano <span class="highlight">widget</span>/src/index.js
+</li></ul></code></pre>
+<p>Then, delete the <code>import App from './App';</code> line and update the contents of <code>index.js</code> with the following highlighted lines:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js</div><pre class="code-pre "><code langs="">import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import * as serviceWorker from './serviceWorker';
+
+<span class="highlight">const App = () =&gt; (</span>
+<span class="highlight">  &lt;div className="App"&gt;</span>
+<span class="highlight">    &lt;span className="App__Message"&gt;Hello,&lt;br /&gt;World!&lt;/span&gt;</span>
+<span class="highlight">  &lt;/div&gt;</span>
+<span class="highlight">);</span>
+
+const target = document.getElementById('erw-root');
+if (target) { ReactDOM.render(&lt;App /&gt;, target); }
+
+serviceWorker.unregister();
+</code></pre>
+<p>This modifies your React application so that instead of returning the default Create React App screen, it returns an element that reads <code>Hello, World!</code>.</p>
+
+<p>Save and quit the file. Then open <code>index.css</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano <span class="highlight">widget</span>/src/index.css
+</li></ul></code></pre>
+<p>Replace the contents of <code>index.css</code> with the following code: </p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.css">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.css</div><pre class="code-pre "><code class="code-highlight language-css">.App {
+  width: 100px;
+  height: 100px;
+  border: 1px solid;
+  display: inline-block;
+  margin-right: 20px;
+  position: relative;
+}
+
+.App .App__Message {
+  font-size: 15px;
+  line-height: 15px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  width: 100%;
+}
+</code></pre>
+<p>The styles for <code>.App</code> will render a 100-pixel square, with a solid border, and the styles for <code>.App__Message</code> will render text that is centered inside the square, both vertically and horizontally.</p>
+
+<p>Write and quit the file, then rebuild the application:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">widget</span>
+</li><li class="line" prefix="$">sudo npm run build
+</li></ul></code></pre>
+<p>Once the build is successful, refresh <code>https://<span class="highlight">your_domain</span>/index.php/<span class="highlight">my-react-app</span>/</code> in your browser. You will now see the box that you styled with CSS, along with the text <code>Hello, World!</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Simplified_React_Application.png" alt="Simplified React Application"></p>
+
+<p>Next, you will add custom settings, consisting of a user-provided border color and size. You will also pass the display name of the current user from the server.</p>
+
+<h3 id="updating-the-shortcode-to-accept-arguments">Updating the Shortcode to Accept Arguments</h3>
+
+<p>To pass a user-provided argument, you must first give the user a way to pass an argument. Back in the terminal, navigate back to the top level of your plugin:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ..
+</li></ul></code></pre>
+<p>Next, open your <code>shortcode.php</code> file for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano includes/shortcode.php
+</li></ul></code></pre>
+<p>Update your shortcode file to contain the following highlighted lines:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php">/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php</div><pre class="code-pre "><code langs="">&lt;?php
+// This file enqueues your shortcode.
+
+defined( 'ABSPATH' ) or die( 'Direct script access disallowed.' );
+
+add_shortcode( 'erw_widget', function( $atts ) {
+<span class="highlight">  $default_atts = array( 'color' =&gt; 'black' );</span>
+  $args = shortcode_atts( $default_atts, $atts );
+
+<span class="highlight">  return "&lt;div class='erw-root'&gt;&lt;/div&gt;";</span>
+});
+</code></pre>
+<p>Write and quit the file. Notice how the code adds <code>'color' =&gt; 'black'</code> to the <code>$default_atts</code> array. The array key <code>color</code> instructs WordPress to expect that the <code>color</code> attribute might be passed to the <code>[erw_widget]</code> shortcode. The array value, <code>black</code>, sets the default value. All shortcode attributes are passed to the shortcode function as strings, so if you do not want to set a default value, you could use the empty string (<code>''</code>) instead. The last line changes to use a class instead of an ID because it is expected that there will be more than one of the element in the page.</p>
+
+<p>Now, go back to your browser and click the <strong>Edit</strong> button beneath your <code>Hello, World!</code> box. Update the WordPress page in your browser to add a second instance of the shortcode, and add a color attribute to both instances. This tutorial will use <code>[erw_widget color="#cf6f1a"]</code> and <code>[erw_widget color="#11757e"]</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Add_a_Second_Widget.png" alt="Add a Second Widget"></p>
+
+<p>Click the blue <strong>Update</strong> button to save.</p>
+
+<p><span class='note'><strong>Note:</strong> The second widget will not display yet. You need to update the React app to expect multiple instances identified by a class instead of a single instance identified by an ID.<br></span></p>
+
+<p>Next, open <code>index.js</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano <span class="highlight">widget</span>/src/index.js
+</li></ul></code></pre>
+<p>Update it with the following:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js</div><pre class="code-pre "><code langs="">import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import * as serviceWorker from './serviceWorker';
+
+const App = () =&gt; (
+  &lt;div className="App"&gt;
+    &lt;span className="App__Message"&gt;Hello,&lt;br /&gt;World!&lt;/span&gt;
+  &lt;/div&gt;
+);
+
+<span class="highlight">const targets = document.querySelectorAll('.erw-root');</span>
+<span class="highlight">Array.prototype.forEach.call(targets, target =&gt; ReactDOM.render(&lt;App /&gt;, target));</span>
+
+serviceWorker.unregister();
+</code></pre>
+<p>Write and quit the file. The updated lines will invoke the React app on each instance with the class <code>erw-root</code>. So if the shortcode is used twice, two squares will appear in the page.</p>
+
+<p>Finally, open <code>index.css</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano <span class="highlight">widget</span>/src/index.css
+</li></ul></code></pre>
+<p>Update the file to contain the following highlighted line:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.css">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.css</div><pre class="code-pre "><code langs=""><span class="highlight">.erw-root { display: inline-block; }</span>
+
+.App {
+  width: 100px;
+  height: 100px;
+  border: 1px solid;
+  display: inline-block;
+  margin-right: 20px;
+  position: relative;
+}
+
+.App .App__Message {
+  font-size: 15px;
+  line-height: 15px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  width: 100%;
+}
+</code></pre>
+<p>With this added line, multiple adjacent widgets will appear side-by-side instead of one above the other.</p>
+
+<p>Save and quit the file.</p>
+
+<p>Now, re-compile your React app:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">widget</span>
+</li><li class="line" prefix="$">sudo npm run build
+</li></ul></code></pre>
+<p>Now, if you refresh the page in your browser, you will see both widgets:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Two_Widgets.png" alt="Two Widgets"></p>
+
+<p>Notice that the widgets still do not display the border color. This will be addressed in a future section.</p>
+
+<h3 id="uniquely-identifying-each-widget-instance">Uniquely Identifying Each Widget Instance</h3>
+
+<p>In order to uniquely identify each widget, it is necessary to pass an ID from the server. This can be done through the <code>data-id</code> attribute of the root element. This is important, since each widget on the page may have different settings.</p>
+
+<p>To do this, return back to your top level plugin directory and open <code>shortcode.php</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ..
+</li><li class="line" prefix="$">nano includes/shortcode.php
+</li></ul></code></pre>
+<p>Update it to have the following highlighted lines: </p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php">/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php</div><pre class="code-pre "><code langs="">&lt;?php
+// This file enqueues your shortcode.
+
+defined( 'ABSPATH' ) or die( 'Direct script access disallowed.' );
+
+add_shortcode( 'erw_widget', function( $atts ) {
+  $default_atts = array( 'color' =&gt; 'black' );
+  $args = shortcode_atts( $default_atts, $atts );
+<span class="highlight">  $uniqid = uniqid('id');</span>
+
+<span class="highlight">  return "&lt;div class='erw-root' data-id='{$uniqid}'&gt;&lt;/div&gt;";</span>
+});
+</code></pre>
+<p>The first new line generates a unique ID with the prefix <code>id</code>. The updated line attaches the ID to the React root using the <code>data-id</code> attribute. This will make the ID accessible in React.</p>
+
+<p>Save the file, but do not yet exit from it.</p>
+
+<h3 id="write-settings-to-the-javascript-window-object">Write Settings to the JavaScript <code>window</code> Object</h3>
+
+<p>In the shortcode file, you will write the settings to the page in a window-global JavaScript object. Using the <code>window</code> object ensures it can be accessed from within React.</p>
+
+<p>With <code>shortcode.php</code> still open, update it so it contains the following:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php">/var/www/wordpress/wp-content/plugins/react-wordpress/includes/shortcode.php</div><pre class="code-pre "><code langs="">&lt;?php
+// This file enqueues your shortcode.
+
+defined( 'ABSPATH' ) or die( 'Direct script access disallowed.' );
+
+add_shortcode( 'erw_widget', function( $atts ) {
+  $default_atts = array( 'color' =&gt; 'black' );
+  $args = shortcode_atts( $default_atts, $atts );
+  $uniqid = uniqid('id');
+
+<span class="highlight">  global $current_user;</span>
+<span class="highlight">  $display_name = $current_user ? $current_user-&gt;display_name : 'World';</span>
+
+<span class="highlight">  ob_start(); ?&gt;</span>
+<span class="highlight">  &lt;script&gt;</span>
+<span class="highlight">  window.erwSettings = window.erwSettings || {};</span>
+<span class="highlight">  window.erwSettings["&lt;?= $uniqid ?&gt;"] = {</span>
+<span class="highlight">    'color': '&lt;?= $args["color"] ?&gt;',</span>
+<span class="highlight">    'name': '&lt;?= $display_name ?&gt;',</span>
+<span class="highlight">  }</span>
+<span class="highlight">  &lt;/script&gt;</span>
+<span class="highlight">  &lt;div class="erw-root" data-id="&lt;?= $uniqid ?&gt;"&gt;&lt;/div&gt;</span>
+
+<span class="highlight">  &lt;?php</span>
+<span class="highlight">  return ob_get_clean();</span>
+});
+</code></pre>
+<p>These updates write a <code>&lt;script&gt;</code> block before each element that initializes the window-global settings object and populates it with the data provided in WP Admin.</p>
+
+<p><span class='note'><strong>Note:</strong> The syntax <code>&lt;?=</code> is shorthand for <code>&lt;?php echo</code><br></span></p>
+
+<p>Save and quit the file.</p>
+
+<p>Now, <a href="https://developer.mozilla.org/en-US/docs/Tools/Page_Inspector/How_to/Open_the_Inspector"><em>inspect</em></a> the WordPress page in your web browser. This will show you the HTML for your page. If you <code>CTRL+F</code> and search for <code>window.erwSettings</code>, you will see the settings being written to the HTML of your page as the following:</p>
+<pre class="code-pre "><code class="code-highlight language-html">&hellip;
+  window.erwSettings = window.erwSettings || {};
+  window.erwSettings["id<span class="highlight">5d5f1958aa5ae</span>"] = {
+    'color': '#cf6f1a',
+    'name': '<span class="highlight">sammy</span>',
+  }
+&hellip;
+</code></pre>
+<h3 id="retrieve-settings-from-react">Retrieve Settings From React</h3>
+
+<p>In the React app, you will retrieve the settings based on the ID and pass the border color value to the <code>App</code> component as a property (<code>prop</code>). This lets the <code>App</code> component use the value without needing to know where it came from.</p>
+
+<p>Open <code>index.js</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano <span class="highlight">widget</span>/src/index.js
+</li></ul></code></pre>
+<p>Update it so it contains the following highlighted lines:</p>
+<div class="code-label " title="/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js">/var/www/wordpress/wp-content/plugins/react-wordpress/widget/src/index.js</div><pre class="code-pre "><code langs="">import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import * as serviceWorker from './serviceWorker';
+
+<span class="highlight">const App = ({ settings }) =&gt; (</span>
+<span class="highlight">  &lt;div className="App" style={{borderColor: settings.color}}&gt;</span>
+<span class="highlight">    &lt;span className="App__Message"&gt;Hello,&lt;br /&gt;{settings.name}!&lt;/span&gt;</span>
+  &lt;/div&gt;
+);
+
+const targets = document.querySelectorAll('.erw-root');
+<span class="highlight">Array.prototype.forEach.call(targets, target =&gt; {</span>
+<span class="highlight">  const id = target.dataset.id;</span>
+<span class="highlight">  const settings = window.erwSettings[id];</span>
+<span class="highlight">  ReactDOM.render(&lt;App settings={settings} /&gt;, target)</span>
+<span class="highlight">});</span>
+
+serviceWorker.unregister();
+</code></pre>
+<p>Save the file and exit from your text editor.</p>
+
+<p>Your React app will now use the unique ID from the window-global <code>window.erwSettings</code> object to retrieve settings and pass them to the <code>App</code> component. To put this into effect, re-compile your application:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">widget</span>
+</li><li class="line" prefix="$">sudo npm run build
+</li></ul></code></pre>
+<p>After completing this last step, refresh the WordPress page in your browser. You will see the user-provided border color and the server-provided display name appear in the widgets:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart_65391/Widgets_with_Settings_Applied.png" alt="Widgets with Settings Applied"></p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial, you created your own WordPress plugin with a React application inside of it. You then built a shortcode as a bridge to make your application embeddable within the WP Admin page builder, and in the end, you customized your widget on the page.</p>
+
+<p>Now, you can expand on your React application with the confidence that your delivery mechanism is already in place. This foundation in WordPress ensures that you can focus on the client-side experience, and as your application expands and grows, you can easily add more production-oriented tools and techniques that will work with any WordPress installation.</p>
+
+<p>For further reading on what you can do with your solid React foundation, try exploring one of these tutorials:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-display-data-from-the-digitalocean-api-with-react">How To Display Data from the DigitalOcean API with React</a> gives a fun and practical use-case for React.</li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-customer-list-management-app-with-react-and-typescript">How To Build a Customer List Management App with React and TypeScript</a> offers more advanced usage of React along with TypeScript.</li>
+</ul>

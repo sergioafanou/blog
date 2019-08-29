@@ -1,0 +1,180 @@
+---
+layout: post
+title: How To Set Up a Jupyter Notebook with Python 3 on Debian 10
+network: digitalocean
+date: August 29, 2019 at 08:08PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-a-jupyter-notebook-with-python-3-on-debian-10
+image: https://assets.digitalocean.com/articles/jupyter_notebook/set_hostname_putty.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="http://jupyter.org/">Jupyter Notebook</a> offers a command shell for interactive computing as a web application so that you can share and communicate with code. The tool can be used with several languages, including Python, Julia, R, Haskell, and Ruby. It is often used for working with data, statistical modeling, and machine learning.</p>
+
+<p>This tutorial will walk you through setting up Jupyter Notebook to run from a Debian 10 server, as well as teach you how to connect to and use the Notebook. Jupyter Notebooks (or just “Notebooks”) are documents produced by the Jupyter Notebook app which contain both computer code and rich text elements (paragraph, equations, figures, links, etc.) which aid in presenting and sharing reproducible research. </p>
+
+<p>By the end of this guide, you will be able to run Python 3 code using Jupyter Notebook running on a remote Debian 10 server. </p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>In order to complete this guide, you should have a fresh Debian 10 server instance with a basic firewall and a non-root user with sudo privileges configured. You can learn how to set this up by running through our <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Initial Server Setup with Debian 10</a> guide.</p>
+
+<h2 id="step-1-—-install-pip-and-python-headers">Step 1 — Install Pip and Python Headers</h2>
+
+<p>To begin the process, we&rsquo;ll download and install all of the items we need from the Debian repositories.  We will use the Python package manager <code>pip</code> to install additional components a bit later.</p>
+
+<p>We first need to update the local <code>apt</code> package index and then download and install the packages:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Next, install <code>pip</code> and the Python header files, which are used by some of Jupyter’s dependencies:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-pip python3-dev
+</li></ul></code></pre>
+<p>Debian 10 (“Buster”) comes preinstalled with Python 3.7.</p>
+
+<p>We can now move on to setting up a Python virtual environment into which we’ll install Jupyter.</p>
+
+<h2 id="step-2-—-create-a-python-virtual-environment-for-jupyter">Step 2 — Create a Python Virtual Environment for Jupyter</h2>
+
+<p>Now that we have Python 3, its header files, and <code>pip</code> ready to go, we can create a Python virtual environment for easier management. We will install Jupyter into this virtual environment.</p>
+
+<p>To do this, we first need access to the <code>virtualenv</code> command.  We can install this with <code>pip</code>.</p>
+
+<p>Upgrade <code>pip</code> and install the package by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -H pip3 install --upgrade pip
+</li><li class="line" prefix="$">sudo -H pip3 install virtualenv
+</li></ul></code></pre>
+<p>With <code>virtualenv</code> installed, we can start forming our environment. Create and move into a directory where we can keep our project files:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/<span class="highlight">myprojectdir</span>
+</li><li class="line" prefix="$">cd ~/<span class="highlight">myprojectdir</span>
+</li></ul></code></pre>
+<p>Within the project directory, create a Python virtual environment by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">virtualenv <span class="highlight">myprojectenv</span>
+</li></ul></code></pre>
+<p>This will create a directory called <code><span class="highlight">myprojectenv</span></code> within your <code><span class="highlight">myprojectdir</span></code> directory.  Inside, it will install a local version of Python and a local version of <code>pip</code>.  We can use this to install and configure an isolated Python environment for Jupyter.</p>
+
+<p>Before we install Jupyter, we need to activate the virtual environment.  You can do that by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">myprojectenv</span>/bin/activate
+</li></ul></code></pre>
+<p>Your prompt should change to indicate that you are now operating within a Python virtual environment.  It will look something like this: <code>(<span class="highlight">myprojectenv</span>)<span class="highlight">user</span>@<span class="highlight">host</span>:~/<span class="highlight">myprojectdir</span>$</code>.</p>
+
+<p>You’re now ready to install Jupyter into this virtual environment.</p>
+
+<h2 id="step-3-—-install-jupyter">Step 3 — Install Jupyter</h2>
+
+<p>With your virtual environment active, install Jupyter with the local instance of <code>pip</code>:</p>
+
+<p><span class='note'><strong>Note:</strong> When the virtual environment is activated (when your prompt has <code>(myprojectenv)</code> preceding it), use <code>pip</code> instead of <code>pip3</code>, even if you are using Python 3.  The virtual environment&rsquo;s copy of the tool is always named <code>pip</code>, regardless of the Python version.<br></span></p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pip install jupyter
+</li></ul></code></pre>
+<p>At this point, you’ve successfully installed all the software needed to run Jupyter. We can now start the Notebook server.</p>
+
+<h2 id="step-4-—-run-jupyter-notebook">Step 4 — Run Jupyter Notebook</h2>
+
+<p>You now have everything you need to run Jupyter Notebook! To run it, execute the following command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv)sammy@your_server:~/myprojectdir$">jupyter notebook
+</li></ul></code></pre>
+<p>A log of the activities of the Jupyter Notebook will be printed to the terminal.  When you run Jupyter Notebook, it runs on a specific port number. The first Notebook you run will usually use port <code><span class="highlight">8888</span></code>.  To check the specific port number Jupyter Notebook is running on, refer to the output of the command used to start it:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[I 21:23:21.198 NotebookApp] Writing notebook server cookie secret to /run/user/1001/jupyter/notebook_cookie_secret
+[I 21:23:21.361 NotebookApp] Serving notebooks from local directory: /home/<span class="highlight">sammy</span>/<span class="highlight">myprojectdir</span>
+[I 21:23:21.361 NotebookApp] The Jupyter Notebook is running at:
+[I 21:23:21.361 NotebookApp] http://localhost:<span class="highlight">8888</span>/?token=<span class="highlight">1fefa6ab49a498a3f37c959404f7baf16b9a2eda3eaa6d72</span>
+[I 21:23:21.361 NotebookApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[W 21:23:21.361 NotebookApp] No web browser found: could not locate runnable browser.
+[C 21:23:21.361 NotebookApp]
+
+    Copy/paste this URL into your browser when you connect for the first time,
+    to login with a token:
+        http://localhost:<span class="highlight">8888</span>/?token=<span class="highlight">1fefa6ab49a498a3f37c959404f7baf16b9a2eda3eaa6d72</span>
+</code></pre>
+<p>If you are running Jupyter Notebook on a local Debian computer (not on a Droplet), you can simply navigate to the displayed URL to connect to Jupyter Notebook.  If you are running Jupyter Notebook on a Droplet, you will need to connect to the server using SSH tunneling as outlined in the next section.</p>
+
+<p>At this point, you can keep the SSH connection open and keep Jupyter Notebook running or can exit the app and re-run it once you set up SSH tunneling.  Let&rsquo;s keep it simple and stop the Jupyter Notebook process. We will run it again once we have SSH tunneling working.  To stop the Jupyter Notebook process, press <code>CTRL+C</code>, type <code>Y</code>, and hit <code>ENTER</code> to confirm.  The following will be displayed:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[C 21:28:28.512 NotebookApp] Shutdown confirmed
+[I 21:28:28.512 NotebookApp] Shutting down 0 kernels
+</code></pre>
+<p>We’ll now set up an SSH tunnel so that we can access the Notebook.</p>
+
+<h2 id="step-5-—-connect-to-the-server-using-ssh-tunneling">Step 5 — Connect to the Server Using SSH Tunneling</h2>
+
+<p>In this section we will learn how to connect to the Jupyter Notebook web interface using SSH tunneling. Since Jupyter Notebook will run on a specific port on the server (such as <code>:8888</code>, <code>:8889</code> etc.), SSH tunneling enables you to connect to the server’s port securely.</p>
+
+<p>The next two subsections describe how to create an SSH tunnel from 1) a Mac or Linux and 2) Windows. Please refer to the subsection for your local computer.</p>
+
+<h3 id="ssh-tunneling-with-a-mac-or-linux">SSH Tunneling with a Mac or Linux</h3>
+
+<p>If you are using a Mac or Linux, the steps for creating an SSH tunnel are similar to using SSH to log in to your remote server, except that there are additional parameters in the <code>ssh</code> command.  This subsection will outline the additional parameters needed in the <code>ssh</code> command to tunnel successfully. </p>
+
+<p>SSH tunneling can be done by running the following SSH command in a new local terminal window:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh -L <span class="highlight">8888</span>:localhost:<span class="highlight">8888</span> <span class="highlight">your_server_username</span>@<span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>The <code>ssh</code> command opens an SSH connection, but <code>-L</code> specifies that the given port on the local (client) host is to be forwarded to the given host and port on the remote side (server). This means that whatever is running on the second port number (e.g. <code><span class="highlight">8888</span></code>) on the server will appear on the first port number (e.g. <code><span class="highlight">8888</span></code>) on your local computer.  </p>
+
+<p>Optionally change port <code><span class="highlight">8888</span></code> to one of your choosing to avoid using a port already in use by another process. </p>
+
+<p><code><span class="highlight">server_username</span></code> is your username (e.g. <span class="highlight">sammy</span>) on the server which you created and <code><span class="highlight">your_server_ip</span></code> is the  IP address of your server.  </p>
+
+<p>For example, for the username <code><span class="highlight">sammy</span></code> and the server address <code><span class="highlight">203.0.113.0</span></code>, the command would be:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh -L <span class="highlight">8888</span>:localhost:<span class="highlight">8888</span> <span class="highlight">sammy</span>@<span class="highlight">203.0.113.0</span>
+</li></ul></code></pre>
+<p>If no error shows up after running the <code>ssh -L</code> command, you can move into your programming environment and run Jupyter Notebook:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv)sammy@your_server:~/myprojectdir$">jupyter notebook
+</li></ul></code></pre>
+<p>You’ll receive output with a URL. From a web browser on your local machine, open the Jupyter Notebook web interface with the URL that starts with <code>http://localhost:8888</code>. Ensure that the token number is included, or enter the token number string when prompted at <code>http://localhost:8888</code>.</p>
+
+<h3 id="ssh-tunneling-with-windows-and-putty">SSH Tunneling with Windows and Putty</h3>
+
+<p>If you are using Windows, you can create an SSH tunnel using <a href="https://www.putty.org/">Putty</a>.</p>
+
+<p>First, enter the server URL or IP address as the hostname as shown:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/set_hostname_putty.png" alt="Set Hostname for SSH Tunnel"></p>
+
+<p>Next, click <strong>SSH</strong> on the bottom of the left pane to expand the menu, and then click <strong>Tunnels</strong>.  Enter the local port number to use to access Jupyter on your local machine.  Choose  <code><span class="highlight">8000</span></code> or greater to avoid ports used by other services, and set the destination as <code>localhost:<span class="highlight">8888</span></code> where <code><span class="highlight">:8888</span></code> is the number of the port that Jupyter Notebook is running on.  </p>
+
+<p>Now click the <strong>Add</strong> button, and the ports should appear in the <strong>Forwarded ports</strong> list:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/forwarded_ports_putty.png" alt="Forwarded ports list"></p>
+
+<p>Finally, click the <strong>Open</strong> button to connect to the server via SSH and tunnel the desired ports.  Navigate to <code>http://localhost:<span class="highlight">8000</span></code> (or whatever port you chose) in a web browser to connect to Jupyter Notebook running on the server. Ensure that the token number is included, or enter the token number string when prompted at <code>http://localhost:8000</code>.</p>
+
+<h2 id="step-6-—-using-jupyter-notebook">Step 6 — Using Jupyter Notebook</h2>
+
+<p>This section goes over the basics of using Jupyter Notebook. If you don’t currently have Jupyter Notebook running, start it with the <code>jupyter notebook</code> command.</p>
+
+<p>You should now be connected to it using a web browser. Jupyter Notebook is a very powerful tool with many features. This section will outline a few of the basic features to get you started using the Notebook. Jupyter Notebook will show all of the files and folders in the directory it is run from, so when you’re working on a project make sure to start it from the project directory.</p>
+
+<p>To create a new Notebook file, select <strong>New</strong> &gt; <strong>Python 3</strong> from the top right pull-down menu:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_python/JupyterNotebookPy3/jupyter-notebook-new.png" alt="Create a new Python 3 notebook"></p>
+
+<p>This will open a Notebook. We can now run Python code in the cell or change the cell to markdown.  For example, change the first cell to accept Markdown by clicking <strong>Cell</strong> &gt; <strong>Cell Type</strong> &gt; <strong>Markdown</strong> from the top navigation bar.  We can now write notes using Markdown and even include equations written in <a href="https://www.latex-project.org/">LaTeX</a> by putting them between the <code>$$</code> symbols.  For example, type the following into the cell after changing it to markdown:</p>
+<pre class="code-pre "><code langs=""># First Equation
+
+Let us now implement the following equation:
+$$ y = x^2$$
+
+where $x = 2$
+</code></pre>
+<p>To turn the markdown into rich text, press <code>CTRL+ENTER</code>, and the following should be the results:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/jupyter_markdown.png" alt="results of markdown"></p>
+
+<p>You can use the markdown cells to make notes and document your code. Let&rsquo;s implement that equation and print the result. Click on the top cell, then press <code>ALT+ENTER</code> to add a cell below it. Enter the following code in the new cell.</p>
+<pre class="code-pre "><code class="code-highlight language-python">x = 2
+y = x**2
+print(y)
+</code></pre>
+<p>To run the code, press <code>CTRL+ENTER</code>. You’ll receive the following results:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/jupyter_python.png" alt="first equation results"></p>
+
+<p>You now have the ability to <a href="https://www.digitalocean.com/community/tutorials/how-to-import-modules-in-python-3">import modules</a> and use the Notebook as you would with any other Python development environment!</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>At this point, you should be able to write reproducible Python code and notes in Markdown using Jupyter Notebook. To get a quick tour of Jupyter Notebook from within the interface, select <strong>Help</strong> &gt; <strong>User Interface Tour</strong> from the top navigation menu to learn more.</p>
+
+<p>From here, you can begin a data analysis and visualization project by reading <a href="https://www.digitalocean.com/community/tutorials/data-analysis-and-visualization-with-pandas-and-jupyter-notebook-in-python-3">Data Analysis and Visualization with pandas and Jupyter Notebook in Python 3</a>. </p>

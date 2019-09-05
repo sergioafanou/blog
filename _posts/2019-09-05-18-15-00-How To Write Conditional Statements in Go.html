@@ -1,0 +1,362 @@
+---
+layout: post
+title: How To Write Conditional Statements in Go
+network: digitalocean
+date: September 05, 2019 at 06:15PM
+url: https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-go
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>Conditional statements are part of every programming language. With conditional statements, we can have code that sometimes runs and at other times does not run, depending on the conditions of the program at that time.</p>
+
+<p>When we fully execute each statement of a program, we are not asking the program to evaluate specific conditions. By using conditional statements, programs can determine whether certain conditions are being met and then be told what to do next.</p>
+
+<p>Let’s look at some examples where we would use conditional statements:</p>
+
+<ul>
+<li>If the student receives over 65% on her test, report that her grade passes; if not, report that her grade fails.</li>
+<li>If he has money in his account, calculate interest; if he doesn’t, charge a penalty fee.</li>
+<li>If they buy 10 oranges or more, calculate a discount of 5%; if they buy fewer, then don’t.</li>
+</ul>
+
+<p>Through evaluating conditions and assigning code to run based on whether or not those conditions are met, we are writing conditional code.</p>
+
+<p>This tutorial will take you through writing conditional statements in the Go programming language.</p>
+
+<h2 id="if-statements">If Statements</h2>
+
+<p>We will start with the <code>if</code> statement, which will evaluate whether a statement is true or false, and run code only in the case that the statement is true.</p>
+
+<p>In a plain text editor, open a file and write the following code:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := 70
+
+    if grade &gt;= 65 {
+        fmt.Println("Passing grade")
+    }
+}
+</code></pre>
+<p>With this code, we have the variable <code>grade</code> and are giving it the integer value of <code>70</code>. We are then using the <code>if</code> statement to evaluate whether or not the variable grade is greater than or equal ( <code>&gt;=</code> ) to <code>65</code>. If it does meet this condition, we are telling the program to print out the <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-working-with-strings-in-go">string</a> <code>Passing grade</code>.</p>
+
+<p>Save the program as <code>grade.go</code> and run it in a <a href="https://www.digitalocean.com/community/tutorial_series/how-to-install-and-set-up-a-local-programming-environment-for-go">local programming environment from a terminal window</a> with the command <code>go run grade.go</code>.</p>
+
+<p>In this case, the grade of 70 <em>does</em> meet the condition of being greater than or equal to 65, so you will receive the following output once you run the program:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Passing grade
+</code></pre>
+<p>Let’s now change the result of this program by changing the value of the <code>grade</code> variable to <code>60</code>:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := <span class="highlight">60</span>
+
+    if grade &gt;= 65 {
+        fmt.Println("Passing grade")
+    }
+}
+</code></pre>
+<p>When we save and run <em>this</em> code, we will receive no output because the condition was <em>not</em> met and we did not tell the program to execute another statement.</p>
+
+<p>To give one more example, let us calculate whether a bank account balance is below 0. Let’s create a file called <code>account.go</code> and write the following program:</p>
+<div class="code-label " title="account.go">account.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    balance := -5
+
+    if balance &lt; 0 {
+        fmt.Println("Balance is below 0, add funds now or you will be charged a penalty.")
+    }
+}
+</code></pre>
+<p>When we run the program with <code>go run account.go</code>, we’ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Balance is below 0, add funds now or you will be charged a penalty.
+</code></pre>
+<p>In the program we initialized the variable <code>balance</code> with the value of <code>-5</code>, which is less than 0. Since the balance met the condition of the <code>if</code> statement (<code>balance &lt; 0</code>), once we save and run the code, we will receive the string output. Again, if we change the balance to 0 or a positive number, we will receive no output.</p>
+
+<h2 id="else-statements">Else Statements</h2>
+
+<p>It is likely that we will want the program to do something even when an <code>if</code> statement evaluates to false. In our grade example, we will want output whether the grade is passing or failing.</p>
+
+<p>To do this, we will add an <code>else</code> statement to the grade condition above that is constructed like this:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := 60
+
+    if grade &gt;= 65 {
+        fmt.Println("Passing grade")
+    } else {
+        fmt.Println("Failing grade")
+    }
+}
+</code></pre>
+<p>Since the grade variable has the value of <code>60</code>, the <code>if</code> statement evaluates as false, so the program will not print out <code>Passing grade</code>. The <code>else</code> statement that follows tells the program to do something anyway.</p>
+
+<p>When we save and run the program, we’ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Failing grade
+</code></pre>
+<p>If we then rewrite the program to give the grade a value of <code>65</code> or higher, we will instead receive the output <code>Passing grade</code>.</p>
+
+<p>To add an <code>else</code> statement to the bank account example, we rewrite the code like this:</p>
+<div class="code-label " title="account.go">account.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    balance := 522
+
+    if balance &lt; 0 {
+        fmt.Println("Balance is below 0, add funds now or you will be charged a penalty.")
+    } else {
+        fmt.Println("Your balance is 0 or above.")
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Your balance is 0 or above.
+</code></pre>
+<p>Here, we changed the <code>balance</code> variable value to a positive number so that the <code>else</code> statement will print. To get the first <code>if</code> statement to print, we can rewrite the value to a negative number.</p>
+
+<p>By combining an <code>if</code> statement with an <code>else</code> statement, you are constructing a two-part conditional statement that will tell the computer to execute certain code whether or not the <code>if</code> condition is met.</p>
+
+<h2 id="else-if-statements">Else if Statements</h2>
+
+<p>So far, we have presented a <a href="https://www.digitalocean.com/community/tutorials/understanding-boolean-logic-in-go">Boolean</a> option for conditional statements, with each <code>if</code> statement evaluating to either true or false. In many cases, we will want a program that evaluates more than two possible outcomes. For this, we will use an <strong>else if</strong> statement, which is written in Go as <code>else if</code>. The <code>else if</code> or else if statement looks like the <code>if</code> statement and will evaluate another condition.</p>
+
+<p>In the bank account program, we may want to have three discrete outputs for three different situations:</p>
+
+<ul>
+<li>The balance is below 0</li>
+<li>The balance is equal to 0</li>
+<li>The balance is above 0</li>
+</ul>
+
+<p>The <code>else if</code> statement will be placed between the <code>if</code> statement and the <code>else</code> statement as follows:</p>
+<div class="code-label " title="account.go">account.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    balance := 522
+
+    if balance &lt; 0 {
+        fmt.Println("Balance is below 0, add funds now or you will be charged a penalty.")
+    } else if balance == 0 {
+        fmt.Println("Balance is equal to 0, add funds soon.")
+    } else {
+        fmt.Println("Your balance is 0 or above.")
+    }
+}
+</code></pre>
+<p>Now, there are three possible outputs that can occur once we run the program:</p>
+
+<ul>
+<li>If the variable <code>balance</code> is equal to <code>0</code> we will receive the output from the <code>else if</code> statement (<code>Balance is equal to 0, add funds soon.</code>)</li>
+<li>If the variable <code>balance</code> is set to a positive number, we will receive the output from the <code>else</code> statement (<code>Your balance is 0 or above.</code>).</li>
+<li>If the variable <code>balance</code> is set to a negative number, the output will be the string from the <code>if</code> statement (<code>Balance is below 0, add funds now or you will be charged a penalty</code>).</li>
+</ul>
+
+<p>What if we want to have more than three possibilities, though? We can do this by writing more than one <code>else if</code> statement into our code.</p>
+
+<p>In the <code>grade.go</code> program, let’s rewrite the code so that there are a few letter grades corresponding to ranges of numerical grades:</p>
+
+<ul>
+<li>90 or above is equivalent to an A grade</li>
+<li>80-89 is equivalent to a B grade</li>
+<li>70-79 is equivalent to a C grade</li>
+<li>65-69 is equivalent to a D grade</li>
+<li>64 or below is equivalent to an F grade</li>
+</ul>
+
+<p>To run this code, we will need one <code>if</code> statement, three <code>else if</code> statements, and an <code>else</code> statement that will handle all failing cases.</p>
+
+<p>Let’s rewrite the code from the preceding example to have strings that print out each of the letter grades. We can keep our <code>else</code> statement the same.</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := 60
+
+    if grade &gt;= 90 {
+        fmt.Println("A grade")
+    } else if grade &gt;= 80 {
+        fmt.Println("B grade")
+    } else if grade &gt;= 70 {
+        fmt.Println("C grade")
+    } else if grade &gt;= 65 {
+        fmt.Println("D grade")
+    } else {
+        fmt.Println("Failing grade")
+    }
+}
+</code></pre>
+<p>Since <code>else if</code> statements will evaluate in order, we can keep our statements pretty basic. This program is completing the following steps:</p>
+
+<ol>
+<li><p>If the grade is greater than 90, the program will print <code>A grade</code>, if the grade is less than 90, the program will continue to the next statement&hellip;</p></li>
+<li><p>If the grade is greater than or equal to 80, the program will print <code>B grade</code>, if the grade is 79 or less, the program will continue to the next statement&hellip;</p></li>
+<li><p>If the grade is greater than or equal to 70, the program will print <code>C grade</code>, if the grade is 69 or less, the program will continue to the next statement&hellip;</p></li>
+<li><p>If the grade is greater than or equal to 65, the program will print <code>D grade</code>, if the grade is 64 or less, the program will continue to the next statement&hellip;</p></li>
+<li><p>The program will print <code>Failing grade</code> because all of the above conditions were not met.</p></li>
+</ol>
+
+<h2 id="nested-if-statements">Nested If Statements</h2>
+
+<p>Once you are feeling comfortable with the <code>if</code>, <code>else if</code>, and <code>else</code> statements, you can move on to nested conditional statements. We can use nested <code>if</code> statements for situations where we want to check for a secondary condition if the first condition executes as true. For this, we can have an if-else statement inside of another if-else statement. Let’s look at the syntax of a nested <code>if</code> statement:</p>
+<pre class="code-pre "><code class="code-highlight language-go">if statement1 { // outer if statement
+    fmt.Println("true")
+
+    if nested_statement { // nested if statement
+        fmt.Println("yes")
+    } else { // nested else statement
+        fmt.Println("no")
+    }
+
+} else { // outer else statement
+    fmt.Println("false")
+}
+</code></pre>
+<p>A few possible outputs can result from this code:</p>
+
+<ul>
+<li>If <code>statement1</code> evaluates to true, the program will then evaluate whether the <code>nested_statement</code> also evaluates to true. If both cases are true, the output will be:</li>
+</ul>
+
+<blockquote>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+yes
+</code></pre></blockquote>
+
+<ul>
+<li>If, however, <code>statement1</code> evaluates to true, but <code>nested_statement</code> evaluates to false, then the output will be:</li>
+</ul>
+
+<blockquote>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+no
+</code></pre></blockquote>
+
+<ul>
+<li>And if <code>statement1</code> evaluates to false, the nested if-else statement will not run, so the <code>else</code> statement will run alone, and the output will be:</li>
+</ul>
+
+<blockquote>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>false
+</code></pre></blockquote>
+
+<p>We can also have multiple <code>if</code> statements nested throughout our code:</p>
+<pre class="code-pre "><code class="code-highlight language-go">if statement1 { // outer if
+    fmt.Println("hello world")
+
+    if nested_statement1 { // first nested if
+        fmt.Println("yes")
+
+    } else if nested_statement2 { // first nested else if
+        fmt.Println("maybe")
+
+    } else { // first nested else
+        fmt.Println("no")
+    }
+
+} else if statement2 { // outer else if
+    fmt.Println("hello galaxy")
+
+    if nested_statement3 { // second nested if
+        fmt.Println("yes")
+    } else if nested_statement4 { // second nested else if
+        fmt.Println("maybe")
+    } else { // second nested else
+        fmt.Println("no")
+    }
+
+} else { // outer else
+    statement("hello universe")
+}
+</code></pre>
+<p>In this code, there is a nested <code>if</code> statement inside each <code>if</code> statement in addition to the <code>else if</code> statement. This will allow for more options within each condition.</p>
+
+<p>Let’s look at an example of nested <code>if</code> statements with our <code>grade.go</code> program. We can check for whether a grade is passing first (greater than or equal to 65%), then evaluate which letter grade the numerical grade should be equivalent to. If the grade is not passing, though, we do not need to run through the letter grades, and instead can have the program report that the grade is failing. Our modified code with the nested <code>if</code> statement will look like this:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">
+package main
+
+import "fmt"
+
+func main() {
+    grade := 92
+    if grade &gt;= 65 {
+        fmt.Print("Passing grade of: ")
+
+        if grade &gt;= 90 {
+            fmt.Println("A")
+
+        } else if grade &gt;= 80 {
+            fmt.Println("B")
+
+        } else if grade &gt;= 70 {
+            fmt.Println("C")
+
+        } else if grade &gt;= 65 {
+            fmt.Println("D")
+        }
+
+    } else {
+        fmt.Println("Failing grade")
+    }
+}
+</code></pre>
+<p>If we run the code with the variable <code>grade</code> set to the integer value <code>92</code>, the first condition is met, and the program will print out <code>Passing grade of:</code>. Next, it will check to see if the grade is greater than or equal to 90, and since this condition is also met, it will print out <code>A</code>.</p>
+
+<p>If we run the code with the <code>grade</code> variable set to <code>60</code>, then the first condition is not met, so the program will skip the nested <code>if</code> statements and move down to the <code>else</code> statement, with the program printing out <code>Failing grade</code>.</p>
+
+<p>We can of course add even more options to this, and use a second layer of nested if statements. Perhaps we will want to evaluate for grades of A+, A and A- separately. We can do so by first checking if the grade is passing, then checking to see if the grade is 90 or above, then checking to see if the grade is over 96 for an A+:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">&hellip;
+if grade &gt;= 65 {
+    fmt.Print("Passing grade of: ")
+
+    if grade &gt;= 90 {
+        if grade &gt; 96 {
+            fmt.Println("A+")
+
+        } else if grade &gt; 93 &amp;&amp; grade &lt;= 96 {
+            fmt.Println("A")
+
+        } else {
+            fmt.Println("A-")
+        }
+&hellip;
+</code></pre>
+<p>In this code, for a <code>grade</code> variable set to <code>96</code>, the program will run the following:</p>
+
+<ol>
+<li>Check if the grade is greater than or equal to 65 (true)</li>
+<li>Print out <code>Passing grade of:</code></li>
+<li>Check if the grade is greater than or equal to 90 (true)</li>
+<li>Check if the grade is greater than 96 (false)</li>
+<li>Check if the grade is greater than 93 and also less than or equal to 96 (true)</li>
+<li>Print <code>A</code></li>
+<li>Leave these nested conditional statements and continue with remaining code</li>
+</ol>
+
+<p>The output of the program for a grade of 96 therefore looks like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Passing grade of: A
+</code></pre>
+<p>Nested <code>if</code> statements can provide the opportunity to add several specific levels of conditions to your code.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>By using conditional statements like the <code>if</code> statement, you will have greater control over what your program executes. Conditional statements tell the program to evaluate whether a certain condition is being met. If the condition is met it will execute specific code, but if it is not met the program will continue to move down to other code.</p>
+
+<p>To continue practicing conditional statements, try using different <a href="https://www.digitalocean.com/community/tutorials/how-to-do-math-in-go-with-operators">operators</a> to gain more familiarity with conditional statements.</p>

@@ -1,0 +1,358 @@
+---
+layout: post
+title: How To Install and Secure Grafana on Ubuntu 18.04
+network: digitalocean
+date: September 04, 2019 at 05:30PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-grafana-on-ubuntu-18-04
+image: https://assets.digitalocean.com/articles/66778/Grafana_Login.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected <a href="https://www.brightfunds.org/organizations/dev-color">Dev Color</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://grafana.com/grafana">Grafana</a> is an open-source data visualization and monitoring tool that integrates with complex data from sources like <a href="https://prometheus.io/">Prometheus</a>, <a href="https://www.influxdata.com/">InfluxDB</a>, <a href="https://graphiteapp.org/">Graphite</a>, and <a href="https://www.elastic.co/">ElasticSearch</a>. Grafana lets you create alerts, notifications, and ad-hoc filters for your data while also making collaboration with your teammates easier through built-in sharing features.</p>
+
+<p>In this tutorial, you will install Grafana and secure it with an <a href="https://www.digitalocean.com/community/tutorials/openssl-essentials-working-with-ssl-certificates-private-keys-and-csrs">SSL certificate</a> and an <a href="https://www.digitalocean.com/community/tutorials/understanding-nginx-http-proxying-load-balancing-buffering-and-caching">Nginx reverse proxy</a>. Once you have set up Grafana, you&rsquo;ll have the option to configure user authentication through GitHub, allowing you to better organize your team permissions.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To follow this tutorial, you will need:</p>
+
+<ul>
+<li>One Ubuntu 18.04 server set up by following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup Guide for Ubuntu 18.04</a>, including a non-root user with <code>sudo</code> privileges and a firewall configured with <code>ufw</code>.</li>
+<li>A fully registered domain name. This tutorial uses <code><span class="highlight">your_domain</span></code> throughout. You can purchase a domain name on <a href="https://namecheap.com/">Namecheap</a>, get one for free on <a href="http://www.freenom.com/en/index.html">Freenom</a>, or use the domain registrar of your choice.</li>
+<li><p>The following DNS records set up for your server. You can follow <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-host-name-with-digitalocean">How To Set Up a Host Name with DigitalOcean</a> for details on how to add them.</p>
+
+<ul>
+<li>An <strong>A</strong> record with <code><span class="highlight">your_domain</span></code> pointing to your server&rsquo;s public IP address.</li>
+<li>An <strong>A</strong> record with <code>www.<span class="highlight">your_domain</span></code> pointing to your server&rsquo;s public IP address.</li>
+</ul></li>
+<li><p>Nginx set up by following the <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">How To Install Nginx on Ubuntu 18.04</a> tutorial, including a <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04#step-5-%E2%80%93-setting-up-server-blocks-(recommended)">server block</a> for your domain.</p></li>
+<li><p>An Nginx server block with Let&rsquo;s Encrypt configured, which you can set up by following <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">How To Secure Nginx with Let&rsquo;s Encrypt on Ubuntu 18.04</a>.</p></li>
+<li><p>Optionally, to set up <a href="https://github.com">GitHub</a> authentication, you&rsquo;ll need a <a href="https://github.com/business">GitHub account associated with an organization</a>.</p></li>
+</ul>
+
+<h2 id="step-1-—-installing-grafana">Step 1 — Installing Grafana</h2>
+
+<p>In this first step, you will install Grafana onto your Ubuntu 18.04 server. You can install Grafana either by <a href="https://grafana.com/grafana/download">downloading it directly from its official website</a> or by going through an <a href="https://www.digitalocean.com/community/tutorials/ubuntu-and-debian-package-management-essentials#debian-package-management-tools-overview">APT repository</a>. Because an APT repository makes it easier to install and manage Grafana&rsquo;s updates, you&rsquo;ll use that method in this tutorial.</p>
+
+<p>Although Grafana is available in <a href="https://packages.ubuntu.com/bionic/">the official Ubuntu 18.04 packages repository</a>, the version of Grafana there may not be the latest, so use Grafana&rsquo;s official repository.</p>
+
+<p>Download the Grafana <a href="https://www.digitalocean.com/community/tutorials/how-to-use-gpg-to-encrypt-and-sign-messages">GPG key</a> with <a href="https://www.gnu.org/software/wget/"><code>wget</code></a>, then <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-linux-i-o-redirection#pipes">pipe the output</a> to <code>apt-key</code>. This will add the key to your APT installation&rsquo;s list of trusted keys, which will allow you to download and verify the GPG-signed Grafana package.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
+</li></ul></code></pre>
+<p>In this command, the option <code>-q</code> turns off the status update message for <code>wget</code>, and <code>-O</code> outputs the file that you downloaded to the terminal. These two options ensure that only the contents of the downloaded file are pipelined to <code>apt-key</code>.</p>
+
+<p>Next, add the Grafana repository to your APT sources:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository "deb https://packages.grafana.com/oss/deb stable main"
+</li></ul></code></pre>
+<p>Refresh your APT cache to update your package lists:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Next, make sure Grafana will be installed from the Grafana repository:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">apt-cache policy grafana
+</li></ul></code></pre>
+<p>The output of the previous command tells you the version of Grafana that you are about to install, and where you will retrieve the package from. Verify that the installation candidate at the top of the list will come from the official Grafana repository at <code>https://packages.grafana.com/oss/deb</code>.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output of apt-cache policy grafana">Output of apt-cache policy grafana</div>grafana:
+  Installed: (none)
+  Candidate: 6.3.3
+  Version table:
+     6.3.3 500
+        500 https://packages.grafana.com/oss/deb stable/main amd64 Packages
+&hellip;
+</code></pre>
+<p>You can now proceed with the installation:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install grafana
+</li></ul></code></pre>
+<p>Once Grafana is installed, use <code>systemctl</code> to start the Grafana server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start grafana-server
+</li></ul></code></pre>
+<p>Next, verify that Grafana is running by checking the service&rsquo;s status:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status grafana-server
+</li></ul></code></pre>
+<p>You will receive output similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output of grafana-server status">Output of grafana-server status</div>● grafana-server.service - Grafana instance
+   Loaded: loaded (/usr/lib/systemd/system/grafana-server.service; disabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Tue 2019-08-13 08:22:30 UTC; 11s ago
+     Docs: http://docs.grafana.org
+ Main PID: 13630 (grafana-server)
+    Tasks: 7 (limit: 1152)
+&hellip;
+</code></pre>
+<p>This output contains information about Grafana&rsquo;s process, including its status, Main Process Identifier (PID), and more. <code><span class="highlight">active (running)</span></code> shows that the process is running correctly.</p>
+
+<p>Lastly, enable the service to automatically start Grafana on boot:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable grafana-server
+</li></ul></code></pre>
+<p>You will receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output of systemctl enable grafana-server">Output of systemctl enable grafana-server</div>Synchronizing state of grafana-server.service with SysV service script with /lib/systemd/systemd-sysv-install.
+Executing: /lib/systemd/systemd-sysv-install enable grafana-server
+Created symlink /etc/systemd/system/multi-user.target.wants/grafana-server.service → /usr/lib/systemd/system/grafana-server.service.
+</code></pre>
+<p>This confirms that <code>systemd</code> has created the necessary symbolic links to autostart Grafana.</p>
+
+<p>Grafana is now installed and ready for use. Next, you wil secure your connection to Grafana with a reverse proxy and SSL certificate.</p>
+
+<h2 id="step-2-—-setting-up-the-reverse-proxy">Step 2 — Setting Up the Reverse Proxy</h2>
+
+<p>Using an SSL certificate will ensure that your data is secure by encrypting the connection to and from Grafana. But, to make use of this connection, you&rsquo;ll first need to reconfigure Nginx as a reverse proxy for Grafana.</p>
+
+<p>Open the Nginx configuration file you created when you set up the Nginx server block with Let&rsquo;s Encrypt in the <a href="#prerequisites">Prerequisites</a>. You can use any text editor, but for this tutorial we&rsquo;ll use <code>nano</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Locate the following block:</p>
+<div class="code-label " title="/etc/nginx/sites-available/your_domain">/etc/nginx/sites-available/your_domain</div><pre class="code-pre "><code class="code-highlight language-nginx">&hellip;
+    location / {
+        try_files $uri $uri/ =404;
+    }
+&hellip;
+</code></pre>
+<p>Because you already configured Nginx to communicate over SSL and because all web traffic to your server already passes through Nginx, you just need to tell Nginx to forward all requests to Grafana, which runs on port <code>3000</code> by default. </p>
+
+<p>Delete the existing <code>try_files</code> line in this <code>location block</code> and replace it with the following <code>proxy_pass</code> option.</p>
+<div class="code-label " title="/etc/nginx/sites-available/your_domain">/etc/nginx/sites-available/your_domain</div><pre class="code-pre "><code class="code-highlight language-nginx">&hellip;
+    location / {
+        proxy_pass http://localhost:3000;
+    }
+&hellip;
+</code></pre>
+<p>This will map the proxy to the appropriate port. Once you&rsquo;re done, save and close the file by pressing <code>CTRL+X</code>, followed by <code>Y</code> and then <code>ENTER</code> if you&rsquo;re using <code>nano</code>. </p>
+
+<p>Now, test the new settings to make sure everything is configured correctly:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>You will receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+</code></pre>
+<p>Finally, activate the changes by reloading Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload nginx
+</li></ul></code></pre>
+<p>You can now access the default Grafana login screen by pointing your web browser to <code>https://<span class="highlight">your_domain</span></code>. If you&rsquo;re unable to reach Grafana, verify that your firewall is set to allow traffic on port <code>443</code> and then re-trace the previous instructions.</p>
+
+<p>With the connection to Grafana encrypted, you can now implement additional security measures, starting with changing Grafana&rsquo;s default administrative credentials.</p>
+
+<h2 id="step-3-—-updating-credentials">Step 3 — Updating Credentials</h2>
+
+<p>Because every Grafana installation uses the same administrative credentials by default, it is best practice to change your login information as soon as possible. In this step, you&rsquo;ll update the credentials to improve security.</p>
+
+<p>Start by navigating to <code>https://<span class="highlight">your_domain</span></code> from your web browser. This will bring up the default login screen where you&rsquo;ll see the Grafana logo, a form asking you to enter an <strong>email or username</strong> and <strong>password</strong>, a <strong>Log in</strong> button, and a <strong>Forgot your password?</strong> link.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/66778/Grafana_Login.png" alt="Grafana Login"></p>
+
+<p>Enter <code>admin</code> into both the <strong>User</strong> and <strong>Password</strong> fields and then click on the <strong>Log in</strong> button. </p>
+
+<p>On the next screen, you&rsquo;ll be asked to make your account more secure by changing the default password:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/66778/Change_Password.png" alt="Change Password"></p>
+
+<p>Enter the password you&rsquo;d like to start using into the <strong>New password</strong> and <strong>Confirm new password</strong> fields.</p>
+
+<p>From here, you can click <strong>Save</strong> to save the new information or press <strong>Skip</strong> to skip this step. If you skip, you will be prompted to change the password next time you login.</p>
+
+<p>In order to increase the security of your Grafana setup, click <strong>Save</strong>. You&rsquo;ll return to the <strong>Home Dashboard</strong> page:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/66778/Home_Dashboard.png" alt="Home Dashboard"></p>
+
+<p>You&rsquo;ve now secured your account by changing the default credentials. Next, you will make changes to your Grafana configuration so that nobody can create a new Grafana account without your permission.</p>
+
+<h2 id="step-4-—-disabling-grafana-registrations-and-anonymous-access">Step 4 — Disabling Grafana Registrations and Anonymous Access</h2>
+
+<p>Grafana provides options that allow visitors to create user accounts for themselves and preview dashboards without registering. When Grafana isn&rsquo;t accessible via the internet or when it&rsquo;s working with publicly available data like service statuses, you may want to allow these features. However, when using Grafana online to work with sensitive data, anonymous access could be a security problem. To fix this problem, make some changes to your Grafana configuration.</p>
+
+<p>Start by opening Grafana&rsquo;s main configuration file for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/grafana/grafana.ini
+</li></ul></code></pre>
+<p>Locate the following <code>allow_sign_up</code> directive under the <code>[users]</code> heading:</p>
+<div class="code-label " title="/etc/grafana/grafana.ini">/etc/grafana/grafana.ini</div><pre class="code-pre "><code langs="">&hellip;
+[users]
+# disable user signup / registration
+;allow_sign_up = true
+&hellip;
+</code></pre>
+<p>Enabling this directive with <code>true</code> adds a <strong>Sign Up</strong> button to the login screen, allowing users to register themselves and access Grafana. </p>
+
+<p>Disabling this directive with <code>false</code> removes the <strong>Sign Up</strong> button and strengthens Grafana&rsquo;s security and privacy.</p>
+
+<p>Uncomment this directive by removing the <code>;</code> at the beginning of the line and then setting the option to <code>false</code>:</p>
+<div class="code-label " title="/etc/grafana/grafana.ini">/etc/grafana/grafana.ini</div><pre class="code-pre "><code langs="">&hellip;
+[users]
+# disable user signup / registration
+allow_sign_up = <span class="highlight">false</span>
+&hellip;
+</code></pre>
+<p>Next, locate the following <code>enabled</code> directive under the <code>[auth.anonymous]</code> heading:</p>
+<div class="code-label " title="/etc/grafana/grafana.ini">/etc/grafana/grafana.ini</div><pre class="code-pre "><code langs="">&hellip;
+[auth.anonymous]
+# enable anonymous access
+;enabled = false
+&hellip;
+</code></pre>
+<p>Setting <code>enabled</code> to <code>true</code> gives non-registered users access to your dashboards; setting this option to <code>false</code> limits dashboard access to registered users only. </p>
+
+<p>Uncomment this directive by removing the <code>;</code> at the beginning of the line and then setting the option to <code>false</code>.</p>
+<div class="code-label " title="/etc/grafana/grafana.ini">/etc/grafana/grafana.ini</div><pre class="code-pre "><code langs="">&hellip;
+[auth.anonymous]
+enabled = <span class="highlight">false</span>
+&hellip;
+</code></pre>
+<p>Save the file and exit your text editor.</p>
+
+<p>To activate the changes, restart Grafana:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart grafana-server
+</li></ul></code></pre>
+<p>Verify that everything is working by checking Grafana&rsquo;s service status:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status grafana-server
+</li></ul></code></pre>
+<p>Like before, the output will report that Grafana is <code>active (running)</code>.</p>
+
+<p>Now, point your web browser to <code>https://<span class="highlight">your_domain</span></code>. To return to the <strong>Sign Up</strong> screen, bring your cursor to your avatar in the lower left of the screen and click on the <strong>Sign out</strong> option that appears.</p>
+
+<p>Once you have signed out, verify that there is no <strong>Sign Up</strong> button and that you can&rsquo;t sign in without entering login credentials.</p>
+
+<p>At this point, Grafana is fully configured and ready for use. Next, you can simplify the login process for your organization by authenticating through GitHub.</p>
+
+<h2 id="optional-step-5-—-setting-up-a-github-oauth-app">(Optional) Step 5 — Setting Up a GitHub OAuth App</h2>
+
+<p>For an alternative approach to signing in, you can configure Grafana to authenticate through GitHub, which provides login access to all members of authorized GitHub organizations. This can be particularly useful when you want to allow multiple developers to collaborate and access metrics without having to create Grafana-specific credentials.</p>
+
+<p>Start by logging into a GitHub account associated with your organization and then navigate to your GitHub profile page at <a href="https://github.com/settings/profile"><code>https://github.com/settings/profile</code></a>.</p>
+
+<p>Click on your organization&rsquo;s name under <strong>Organization settings</strong> in the navigation menu on the left-hand side of the screen.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/66778/GitHub_Organization_Settings.png" alt="GitHub Organization settings"></p>
+
+<p>On the next screen, you&rsquo;ll see your <strong>Organization profile</strong> where you can change settings like your <strong>Organization display name</strong>, organization <strong>Email</strong>, and organization <strong>URL</strong>.</p>
+
+<p>Because Grafana uses <a href="https://oauth.net/">OAuth</a> — an open standard for granting remote third parties access to local resources — to authenticate users through GitHub, you&rsquo;ll need to create a new <a href="https://developer.github.com/apps/building-oauth-apps/creating-an-oauth-app/">OAuth application within GitHub</a>.</p>
+
+<p>Click the <strong>OAuth Apps</strong> link under <strong>Developer settings</strong> on the lower left-hand side of the screen.</p>
+
+<p>If you don&rsquo;t already have any OAuth applications associated with your organization on GitHub, you&rsquo;ll be told there are <strong>No Organization Owned Applications</strong>. Otherwise, you&rsquo;ll see a list of the OAuth applications already connected to your account.</p>
+
+<p>Click the <strong>Register an application</strong> button to continue.</p>
+
+<p>On the next screen, fill in the following details about your Grafana installation:</p>
+
+<ul>
+<li><strong>Application name</strong> - This helps you distinguish your different OAuth applications from one another.</li>
+<li><strong>Homepage URL</strong> - This tells GitHub where to find Grafana. Type <code>https://<span class="highlight">your_domain</span></code> into this field, replacing <code><span class="highlight">your_domain</span></code> with your domain.</li>
+<li><strong>Application Description</strong> - This provides a description of your OAuth application&rsquo;s purpose.</li>
+<li><strong>Application callback URL</strong> - This is the address where users will be sent once successfully authenticated. For Grafana, this field must be set to <code>https://<span class="highlight">your_domain</span>/login/github</code>.</li>
+</ul>
+
+<p>Keep in mind that Grafana users logging in through GitHub will see the values you entered in the first three preceding fields, so be sure to enter something meaningful and appropriate.</p>
+
+<p>When completed, the form will look something like:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/66778/GitHub_Register_OAuth_Application.png" alt="GitHub Register OAuth Application"></p>
+
+<p>Click the green, <strong>Register application</strong> button.</p>
+
+<p>You will now be redirected to a page containing the <strong>Client ID</strong> and <strong>Client Secret</strong> associated with your new OAuth application. Make note of both values, because you will need to add them to Grafana&rsquo;s main configuration file to complete the setup.</p>
+
+<p><span class='warning'><strong>Warning:</strong> Make sure to keep your <strong>Client ID</strong> and <strong>Client Secret</strong> in a secure and non-public location, because they could be used as the basis of an attack.<br></span></p>
+
+<p>With your GitHub OAuth application created, you&rsquo;re now ready to reconfigure Grafana to use GitHub for authentication.</p>
+
+<h2 id="optional-step-6-—-configuring-grafana-as-a-github-oauth-app">(Optional) Step 6 — Configuring Grafana as a GitHub OAuth App</h2>
+
+<p>To complete GitHub authentication for your Grafana setup, you will now make some changes to your Grafana configuration files.</p>
+
+<p>To begin, open the main Grafana configuration file.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/grafana/grafana.ini
+</li></ul></code></pre>
+<p>Locate the <code>[auth.github]</code> heading, and uncomment this section by removing the <code>;</code> at the beginning of every line except <code>;team_ids=</code>, which will not be changed in this tutorial.</p>
+
+<p>Next, configure Grafana to use GitHub with your OAuth application&rsquo;s <code>client_id</code> and <code>client_secret</code> values.</p>
+
+<ul>
+<li>Set <code>enabled</code> and <code>allow_sign_up</code> to <code>true</code>. This will enable GitHub Authentication and permit members of the allowed organization to create accounts themselves. Note that this setting is different than the <code>allow_sign_up</code> property under <code>[users]</code> that you changed in <a href="#step-4-%E2%80%94-disabling-grafana-registrations-and-anonymous-access">Step 4</a>.</li>
+<li>Set <code>client_id</code> and <code>client_secret</code> to the values you got while creating your GitHub OAuth application. </li>
+<li>Set <code>allowed_organizations</code> to the name of your organization to ensure that only members of your organization can sign up and log into Grafana. </li>
+</ul>
+
+<p>The complete configuration will look like:</p>
+<div class="code-label " title="/etc/grafana/grafana.ini">/etc/grafana/grafana.ini</div><pre class="code-pre "><code langs="">&hellip;
+[auth.github]
+enabled = <span class="highlight">true</span>
+allow_sign_up = <span class="highlight">true</span>
+client_id = <span class="highlight">your_client_id_from_github</span>
+client_secret = <span class="highlight">your_client_secret_from_github</span>
+scopes = user:email,read:org
+auth_url = https://github.com/login/oauth/authorize
+token_url = https://github.com/login/oauth/access_token
+api_url = https://api.github.com/user
+;team_ids =
+allowed_organizations = <span class="highlight">your_organization_name</span>
+&hellip;
+</code></pre>
+<p>You&rsquo;ve now told Grafana everything it needs to know about GitHub. To complete the setup, you&rsquo;ll need to enable redirects behind a reverse proxy. This is done by setting a <code>root_url</code> value under the <code>[server]</code> heading.</p>
+<div class="code-label " title="/etc/grafana/grafana.ini">/etc/grafana/grafana.ini</div><pre class="code-pre "><code langs="">&hellip;
+[server]
+root_url = https://<span class="highlight">your_domain</span>
+&hellip;
+</code></pre>
+<p>Save your configuration and close the file.</p>
+
+<p>Then, restart Grafana to activate the changes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart grafana-server
+</li></ul></code></pre>
+<p>Lastly, verify that the service is up and running.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status grafana-server
+</li></ul></code></pre>
+<p>The output will indicate that the service is <code>active (running)</code>.</p>
+
+<p>Now, test your new authentication system by navigating to <code>https://<span class="highlight">your_domain</span></code>. If you are already logged into Grafana, hover your mouse over the avatar log in the lower left-hand corner of the screen, and click on <strong>Sign out</strong> in the secondary menu that appears next to your name.</p>
+
+<p>On the login page, you&rsquo;ll see a new section under the original <strong>Log in</strong> button that includes a <strong>Sign in with GitHub</strong> button with the GitHub logo.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/66778/Grafana_Login_Page_With_GitHub.png" alt="Grafana Login page with GitHub"></p>
+
+<p>Click on the <strong>Sign in with GitHub</strong> button to be redirected to GitHub, where you&rsquo;ll sign into your GitHub account and confirm your intention to <strong>Authorize Grafana</strong>.</p>
+
+<p>Click the green, <strong>Authorize <span class="highlight">your_github_organization</span></strong> button. </p>
+
+<p><span class='note'><strong>Note:</strong> Make sure your GitHub account is a member of your approved organization and your Grafana email address matches your GitHub email address. If you try to authenticate with a GitHub account that isn&rsquo;t a member of your approved organization, you&rsquo;ll get a <strong>Login Failed</strong> message telling you, <strong>User not a member of one of the required organizations</strong>.<br></span></p>
+
+<p>You will now be logged in with your existing Grafana account. If a Grafana account doesn&rsquo;t already exist for the user you logged in as, Grafana will create a new user account with <strong>Viewer</strong> permissions, ensuring that new users can only use existing dashboards.</p>
+
+<p>To change the default permissions for new users, open the main Grafana configuration file for editing.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/grafana/grafana.ini
+</li></ul></code></pre>
+<p>Locate the <code>auto_assign_org_role</code> directive under the <code>[users]</code> heading, and uncomment the setting by removing the <code>;</code> at the beginning of the line.</p>
+
+<p>Set the directive to one of the following values:</p>
+
+<ul>
+<li><code>Viewer</code> — can only use existing dashboards</li>
+<li><code>Editor</code> — can change use, modify, and add dashboards</li>
+<li><code>Admin</code> — has permission to do everything</li>
+</ul>
+
+<p>This tutorial will set the auto-assign to <code>Viewer</code>:</p>
+<div class="code-label " title="/etc/grafana/grafana.ini">/etc/grafana/grafana.ini</div><pre class="code-pre "><code langs="">&hellip;
+[users]
+&hellip;
+auto_assign_org_role = <span class="highlight">Viewer</span>
+&hellip;
+</code></pre>
+<p>Once you&rsquo;ve saved your changes, close the file and restart Grafana:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart grafana-server
+</li></ul></code></pre>
+<p>Check the service&rsquo;s status:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status grafana-server
+</li></ul></code></pre>
+<p>Like before, the status will read <code>active (running)</code>.</p>
+
+<p>At this point, you have fully configured Grafana to allow members of your GitHub organization to register and use your Grafana installation.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial you installed, configured, and secured Grafana, and you also learned how to permit members of your organization to authenticate through GitHub.</p>
+
+<p>To extend your current Grafana installation, see the <a href="https://grafana.com/dashboards">list of official and community-built dashboards</a>. To learn more about using Grafana in general, see the <a href="http://docs.grafana.org/">official Grafana documentation</a>, or check out our <a href="https://www.digitalocean.com/community/tags/monitoring?type=tutorials">other monitoring tutorials</a>.</p>

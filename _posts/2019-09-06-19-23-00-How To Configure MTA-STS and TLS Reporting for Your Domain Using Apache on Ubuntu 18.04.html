@@ -1,0 +1,331 @@
+---
+layout: post
+title: How To Configure MTA-STS and TLS Reporting for Your Domain Using Apache on Ubuntu 18.04
+network: digitalocean
+date: September 06, 2019 at 07:23PM
+url: https://www.digitalocean.com/community/tutorials/how-to-configure-mta-sts-and-tls-reporting-for-your-domain-using-apache-on-ubuntu-18-04
+image: https://assets.digitalocean.com/articles/mta-sls/step2.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected <a href="https://www.brightfunds.org/organizations/electronic-frontier-foundation-inc">Electronic Frontier Foundation Inc</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://www.hardenize.com/blog/mta-sts">Mail Transport Agent Strict Transport Security (MTA-STS)</a>  is a new internet standard that allows you to enable strict force-TLS for email sent between supported email providers. It is similar to <a href="https://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security">HTTP Strict Transport Security (HSTS)</a>, where a force-TLS policy is set and then cached for a specified amount of time, reducing the risk of man-in-the-middle or downgrade attacks.</p>
+
+<p>MTA-STS is complemented by SMTP TLS Reporting (TLSRPT), which gives you insight into which emails are successfully delivered over TLS, and which aren&rsquo;t. TLSRPT is similar to <a href="https://dmarc.org/stats/dmarc-reporting/">DMARC reporting</a>, but for TLS.</p>
+
+<p>The primary reason for implementing MTA-STS for your domain is to ensure that confidential email that is sent to you is transmitted securely over TLS. Other methods for requiring TLS for email communications are still susceptible to man-in-the-middle attacks, as the initial connection is unencrypted. MTA-STS ensures that the initial incoming connection is using TLS by default, which greatly reduces the risk of these attacks.</p>
+
+<p>An example use case for MTA-STS and TLS Reporting is to help create a secure customer service email system for your business. Customers may send support tickets via email that contain confidential personal information, which needs a secure TLS connection. MTA-STS provides that secure connection, and TLSRPT will deliver daily reports identifying any emails that weren&rsquo;t sent securely—giving crucial insight into any ongoing or previous attacks against your email system.</p>
+
+<p>In this tutorial, you will learn how to configure MTA-STS and TLSRPT for your domain name, and then interpret your first TLS Report. While this tutorial covers the steps for using Apache on Ubuntu 18.04 with a Let&rsquo;s Encrypt certificate, the MTA-STS/TLSRPT configuration will also work on alternatives, such as Nginx on Debian.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide, you&rsquo;ll need:</p>
+
+<ul>
+<li><p>A domain name already configured for receiving email, using either your own mail server or a hosted mail service, such as <a href="https://gsuite.google.com">G Suite</a> or <a href="https://www.office.com/">Office 365</a>. This tutorial will use <code><span class="highlight">your-domain</span></code> throughout, however this should be substituted with your own domain name. You will be required to set up a subdomain as part of the tutorial, so ensure that you are able to access the DNS settings for your domain.</p></li>
+<li><p>One Ubuntu 18.04 server set up by following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup with Ubuntu 18.04</a>, including a sudo non-root user.</p></li>
+<li><p>An Apache web server set up and configured by following <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04">How to Install the Apache Web Server on Ubuntu 18.04</a>.</p></li>
+<li><p>A configured Certbot client in order to acquire a Let&rsquo;s Encrypt certificate, by following <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-ubuntu-18-04">How To Secure Apache with Let&rsquo;s Encrypt on Ubuntu 18.04</a>.</p></li>
+</ul>
+
+<p>Once you have these ready, log in to your server as your non-root user to begin.</p>
+
+<p><span class='note'><strong>Note:</strong> Once you have completed the implementation steps for MTA-STS and TLSRPT, you may have to wait up to 24 hours to receive your first TLS Report. This is because most email providers send reports once per day. You may resume the tutorial from Step 5 once you&rsquo;ve received your first report.<br></span></p>
+
+<h2 id="step-1-—-creating-an-mta-sts-policy-file">Step 1 — Creating an MTA-STS Policy File</h2>
+
+<p>MTA-STS is enabled and configured using a plain text configuration file that you host on your website. Supported mail servers will then automatically connect to your website to retrieve the file, which causes MTA-STS to be enabled. In this first step you&rsquo;ll understand the available options for this file and choose the most appropriate for your file.</p>
+
+<p>Firstly, open a new text file in your home directory so that you have somewhere to write down your desired configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano mta-sts.txt
+</li></ul></code></pre>
+<p>We will first go over an example, and then you will write your own configuration file.</p>
+
+<p>Following is an example of an MTA-STS configuration file:</p>
+<div class="code-label " title="Example MTA-STS Configuration File">Example MTA-STS Configuration File</div><pre class="code-pre mta-sts.txt"><code langs="">version: STSv1
+mode: enforce
+mx: mail1.your-domain
+mx: mail2.your-domain
+max_age: 604800
+</code></pre>
+<p>This example configuration file specifies that all email delivered to <code>mail1.<span class="highlight">your-domain</span></code> and <code>mail2.<span class="highlight">your-domain</span></code> from supported providers must be delivered over a valid TLS connection. If a valid TLS connection cannot be established with your mail server (for example, if the certificate has expired or is self-signed), the email will not be delivered.</p>
+
+<p>This will make it much more challenging for an attacker to intercept and snoop on/modify your email in a situation like a man-in-the-middle attack. This is because having MTA-STS enabled properly only allows email to be transmitted over a valid TLS connection, which requires a valid TLS certificate. It would be hard for an attacker to acquire such a certificate, as doing so usually requires privileged access to your domain name and/or website.</p>
+
+<p>As shown in the example earlier in this step, the configuration file consists of a number of key/value pairs:</p>
+
+<ul>
+<li><p><code>version</code>:</p>
+
+<ul>
+<li><strong>Purpose</strong>: To specify the version of the MTA-STS specification to use.</li>
+<li><strong>Accepted Values</strong>: Currently the only accepted value is <code>STSv1</code>.</li>
+<li><strong>Example</strong>: <code>version: STSv1</code></li>
+</ul></li>
+<li><p><code>mode</code>:</p>
+
+<ul>
+<li><strong>Purpose</strong>: Specify which mode MTA-STS should be enabled in.</li>
+<li><strong>Accepted Values</strong>:
+
+<ul>
+<li><code>enforce</code>: Force all incoming email from supported providers to use valid TLS.</li>
+<li><code>testing</code>: Report-only mode. email will not be blocked, but TLSRPT reports are still sent.</li>
+<li><code>none</code>: Disable MTA-STS.</li>
+</ul></li>
+<li><strong>Example</strong>: <code>mode: enforce</code></li>
+</ul></li>
+<li><p><code>mx</code>:</p>
+
+<ul>
+<li><strong>Purpose</strong>: To specify which mail servers are allowed to handle email for your domain. This should match the servers specified in your <code>mx</code> records.</li>
+<li><strong>Accepted Values</strong>: Fully-qualified domain name of a mail server, or a wildcard host. Multiple <code>mx:</code> values must be used to specify multiple mail servers.</li>
+<li><strong>Example</strong>: <code>mx: mail1.<span class="highlight">your-domain</span></code>, <code>mx: mail2.<span class="highlight">your-domain</span></code>, <code>mx: *.example.org</code></li>
+</ul></li>
+<li><p><code>max_age</code>:</p>
+
+<ul>
+<li><strong>Purpose</strong>: To specify the maximum lifetime of the MTA-STS policy, in seconds.</li>
+<li><strong>Accepted Values</strong>: Any positive integer up to 31557600.</li>
+<li><strong>Example</strong>: <code>max_age: 604800</code> (1 week)</li>
+</ul></li>
+</ul>
+
+<p>You can also view the official specification for the key/value pairs in <a href="https://tools.ietf.org/html/rfc8461#section-3.2">Section 3.2 of the MTA-STS RFC</a>.</p>
+
+<p><span class='warning'><strong>Warning:</strong> Enabling MTA-STS in <code>enforce</code> mode could unexpectedly cause some email not to be delivered to you. Instead, it is recommended to use <code>mode: testing</code> and a low <code>max_age:</code> value at first, in order to ensure that everything is working correctly before turning on MTA-STS fully.<br></span></p>
+
+<p>Using the example file earlier in the step, as well as the preceding key/value pair examples, write your desired MTA-STS policy file and save it to the file that you created at the start of the step.</p>
+
+<p>The following example file is ideal for testing MTA-STS, as it will not cause any emails to be unexpectedly blocked, and has a <code>max_age</code> of only 1 day, meaning that if you decide to disable it, the configuration will expire quickly. Note that some email providers will only send TLSRPT reports if the <code>max_age</code> is greater than 1 day, which is why 86401 seconds is a good choice (1 day and 1 second).</p>
+<div class="code-label " title="Example Test MTA-STS Configuration File">Example Test MTA-STS Configuration File</div><pre class="code-pre mta-sts.txt"><code langs="">version: STSv1
+mode: testing
+mx: mail1.<span class="highlight">your-domain</span>
+mx: mail2.<span class="highlight">your-domain</span>
+max_age: 86401
+</code></pre>
+<p>In this step you created your desired MTA-STS configuration file and saved it to your home area. In the next step, you will configure an Apache web server to serve the file in the correct format.</p>
+
+<h2 id="step-2-—-configuring-apache-to-serve-your-mta-sts-policy-file">Step 2 — Configuring Apache to Serve Your MTA-STS Policy File</h2>
+
+<p>In this step, you&rsquo;ll configure an Apache virtual host to serve your MTA-STS configuration file, and then add a DNS record to allow the site to be accessed from a subdomain.</p>
+
+<p>In order for your MTA-STS configuration file to be automatically discovered by mail servers, it must be served at exactly the right path: <code>https://mta-sts.<span class="highlight">your-domain</span>/.well-known/mta-sts.txt</code>. You must use the <code>mta-sts</code> subdomain over HTTPS and the <code>/.well-known/mta-sts.txt</code> path, otherwise your configuration will not work.</p>
+
+<p>This can be achieved by creating a new Apache virtual host for the <code>mta-sts</code> subdomain, which will serve the MTA-STS policy file. This step builds upon the base configuration that you&rsquo;ll have set up in the prerequisite step <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04">How to Install the Apache Web Server on Ubuntu 18.04</a>.</p>
+
+<p>Firstly, create a directory for your virtual host:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /var/www/mta-sts
+</li></ul></code></pre>
+<p>If you&rsquo;re hosting multiple different domains on your web server, it is recommended to use a different MTA-STS virtual host for each, for example <code>/var/www/mta-sts-site1</code> and <code>/var/www/mta-sts-site2</code>.</p>
+
+<p>Next, you need to create the <code>.well-known</code> directory, which is where your MTA-STS configuration file will be stored. <code>.well-known</code> is a standardized directory for &lsquo;well-known&rsquo; files, such as TLS certificate validation files, <code>security.txt</code>, and more.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /var/www/mta-sts/.well-known
+</li></ul></code></pre>
+<p>Now you can move the MTA-STS policy file that you created in Step 1 into the web server directory that you just created:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv ~/mta-sts.txt /var/www/mta-sts/.well-known/mta-sts.txt
+</li></ul></code></pre>
+<p>You can check that the file was copied correctly if you wish:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /var/www/mta-sts/.well-known/mta-sts.txt
+</li></ul></code></pre>
+<p>This will output the contents of the file that you created in Step 1.</p>
+
+<p>In order for Apache to serve the file, you&rsquo;ll need to configure the new virtual host and enable it. MTA-STS only works over HTTPS, so you&rsquo;ll use port <code>443</code> (HTTPS) exclusively, rather than using port <code>80</code> (HTTP) as well.</p>
+
+<p>Firstly, create a new virtual host configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/mta-sts.conf
+</li></ul></code></pre>
+<p>Like with the virtual host directory, if you are hosting multiple different domains on the same web server, it is recommended to use a different virtual host name for each.</p>
+
+<p>Then, copy the following sample configuration into the file, and populate the variables where required:</p>
+<div class="code-label " title="~/etc/apache2/sites-available/mta-sts.conf">~/etc/apache2/sites-available/mta-sts.conf</div><pre class="code-pre mta-sts.conf"><code langs="">&lt;IfModule mod_ssl.c&gt;
+&lt;VirtualHost <span class="highlight">your-server-ipv4-address</span>:443 [<span class="highlight">your-server-ipv6-address</span>]:443&gt;
+    ServerName mta-sts.<span class="highlight">your-domain</span>
+    DocumentRoot /var/www/<span class="highlight">mta-sts</span>
+
+    ErrorDocument 403 "403 Forbidden - This site is used to specify the MTA-STS policy for this domain, please see '/.well-known/mta-sts.txt'. If you were not expecting to see this, please use &lt;a href=\"https://<span class="highlight">your-domain</span>\" rel=\"noopener\"&gt;https://<span class="highlight">your-domain</span>&lt;/a&gt; instead."
+
+    RewriteEngine On
+    RewriteOptions IgnoreInherit
+    RewriteRule !^/.well-known/mta-sts.txt - [L,R=403]
+
+    SSLCertificateFile /etc/ssl/certs/ssl-cert-snakeoil.pem
+    SSLCertificateKeyFile /etc/ssl/private/ssl-cert-snakeoil.key
+    Include /etc/letsencrypt/options-ssl-apache.conf
+&lt;/VirtualHost&gt;
+&lt;/IfModule&gt;
+</code></pre>
+<p>This configuration will create the <code>mta-sts</code> virtual host, which will be served at <code>mta-sts.<span class="highlight">your-domain</span></code>. It will also redirect all requests, except for those to the <code>mta-sts.txt</code> file itself, to a custom <code>403 Forbidden</code> error page, with a friendly explanation of what the subdomain site is for. This is to help ensure that any visitors who accidentally come across your MTA-STS site aren&rsquo;t inadvertently confused.</p>
+
+<p>Currently, a self-signed TLS certificate is used. This is not ideal, as a fully valid/trusted certificate is required for MTA-STS to work correctly. In Step 3, you will acquire a TLS certificate using Let&rsquo;s Encrypt.</p>
+
+<p>Next, ensure that the required Apache modules are enabled:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod rewrite ssl
+</li></ul></code></pre>
+<p>After that, enable the new virtual host:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2ensite <span class="highlight">mta-sts</span>
+</li></ul></code></pre>
+<p>Then, run a syntax check of the Apache configuration files, to ensure that there aren&rsquo;t any unexpected errors:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl configtest
+</li></ul></code></pre>
+<p>When the test passes with no errors, you can restart Apache to fully enable the new virtual host:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service apache2 restart
+</li></ul></code></pre>
+<p>Now that the Apache virtual host has been set up and configured, you need to create the required DNS record(s) to allow it to be accessed using the fully-qualified domain name <code>mta-sts.<span class="highlight">your-domain</span></code>.</p>
+
+<p>The way that this is done depends on the DNS hosting provider that you use. However, if you use DigitalOcean as your DNS provider, simply navigate to your project, followed by clicking on your domain.</p>
+
+<p>Finally, add the required DNS records for the <code>mta-sts</code> subdomain. If your Droplet only uses IPv4, create an <code>A</code> record for <code>mta-sts</code>, pointing to <span class="highlight">your-server-ipv4-address</span>. If you use IPv6 as well, create an <code>AAAA</code> record pointing to <span class="highlight">your-server-ipv6-address</span>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/mta-sls/step2.png" alt="A screenshot of the DigitalOcean DNS control panel, showing an example DNS record for mta-sts pointing to an IPv4 address."></p>
+
+<p>In this step, you created and configured a new Apache virtual host for your MTA-STS subdomain, then added the required DNS record(s) to allow it to be accessed easily. In the next step, you will acquire a trusted Let&rsquo;s Encrypt certificate for your MTA-STS subdomain.</p>
+
+<h2 id="step-3-—-acquiring-a-let-39-s-encrypt-certificate-for-your-mta-sts-subdomain">Step 3 — Acquiring a Let&rsquo;s Encrypt Certificate for Your MTA-STS Subdomain</h2>
+
+<p>In this step, you&rsquo;ll acquire a TLS certificate from Let&rsquo;s Encrypt, to allow your <code>mta-sts.<span class="highlight">your-domain</span></code> site to be served correctly over HTTPS.</p>
+
+<p>In order to do this, you&rsquo;ll use <code>certbot</code>, which you set up as part of the prerequisite step <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-ubuntu-18-04">How To Secure Apache with Let&rsquo;s Encrypt on Ubuntu 18.04</a>.</p>
+
+<p>Firstly, run <code>certbot</code> to issue a certificate for your <code>mta-sts</code> subdomain using the Apache plugin verification method:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --apache -d mta-sts.<span class="highlight">your-domain</span>
+</li></ul></code></pre>
+<p>This will automatically issue a trusted certificate and install it on your Apache web server. When the Certbot wizard asks about configuring a HTTP -&gt; HTTPS redirect, select 'No&rsquo;, as this is not required for MTA-STS.</p>
+
+<p>To finish, test your new virtual host to ensure that it is working correctly. Use a web browser to visit <code>https://mta-sts.<span class="highlight">your-domain</span>/.well-known/mta-sts.txt</code>, or use a command-line tool such as <code>curl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl https://mta-sts.<span class="highlight">your-domain</span>/.well-known/mta-sts.txt
+</li></ul></code></pre>
+<p>This will output the MTA-STS policy file that you created in Step 1:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>version: STSv1
+mode: testing
+mx: mail1.<span class="highlight">your-domain</span>
+mx: mail2.<span class="highlight">your-domain</span>
+max_age: 86401
+</code></pre>
+<p>If an error occurs, ensure that the virtual host configuration from Step 2 is correct, and that you have added a DNS record for the <code>mta-sts</code> subdomain.</p>
+
+<p>In this step, you issued a Let&rsquo;s Encrypt TLS certificate for your <code>mta-sts</code> subdomain, and tested that it&rsquo;s working. Next, you&rsquo;ll set some DNS TXT records to fully enable MTA-STS and TLSRPT.</p>
+
+<h2 id="step-4-—-configuring-the-dns-records-required-to-enable-mta-sts-and-tlsrpt">Step 4 — Configuring the DNS Records Required to Enable MTA-STS and TLSRPT</h2>
+
+<p>In this step, you&rsquo;ll configure two DNS TXT records, which will fully enable the MTA-STS policy that you have already created, and also enable TLS Reporting (TLSRPT).</p>
+
+<p>These DNS records can be configured using any DNS hosting provider, but in this example, DigitalOcean is used as the provider.</p>
+
+<p>Firstly, log on to your DigitalOcean control panel and navigate to your project, followed by clicking on your domain.</p>
+
+<p>You then need to add the following two TXT records:</p>
+<pre class="code-pre dns-records"><code langs="">_mta-sts.<span class="highlight">your-domain</span> IN TXT "v=STSv1; id=<span class="highlight">id-value</span>"
+_smtp._tls.<span class="highlight">your-domain</span> IN TXT "v=TLSRPTv1; rua=<span class="highlight">reporting-address</span>"
+</code></pre>
+<p><code><span class="highlight">id-value</span></code> is a string used to identify the version of your MTA-STS policy in place. If you update your policy, you&rsquo;ll need to also update the <code>id</code> value to ensure that the new version is detected by mail providers. It is recommended to use the current date stamp as the <code>id</code>, for example <code>20190811231231</code> (23:12:31 on 11th Aug 2019).</p>
+
+<p><code><span class="highlight">reporting-address</span></code> is the address where your TLS reports will be sent to. This can be either an email address prefixed with <code>mailto:</code>, or a web URI, for example for an API that collects reports. The reporting address doesn&rsquo;t have to be an address on <code><span class="highlight">your-domain</span></code>. You may use a completely different domain if you wish.</p>
+
+<p>For example, the following two sample records are both valid:</p>
+<pre class="code-pre dns-records"><code langs="">_mta-sts.<span class="highlight">your-domain</span> IN TXT "v=STSv1; id=<span class="highlight">20190811231231</span>"
+_smtp._tls.<span class="highlight">your-domain</span> IN TXT "v=TLSRPTv1; rua=<span class="highlight">mailto:tls-reports@your-domain</span>"
+</code></pre>
+<p>Adjust the variables as required, and set these DNS TXT records in your DigitalOcean control panel (or whichever DNS provider you&rsquo;re using):</p>
+
+<p><img src="https://assets.digitalocean.com/articles/mta-sls/step4.png" alt="A screenshot of the DigitalOcean control panel, showing the _mta-sts DNS TXT record being set."></p>
+
+<p><img src="https://assets.digitalocean.com/articles/mta-sls/step4a.png" alt="A screenshot of the DigitalOcean control panel, showing the _smtp._tls DNS TXT record being set."></p>
+
+<p>Once these DNS records have been set and have propagated, MTA-STS will be enabled with the policy that you created in Step 1, and will begin to receive TLSRPT reports at the address that you specified.</p>
+
+<p>In this step, you configured the DNS records required for MTA-STS to be enabled. Next, you will receive and then interpret your first TLSRPT report.</p>
+
+<h2 id="step-5-—-interpreting-your-first-tlsrpt-report">Step 5 — Interpreting Your First TLSRPT Report</h2>
+
+<p>Now that you&rsquo;ve enabled MTA-STS and TLSRPT (TLS Reporting) for your domain, you will begin to receive reports from supported email providers. These reports will show the number of emails that were or were not successfully delivered over TLS, and the reasons for any errors.</p>
+
+<p>Different email providers send their reports at different times; for example, Google Mail sends their reports daily at around 10:00 UTC.</p>
+
+<p>Depending on how you configured the TLSRPT DNS record in Step 5, you will either receive your reports via email, or via a web API. This tutorial focuses on the email method, as that is the most common configuration.</p>
+
+<p>If you&rsquo;ve just completed the rest of this tutorial, wait until you receive your first report, then you can resume.</p>
+
+<p>Your daily TLSRPT report via email will usually have a subject line similar to the following:</p>
+<pre class="code-pre "><code langs="">Report Domain: <span class="highlight">your-domain</span> Submitter: google.com Report-ID: &lt;2019.08.10T00.00.00Z+<span class="highlight">your-domain</span>@google.com&gt;
+</code></pre>
+<p>This email will have an attachment in <code>.gz</code> format, which is a Gzip compressed archive, with a file name similar to the following:</p>
+<pre class="code-pre "><code langs="">google.com!<span class="highlight">your-domain</span>!1565222400!1565308799!001.json.gz
+</code></pre>
+<p>For the rest of this tutorial this file will be referred to as <code>report.json.gz</code>.</p>
+
+<p>Save this file to your local machine, and extract it using whichever tool you prefer.</p>
+
+<p>If you&rsquo;re using a Debian-based Linux system, you will be able to run the <code>gzip -d</code> command to decompress the archive:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">gzip -d report.json.gz
+</li></ul></code></pre>
+<p>This will result in a JSON file called <code>report.json</code>.</p>
+
+<p>Next, you can view the report either directly as the raw JSON string, or use your favorite JSON prettifier to put it into a more readable format. In this example, <code>jq</code> will be used, but you could also use Python&rsquo;s <code>json.tool</code> if you wish.</p>
+
+<p><span class='note'><strong>Note:</strong> If you don&rsquo;t have jq installed, you can install it using <code>apt install jq</code>. Or, for other operating systems use the necessary <a href="https://stedolan.github.io/jq/download/">installation instructions</a> from jq.<br></span></p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">jq . report.json
+</li></ul></code></pre>
+<p>This will output something similar to the following:</p>
+<pre class="code-pre report.json"><code langs=""><div class="secondary-code-label " title="Prettified report.json">Prettified report.json</div>{
+    "organization-name": "Google Inc.",
+    "date-range": {
+        "start-datetime": "2019-08-10T00:00:00Z",
+        "end-datetime": "2019-08-10T23:59:59Z"
+    },
+    "contact-info": "smtp-tls-reporting@google.com",
+    "report-id": "2019-08-10T00:00:00Z_<span class="highlight">your-domain</span>",
+    "policies": [
+        {
+            "policy": {
+                "policy-type": "sts",
+                "policy-string": [
+                    "version: STSv1",
+                    "mode: testing",
+                    "mx: <span class="highlight">mail1.your-domain</span>",
+                    "mx: <span class="highlight">mail2.your-domain</span>",
+                    "max_age: 86401"
+                ],
+                "policy-domain": "<span class="highlight">your-domain</span>"
+            },
+            "summary": {
+                "total-successful-session-count": 230,
+                "total-failure-session-count": 0
+            }
+        }
+    ]
+}
+</code></pre>
+<p>The report shows the provider that generated the report and the reporting period, as well as the MTA-STS policy that was applied. However, the main section that you&rsquo;ll be interested in is <code>summary</code>, specifically the successful and failed session counts.</p>
+
+<p>This sample report shows that 230 emails were successfully delivered over TLS from the mail provider that generated the report, and 0 email deliveries failed to establish a proper TLS connection.</p>
+
+<p>In the event that there is a failure—for example, if a TLS certificate expires or there is an attacker on the network—the failure mode will be documented in the report. Some examples of failure modes are:</p>
+
+<ul>
+<li><code>starttls-not-supported</code>: If the receiving mail server doesn&rsquo;t support STARTTLS.</li>
+<li><code>certificate-expired</code>: If a certificate has expired.</li>
+<li><code>certificate-not-trusted</code>: If a self-signed or other non-trusted certificate is used.</li>
+</ul>
+
+<p>In this final step, you received and then interpreted your first TLSRPT report.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this article you set up and configured MTA-STS and TLS Reporting for your domain, and interpreted your first TLSRPT report.</p>
+
+<p>Once MTA-STS has been enabled and working stably for a while, it is recommended to adjust the policy, increasing the <code>max_age</code> value, and eventually switching it to <code>enforce</code> mode once you are sure that all email from supported providers is being delivered successfully over TLS.</p>
+
+<p>Finally, if you&rsquo;d like to learn more about the MTA-STS and TLSRPT specifications, you can review the RFCs for both of them:</p>
+
+<ul>
+<li><p><a href="https://tools.ietf.org/html/rfc8461">RFC8461 - SMTP MTA Strict Transport Security (MTA-STS)</a></p></li>
+<li><p><a href="https://tools.ietf.org/html/rfc8460">RFC8460 - SMTP TLS Reporting</a></p></li>
+</ul>

@@ -1,0 +1,129 @@
+---
+layout: post
+title: How to Add and Delete Users on Ubuntu 18.04
+network: digitalocean
+date: September 10, 2019 at 06:37PM
+url: https://www.digitalocean.com/community/tutorials/how-to-add-and-delete-users-on-ubuntu-18-04
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>Adding and removing users on a Linux system is one of the most important system administration tasks to familiarize yourself with.  When you create a new system, you are often only given access to the <strong>root</strong> account by default.</p>
+
+<p>While running as the <strong>root</strong> user gives you complete control over a system and its users, it is also dangerous and can be destructive. For common system administration tasks, it is a better idea to add an unprivileged user and carry out those tasks without root privileges. You can also create additional unprivileged accounts for any other users you may have on your system. Each user on a system should have their own separate account.</p>
+
+<p>For tasks that require administrator privileges, there is a tool installed on Ubuntu systems called <code>sudo</code>. Briefly, <code>sudo</code> allows you to run a command as another user, including users with administrative privileges. In this guide we will cover how to create user accounts, assign <code>sudo</code> privileges, and delete users.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To follow along with this guide, you will need:</p>
+
+<ul>
+<li>Access to a server running Ubuntu 18.04. Ensure that you have <strong>root</strong> access to the server. To set this up, follow our <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup Guide for Ubuntu 18.04</a>. </li>
+</ul>
+
+<h2 id="adding-a-user">Adding a User</h2>
+
+<p>If you are signed in as the <strong>root</strong> user, you can create a new user at any time by typing:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">adduser <span class="highlight">newuser</span>
+</li></ul></code></pre>
+<p>If you are signed in as a non-root user who has been given <code>sudo</code> privileges, you can add a new user by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo adduser <span class="highlight">newuser</span>
+</li></ul></code></pre>
+<p>Either way, you will be asked a series of questions. The procedure will be:</p>
+
+<ul>
+<li>Assign and confirm a password for the new user</li>
+<li>Enter any additional information about the new user. This is entirely optional and can be skipped by hitting <code>ENTER</code> if you don&rsquo;t wish to utilize these fields.</li>
+<li>Finally, you&rsquo;ll be asked to confirm that the information you provided was correct.  Enter <code>Y</code> to continue.</li>
+</ul>
+
+<p>Your new user is now ready for use. You can now log in using the password that you entered.</p>
+
+<p>If you need your new user to have access to administrative functionality, continue on to the next section.</p>
+
+<h2 id="granting-a-user-sudo-privileges">Granting a User Sudo Privileges</h2>
+
+<p>If your new user should have the ability to execute commands with root (administrative) privileges, you will need to give the new user access to <code>sudo</code>.  Let&rsquo;s examine two approaches to this problem:  adding the user to a pre-defined <strong>sudo</strong> <a href="https://en.wikipedia.org/wiki/Group_identifier"><em>user group</em></a>, and specifying privileges on a per-user basis in <code>sudo</code>&rsquo;s configuration.</p>
+
+<h3 id="adding-the-new-user-to-the-sudo-group">Adding the New User to the Sudo Group</h3>
+
+<p>By default, <code>sudo</code> on Ubuntu 18.04 systems is configured to extend full privileges to any user in the <strong>sudo</strong> group.</p>
+
+<p>You can see what groups your new user is in with the <code>groups</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">groups <span class="highlight">newuser</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">newuser</span> : <span class="highlight">newuser</span>
+</code></pre>
+<p>By default, a new user is only in their own group which <code>adduser</code> creates along with the user profile. A user and its own group share the same name.  In order to add the user to a new group, we can use the <code>usermod</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">usermod -aG sudo <span class="highlight">newuser</span>
+</li></ul></code></pre>
+<p>The <code>-aG</code> option here tells <code>usermod</code> to add the user to the listed groups.</p>
+
+<h3 id="specifying-explicit-user-privileges-in-etc-sudoers">Specifying Explicit User Privileges in /etc/sudoers</h3>
+
+<p>As an alternative to putting your user in the <strong>sudo</strong> group, you can use the <code>visudo</code> command, which opens a configuration file called <code>/etc/sudoers</code> in the system&rsquo;s default editor, and explicitly specify privileges on a per-user basis.</p>
+
+<p>Using <code>visudo</code> is the only recommended way to make changes to <code>/etc/sudoers</code>, because it locks the file against multiple simultaneous edits and performs a sanity check on its contents before overwriting the file.  This helps to prevent a situation where you misconfigure <code>sudo</code> and are prevented from fixing the problem because you have lost <code>sudo</code> privileges.</p>
+
+<p>If you are currently signed in as <strong>root</strong>, type:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">visudo
+</li></ul></code></pre>
+<p>If you are signed in as a non-root user with <code>sudo</code> privileges, type:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo visudo
+</li></ul></code></pre>
+<p>Traditionally, <code>visudo</code> opened <code>/etc/sudoers</code> in the <code>vi</code> editor, which can be confusing for inexperienced users.  By default on new Ubuntu installations, <code>visudo</code> will instead use <code>nano</code>, which provides a more convenient and accessible text editing experience.  Use the arrow keys to move the cursor, and search for the line that looks like this:</p>
+<div class="code-label " title="/etc/sudoers">/etc/sudoers</div><pre class="code-pre "><code langs="">root    ALL=(ALL:ALL) ALL
+</code></pre>
+<p>Below this line, add the following highlighted line. Be sure to change <code><span class="highlight">newuser</span></code> to the name of the user profile that you would like to grant <code>sudo</code> privileges:</p>
+<div class="code-label " title="/etc/sudoers">/etc/sudoers</div><pre class="code-pre "><code langs="">root    ALL=(ALL:ALL) ALL
+<span class="highlight">newuser ALL=(ALL:ALL) ALL</span>
+</code></pre>
+<p>Add a new line like this for each user that should be given full <code>sudo</code> privileges.  When you are finished, you can save and close the file by hitting <code>CTRL+X</code>, followed by <code>Y</code>, and then <code>ENTER</code> to confirm.</p>
+
+<h2 id="testing-your-user-39-s-sudo-privileges">Testing Your User&rsquo;s Sudo Privileges</h2>
+
+<p>Now, your new user is able to execute commands with administrative privileges.</p>
+
+<p>When signed in as the new user, you can execute commands as your regular user by typing commands as normal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">some_command
+</li></ul></code></pre>
+<p>You can execute the same command with administrative privileges by typing <code>sudo</code> ahead of the command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo some_command
+</li></ul></code></pre>
+<p>You will be prompted to enter the password of the regular user account you are signed in as.</p>
+
+<h2 id="deleting-a-user">Deleting a User</h2>
+
+<p>In the event that you no longer need a user, it is best to delete the old account.</p>
+
+<p>You can delete the user itself, without deleting any of their files, by typing the following command as <strong>root</strong>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">deluser <span class="highlight">newuser</span>
+</li></ul></code></pre>
+<p>If you are signed in as another non-root user with <code>sudo</code> privileges, you could instead type:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo deluser <span class="highlight">newuser</span>
+</li></ul></code></pre>
+<p>If, instead, you want to delete the user&rsquo;s home directory when the user is deleted, you can issue the following command as <strong>root</strong>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">deluser --remove-home <span class="highlight">newuser</span>
+</li></ul></code></pre>
+<p>If you&rsquo;re running this as a non-root user with <code>sudo</code> privileges, you would instead type:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo deluser --remove-home <span class="highlight">newuser</span>
+</li></ul></code></pre>
+<p>If you had previously configured <code>sudo</code> privileges for the user you deleted, you may want to remove the relevant line again by typing:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">visudo
+</li></ul></code></pre>
+<p>Or use this if you are a non-root user with <code>sudo</code> privileges:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo visudo
+</li></ul></code></pre><pre class="code-pre "><code langs="">root    ALL=(ALL:ALL) ALL
+<span class="highlight">newuser</span> ALL=(ALL:ALL) ALL   # DELETE THIS LINE
+</code></pre>
+<p>This will prevent a new user created with the same name from being accidentally given <code>sudo</code> privileges.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>You should now have a fairly good handle on how to add and remove users from your Ubuntu 18.04 system.  Effective user management will allow you to separate users and give them only the access that they are required to do their job.</p>
+
+<p>For more information about how to configure <code>sudo</code>, check out our guide on <a href="https://www.digitalocean.com/community/articles/how-to-edit-the-sudoers-file-on-ubuntu-and-centos">how to edit the sudoers file</a> here.</p>

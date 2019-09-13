@@ -1,0 +1,427 @@
+---
+layout: post
+title: How To Construct For Loops in Go
+network: digitalocean
+date: September 11, 2019 at 04:54PM
+url: https://www.digitalocean.com/community/tutorials/how-to-construct-for-loops-in-go
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>In computer programming, a <em>loop</em> is a code structure that loops around to repeatedly execute a piece of code, often until some condition is met. Using loops in computer programming allows you to automate and repeat similar tasks multiple times. Imagine if you had a list of files that you needed to process, or if you wanted to count the number of lines in an article. You would use a loop in your code to solve these types of problems.</p>
+
+<p>In Go, a <code>for</code> loop implements the repeated execution of code based on a loop counter or loop variable. Unlike other programming languages that have multiple looping constructs such as <code>while</code>, <code>do</code>, etc., Go only has the <code>for</code> loop. This serves to make your code clearer and more readable, since you do not have to worry with multiple strategies to achieve the same looping construct. This enhanced readability and decreased cognitive load during development will also make your code less prone to error than in other languages.</p>
+
+<p>In this tutorial, you will learn how Go’s <code>for</code> loop works, including the three major variations of its use. We&rsquo;ll start by showing how to create different types of <code>for</code> loops, followed by how to loop through <a href="https://www.digitalocean.com/community/tutorials/understanding-arrays-and-slices-in-go">sequential data types in Go</a>. We&rsquo;ll end by explaining how to use nested loops.</p>
+
+<h2 id="declaring-forclause-and-condition-loops">Declaring ForClause and Condition Loops</h2>
+
+<p>In order to account for a variety of use cases, there are three distinct ways to create <code>for</code> loops in Go, each with their own capabilities. These are to create a <code>for</code> loop with a <strong>Condition</strong>, a <strong>ForClause</strong>, or a <strong>RangeClause</strong>. In this section, we will explain how to declare and use the ForClause and Condition variants.</p>
+
+<p>Let&rsquo;s look at how we can use a <code>for</code> loop with the ForClause first.</p>
+
+<p>A <em>ForClause loop</em> is defined as having an <em>initial statement</em>, followed by a <em>condition</em>, and then a <em>post statement</em>. These are arranged in the following syntax:</p>
+<pre class="code-pre "><code langs="">for [ <span class="highlight">Initial Statement</span> ] ; [ <span class="highlight">Condition</span> ] ; [ <span class="highlight">Post Statement</span> ] {
+    [<span class="highlight">Action</span>]
+}
+</code></pre>
+<p>To explain what the preceding components do, let’s look at a <code>for</code> loop that increments through a specified range of values using the ForClause syntax:</p>
+<pre class="code-pre "><code class="code-highlight language-go">for i := 0; i &lt; 5; i++ {
+    fmt.Println(i)
+}
+</code></pre>
+<p>Let&rsquo;s break this loop down and identify each part.</p>
+
+<p>The first part of the loop is <code>i := 0</code>.  This is the initial statement:</p>
+<pre class="code-pre "><code langs="">for <span class="highlight">i := 0</span>; i &lt; 5; i++ {
+    fmt.Println(i)
+}
+</code></pre>
+<p>It states that we are declaring a variable called <code>i</code>, and setting the initial value to <code>0</code>.</p>
+
+<p>Next is the condition:</p>
+<pre class="code-pre "><code langs="">for i := 0; <span class="highlight">i &lt; 5</span>; i++ {
+    fmt.Println(i)
+}
+</code></pre>
+<p>In this condition, we stated that while <code>i</code> is less than the value of <code>5</code>, the loop should continue looping.</p>
+
+<p>Finally, we have the post statement:</p>
+<pre class="code-pre "><code langs="">for i := 0; i &lt; 5; <span class="highlight">i++</span> {
+    fmt.Println(i)
+}
+</code></pre>
+<p>In the post statement, we increment the loop variable <code>i</code> up by one each time an iteration occurs using the <code>i++</code> <a href="https://golang.org/ref/spec#IncDec_statements">increment</a> operator.</p>
+
+<p>When we run this program, the output looks like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>0
+1
+2
+3
+4
+</code></pre>
+<p>The loop ran 5 times. Initially, it set <code>i</code> to <code>0</code>, and then checked to see if <code>i</code> was less than <code>5</code>. Since the value of <code>i</code> was less than <code>5</code>, the loop executed and the action of <code>fmt.Println(i)</code> was executed. After the loop finished, the post statement of <code>i++</code> was called, and the value of <code>i</code> was incremented by 1.</p>
+
+<p><span class='note'><strong>Note:</strong> Keep in mind that in programming we tend to begin at index 0, so that is why although 5 numbers are printed out, they range from 0-4. <br></span></p>
+
+<p>We aren&rsquo;t limited to starting at 0 or ending at a specified value. We can assign any value to our initial statement, and also stop at any value in our post statement. This allows us to create any desired range to loop through:</p>
+<pre class="code-pre "><code class="code-highlight language-go">for i := 20; i &lt; 25; i++ {
+    fmt.Println(i)
+}
+</code></pre>
+<p>Here, the iteration goes from 20 (inclusive) to 25 (exclusive), so the output looks like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>20
+21
+22
+23
+24
+</code></pre>
+<p>We can also use our post statement to increment at different values. This is similar to <code>step</code> in other languages:</p>
+
+<p>First, let’s use a post statement with a positive value:</p>
+<pre class="code-pre "><code langs="">for i := 0; i &lt; 15; <span class="highlight">i += 3</span> {
+    fmt.Println(i)
+}
+</code></pre>
+<p>In this case, the <code>for</code> loop is set up so that the numbers from 0 to 15 print out, but at an increment of 3, so that only every third number is printed, like so:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>0
+3
+6
+9
+12
+</code></pre>
+<p>We can also use a negative value for our post statement argument to iterate backwards, but we’ll have to adjust our initial statement and condition arguments accordingly:</p>
+<pre class="code-pre "><code class="code-highlight language-go">for i := 100; i &gt; 0; i -= 10 {
+    fmt.Println(i)
+}
+</code></pre>
+<p>Here, we set <code>i</code> to an initial value of <code>100</code>, use the condition of <code>i &lt; 0</code> to stop at <code>0</code>, and the post statement decrements the value by 10 with the <code>-=</code> operator. The loop begins at <code>100</code> and ends at <code>0</code>, decreasing by 10 with each iteration. We can see this occur in the output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>100
+90
+80
+70
+60
+50
+40
+30
+20
+10
+</code></pre>
+<p>You can also exclude the initial statement and the post statement from the <code>for</code> syntax, and only use the condition. This is what is known as a <em>Condition loop</em>:</p>
+<pre class="code-pre "><code langs="">i := 0
+for <span class="highlight">i &lt; 5</span> {
+    fmt.Println(i)
+    i++
+}
+</code></pre>
+<p>This time, we declared the variable <code>i</code> separately from the <code>for</code> loop in the preceding line of code. The loop only has a condition clause that checks to see if <code>i</code> is less than <code>5</code>. As long as the condition evaluates to <code>true</code>, the loop will continue to iterate.  </p>
+
+<p>Sometimes you may not know the number of iterations you will need to complete a certain task. In that case, you can omit all statements, and use the <code>break</code> keyword to exit execution:</p>
+<pre class="code-pre "><code langs="">for {
+    <span class="highlight">if someCondition {</span>
+        <span class="highlight">break</span>
+    <span class="highlight">}</span>
+    // do action here
+}
+</code></pre>
+<p>An example of this may be if we are reading from an indeterminately sized structure like a <a href="https://golang.org/pkg/bytes/#Buffer">buffer</a> and we don&rsquo;t know when we will be done reading:</p>
+<div class="code-label " title="buffer.go">buffer.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "bytes"
+    "fmt"
+    "io"
+)
+
+func main() {
+    buf := bytes.NewBufferString("one\ntwo\nthree\nfour\n")
+
+    for {
+        line, err := buf.ReadString('\n')
+        if err != nil {
+            if err == io.EOF {
+
+                fmt.Print(line)
+                break
+            }
+            fmt.Println(err)
+            break
+        }
+        fmt.Print(line)
+    }
+}
+</code></pre>
+<p>In the preceding code, <code>buf :=bytes.NewBufferString("one\ntwo\nthree\nfour\n")</code> declares a buffer with some data. Because we don&rsquo;t know when the buffer will finish reading, we create a <code>for</code> loop with no clause. Inside the <code>for</code> loop, we use <code>line, err := buf.ReadString('\n')</code> to read a line from the buffer and check to see if there was an error reading from the buffer. If there was, we address the error, and <a href="https://www.digitalocean.com/community/tutorials/using-break-and-continue-statements-when-working-with-loops-in-go">use the <code>break</code> keyword to exit the for loop</a>. With these <code>break</code> points, you do not need to include a condition to stop the loop.</p>
+
+<p>In this section, we learned how to declare a ForClause loop and use it to iterate through a known range of values. We also learned how to use a Condition loop to iterate until a specific condition was met. Next, we&rsquo;ll learn how the RangeClause is used for iterating through sequential data types.</p>
+
+<h2 id="looping-through-sequential-data-types-with-rangeclause">Looping Through Sequential Data Types with RangeClause</h2>
+
+<p>It is common in Go to use <code>for</code> loops to iterate over the elements of sequential or collection data types like <a href="https://www.digitalocean.com/community/tutorials/understanding-arrays-and-slices-in-go">slices, arrays</a>, and <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-working-with-strings-in-go">strings</a>. To make it easier to do so, we can use a <code>for</code> loop with <em>RangeClause</em> syntax. While you can loop through sequential data types using the ForClause syntax, the RangeClause is cleaner and easier to read. </p>
+
+<p>Before we look at using the RangeClause, let&rsquo;s look at how we can iterate through a slice by using the ForClause syntax:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    sharks := []string{"hammerhead", "great white", "dogfish", "frilled", "bullhead", "requiem"}
+
+    <span class="highlight">for i := 0; i &lt; len(sharks); i++ {</span>
+        <span class="highlight">fmt.Println(sharks[i])</span>
+    <span class="highlight">}</span>
+}
+</code></pre>
+<p>Running this will give the following output, printing out each element of the slice:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>hammerhead
+great white
+dogfish
+frilled
+bullhead
+requiem
+</code></pre>
+<p>Now, let&rsquo;s use the RangeClause to perform the same set of actions:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    sharks := []string{"hammerhead", "great white", "dogfish", "frilled", "bullhead", "requiem"}
+
+    <span class="highlight">for i, shark := range sharks {</span>
+        <span class="highlight">fmt.Println(i, shark)</span>
+    <span class="highlight">}</span>
+}
+</code></pre>
+<p>In this case, we are printing out each item in the list. Though we used the variables <code>i</code> and <code>shark</code>, we could have called the variable any other <a href="https://www.digitalocean.com/community/tutorials/how-to-use-variables-and-constants-in-go#naming-variables-rules-and-style">valid variable name</a> and we would get the same output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>0 hammerhead
+1 great white
+2 dogfish
+3 frilled
+4 bullhead
+5 requiem
+</code></pre>
+<p>When using <code>range</code> on a slice, it will always return two values. The first value will be the index that the current iteration of the loop is in, and the second is the value at that index. In this case, for the first iteration, the index was <code>0</code>, and the value was <code>hammerhead</code>.</p>
+
+<p>Sometimes, we only want the value inside the slice elements, not the index. If we change the preceding code to only print out the value however, we will receive a compile time error:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    sharks := []string{"hammerhead", "great white", "dogfish", "frilled", "bullhead", "requiem"}
+
+    for i, shark := range sharks {
+        <span class="highlight">fmt.Println(shark)</span>
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>src/range-error.go:8:6: i declared and not used
+</code></pre>
+<p>Because <code>i</code> is declared in the <code>for</code> loop, but never used, the compiler will respond with the error of <code>i declared and not used</code>.  This is the same error that you will receive in Go any time you declare a variable and don&rsquo;t use it.</p>
+
+<p>Because of this, Go has the <a href="https://golang.org/ref/spec#Blank_identifier">blank identifier</a> which is an underscore (<code>_</code>). In a <code>for</code> loop, you can use the blank identifier to ignore any value returned from the <code>range</code> keyword. In this case, we want to ignore the index, which is the first argument returned.</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    sharks := []string{"hammerhead", "great white", "dogfish", "frilled", "bullhead", "requiem"}
+
+    <span class="highlight">for _</span>, shark := range sharks {
+        fmt.Println(shark)
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>hammerhead
+great white
+dogfish
+frilled
+bullhead
+requiem
+</code></pre>
+<p>This output shows that the <code>for</code> loop iterated through the slice of strings, and printed each item from the slice without the index. </p>
+
+<p>You can also use <code>range</code> to add items to a list: </p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    sharks := []string{"hammerhead", "great white", "dogfish", "frilled", "bullhead", "requiem"}
+
+    <span class="highlight">for range sharks {</span>
+        <span class="highlight">sharks = append(sharks, "shark")</span>
+    <span class="highlight">}</span>
+
+    fmt.Printf("%q\n", sharks)
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>['hammerhead', 'great white', 'dogfish', 'frilled', 'bullhead', 'requiem', 'shark', 'shark', 'shark', 'shark', 'shark', 'shark']
+</code></pre>
+<p>Here, we have added a placeholder string of <code>"shark"</code> for each item of the length of the <code>sharks</code> slice.</p>
+
+<p>Notice that we didn&rsquo;t have to use the blank identifier <code>_</code> to ignore any of the return values from the <code>range</code> operator. Go allows us to leave out the entire declaration portion of the <code>range</code> statement if we don&rsquo;t need to use either of the return values.</p>
+
+<p>We can also use the <code>range</code> operator to fill in values of a slice:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    integers := make([]int, 10)
+    fmt.Println(integers)
+
+    <span class="highlight">for i := range integers {</span>
+        <span class="highlight">integers[i] = i</span>
+    <span class="highlight">}</span>
+
+    fmt.Println(integers)
+}
+</code></pre>
+<p>In this example, the slice <code>integers</code> is initialized with ten empty values, but the <code>for</code> loop sets all the values in the list like so:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[0 0 0 0 0 0 0 0 0 0]
+[0 1 2 3 4 5 6 7 8 9]
+</code></pre>
+<p>The first time we print the value of the slice <code>integers</code>, we see all zeros. Then we iterate through each index and set the value to the current index. Then when we print the value of <code>integers</code> a second time, showing that they all now have a value of <code>0</code> through <code>9</code>.</p>
+
+<p>We can also use the <code>range</code> operator to iterate through each character in a string:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    sammy := "Sammy"
+
+    for _, letter := range sammy {
+        fmt.Printf("%c\n", letter)
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>S
+a
+m
+m
+y
+</code></pre>
+<p>When iterating through a <a href="https://www.digitalocean.com/community/tutorials/understanding-maps-in-go">map</a>, <code>range</code> will return both the <strong>key</strong> and the <strong>value</strong>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    sammyShark := map[string]string{"name": "Sammy", "animal": "shark", "color": "blue", "location": "ocean"}
+
+    for key, value := range sammyShark {
+        fmt.Println(key + ": " + value)
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>color: blue
+location: ocean
+name: Sammy
+animal: shark
+</code></pre>
+<p><span class='note'><strong>Note:</strong> It is important to note that the order in which a map returns is random. Each time you run this program you may get a different result.<br></span></p>
+
+<p>Now that we have learned how to iterate over sequential data with <code>range</code> <code>for</code> loops, let&rsquo;s look at how to use loops inside of loops.</p>
+
+<h2 id="nested-for-loops">Nested For Loops</h2>
+
+<p>Loops can be nested in Go, as they can with other programming languages. <em>Nesting</em> is when we have one construct inside of another. In this case, a nested loop is a loop that occurs within another loop. These can be useful when you would like to have a looped action performed on every element of a data set.</p>
+
+<p>Nested loops are structurally similar to <a href="https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-go#nested-if-statements">nested <code>if</code> statements</a>. They are constructed like so:</p>
+<pre class="code-pre "><code langs="">for {
+    [<span class="highlight">Action</span>]
+    for {
+        [<span class="highlight">Action</span>]  
+    }
+}
+</code></pre>
+<p>The program first encounters the outer loop, executing its first iteration. This first iteration triggers the inner, nested loop, which then runs to completion. Then the program returns back to the top of the outer loop, completing the second iteration and again triggering the nested loop. Again, the nested loop runs to completion, and the program returns back to the top of the outer loop until the sequence is complete or a break or other statement disrupts the process.</p>
+
+<p>Let’s implement a nested <code>for</code> loop so we can take a closer look. In this example, the outer loop will iterate through a slice of integers called <code>numList</code>, and the inner loop will iterate through a slice of strings called <code>alphaList</code>. </p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    numList := []int{1, 2, 3}
+    alphaList := []string{"a", "b", "c"}
+
+    for _, i := range numList {
+        fmt.Println(i)
+        for _, letter := range alphaList {
+            fmt.Println(letter)
+        }
+    }
+}
+</code></pre>
+<p>When we run this program, we’ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1
+a
+b
+c
+2
+a
+b
+c
+3
+a
+b
+c
+</code></pre>
+<p>The output illustrates that the program completes the first iteration of the outer loop by printing <code>1</code>, which then triggers completion of the inner loop, printing <code>a</code>, <code>b</code>, <code>c</code> consecutively. Once the inner loop has completed, the program returns to the top of the outer loop, prints <code>2</code>, then again prints the inner loop in its entirety (<code>a</code>, <code>b</code>, <code>c</code>), etc.</p>
+
+<p>Nested <code>for</code> loops can be useful for iterating through items within slices composed of slices. In a slice composed of slices, if we use just one <code>for</code> loop, the program will output each internal list as an item:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    ints := [][]int{
+        []int{0, 1, 2},
+        []int{-1, -2, -3},
+        []int{9, 8, 7},
+    }
+
+    for _, i := range ints {
+        fmt.Println(i)
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[0 1 2]
+[-1 -2 -3]
+[9 8 7]
+</code></pre>
+<p>In order to access each individual item of the internal slices, we’ll implement a nested <code>for</code> loop:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    ints := [][]int{
+        []int{0, 1, 2},
+        []int{-1, -2, -3},
+        []int{9, 8, 7},
+    }
+
+    for _, i := range ints {
+        for _, j := range i {
+            fmt.Println(j)
+        }
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>0
+1
+2
+-1
+-2
+-3
+9
+8
+7
+</code></pre>
+<p>When we use a nested <code>for</code> loop here, we are able to iterate over the individual items contained in the slices.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial we learned how to declare and use <code>for</code> loops to solve for repetitive tasks in Go. We also learned the three different variations of a <code>for</code> loop and when to use them. To learn more about <code>for</code> loops and how to control the flow of them, read <a href="https://www.digitalocean.com/community/tutorials/using-break-and-continue-statements-when-working-with-loops-in-go">Using Break and Continue Statements When Working with Loops in Go</a>.</p>

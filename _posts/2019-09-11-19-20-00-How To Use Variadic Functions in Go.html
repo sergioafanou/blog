@@ -1,0 +1,331 @@
+---
+layout: post
+title: How To Use Variadic Functions in Go
+network: digitalocean
+date: September 11, 2019 at 07:20PM
+url: https://www.digitalocean.com/community/tutorials/how-to-use-variadic-functions-in-go
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>A <em>variadic function</em> is a function that accepts zero, one, or more values as a single argument. While variadic functions are not the common case, they can be used to make your code cleaner and more readable.</p>
+
+<p>Variadic functions are more common than they seem. The most common one is the <code>Println</code> function from the <a href="https://golang.org/pkg/fmt"><code>fmt</code></a> package.</p>
+<pre class="code-pre "><code class="code-highlight language-go">func Println(a ...interface{}) (n int, err error)
+</code></pre>
+<p>A <a href="https://www.digitalocean.com/community/tutorials/how-to-define-and-call-functions-in-go">function</a> with a parameter that is preceded with a set of ellipses (<code>...</code>) is considered a variadic function. The ellipsis means that the parameter provided can be zero, one, or more values. For the <code>fmt.Println</code> package, it is stating that the parameter <code>a</code> is variadic.</p>
+
+<p>Let&rsquo;s create a program that uses the <code>fmt.Println</code> function and pass in zero, one, or more values:</p>
+<div class="code-label " title="print.go">print.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    fmt.Println()
+    fmt.Println("one")
+    fmt.Println("one", "two")
+    fmt.Println("one", "two", "three")
+}
+</code></pre>
+<p>The first time we call <code>fmt.Println</code>, we don&rsquo;t pass any arguments. The second time we call <code>fmt.Println</code> we pass in only a single argument, with the value of <code>one</code>. Then we pass <code>one</code> and <code>two</code>, and finally <code>one</code>, <code>two</code>, and <code>three</code>.</p>
+
+<p>Let&rsquo;s run the program with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run print.go
+</li></ul></code></pre>
+<p>We&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+one
+one two
+one two three
+</code></pre>
+<p>The first line of the output is blank. This is because we didn&rsquo;t pass any arguments the first time <code>fmt.Println</code> was called. The second time the value of <code>one</code> was printed. Then <code>one</code> and <code>two</code>, and finally <code>one</code>, <code>two</code>, and <code>three</code>.</p>
+
+<p>Now that we have seen how to call a variadic function, let&rsquo;s look at how we can define our own variadic function.</p>
+
+<h2 id="defining-a-variadic-function">Defining a Variadic Function</h2>
+
+<p>We can define a variadic function by using an ellipsis (<code>...</code>) in front of the argument. Let’s create a program that greets people when their names are sent to the function:</p>
+<div class="code-label " title="hello.go">hello.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    sayHello()
+    sayHello("Sammy")
+    sayHello("Sammy", "Jessica", "Drew", "Jamie")
+}
+
+func sayHello(names ...string) {
+    for _, n := range names {
+        fmt.Printf("Hello %s\n", n)
+    }
+}
+</code></pre>
+<p>We created a <code>sayHello</code> function that takes only a single parameter called <code>names</code>. The parameter is variadic, as we put an ellipsis (<code>...</code>) before the data type: <code>...string</code>.  This tells Go that the function can accept zero, one, or many arguments.</p>
+
+<p>The <code>sayHello</code> function receives the <code>names</code> parameter as a <a href="https://www.digitalocean.com/community/tutorials/understanding-arrays-and-slices-in-go#slices"><code>slice</code></a>. Since the data type is a <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-go#strings"><code>string</code></a>, the <code>names</code> parameter can be treated just like a slice of strings (<code>[]string</code>) inside the function body. We can create a loop with the <a href="https://www.digitalocean.com/community/tutorials/how-to-construct-for-loops-in-go#looping-through-sequential-data-types-with-rangeclause"><code>range</code></a> operator and iterate through the slice of strings.</p>
+
+<p>If we run the program, we will get the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello Sammy
+Hello Sammy
+Hello Jessica
+Hello Drew
+Hello Jamie
+</code></pre>
+<p>Notice that nothing printed for the first time we called <code>sayHello</code>. This is because the variadic parameter was an empty <code>slice</code> of <code>string</code>. Since we are looping through the slice, there is nothing to iterate through, and <code>fmt.Printf</code> is never called.</p>
+
+<p>Let&rsquo;s modify the program to detect that no values were sent in:</p>
+<div class="code-label " title="hello.go">hello.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    sayHello()
+    sayHello("Sammy")
+    sayHello("Sammy", "Jessica", "Drew", "Jamie")
+}
+
+func sayHello(names ...string) {
+    if len(names) == 0 {
+        fmt.Println("nobody to greet")
+        return
+    }
+    for _, n := range names {
+        fmt.Printf("Hello %s\n", n)
+    }
+}
+</code></pre>
+<p>Now, by using an <a href="https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-go#if-statements"><code>if</code> statement</a>, if no values are passed, the length of <code>names</code> will be <code>0</code>, and we will print out <code>nobody to greet</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>nobody to greet
+Hello Sammy
+Hello Sammy
+Hello Jessica
+Hello Drew
+Hello Jamie
+</code></pre>
+<p>Using a variadic parameter can make your code more readable. Let&rsquo;s create a function that joins words together with a specified delimiter.  We&rsquo;ll create this program without a variadic function first to show how it would read:</p>
+<div class="code-label " title="join.go">join.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    var line string
+
+    line = join(",", []string{"Sammy", "Jessica", "Drew", "Jamie"})
+    fmt.Println(line)
+
+    line = join(",", []string{"Sammy", "Jessica"})
+    fmt.Println(line)
+
+    line = join(",", []string{"Sammy"})
+    fmt.Println(line)
+}
+
+func join(del string, values []string) string {
+    var line string
+    for i, v := range values {
+        line = line + v
+        if i != len(values)-1 {
+            line = line + del
+        }
+    }
+    return line
+}
+</code></pre>
+<p>In this program, we are passing a comma (<code>,</code>) as the delimiter to the <code>join</code> function. Then we are passing a slice of values to join. Here is the output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy,Jessica,Drew,Jamie
+Sammy,Jessica
+Sammy
+</code></pre>
+<p>Because the function takes a slice of string as the <code>values</code> parameter, we had to wrap all of our words in a slice when we called the <code>join</code> function. This can make the code difficult to read.</p>
+
+<p>Now, let&rsquo;s write the same function, but we&rsquo;ll use a variadic function:</p>
+<div class="code-label " title="join.go">join.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    var line string
+
+    line = join(",", "Sammy", "Jessica", "Drew", "Jamie")
+    fmt.Println(line)
+
+    line = join(",", "Sammy", "Jessica")
+    fmt.Println(line)
+
+    line = join(",", "Sammy")
+    fmt.Println(line)
+}
+
+func join(del string, values ...string) string {
+    var line string
+    for i, v := range values {
+        line = line + v
+        if i != len(values)-1 {
+            line = line + del
+        }
+    }
+    return line
+}
+</code></pre>
+<p>If we run the program, we can see that we get the same output as the previous program:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy,Jessica,Drew,Jamie
+Sammy,Jessica
+Sammy
+</code></pre>
+<p>While both versions of the <code>join</code> function do the exact same thing programmatically, the variadic version of the function is much easier to read when it is being called.</p>
+
+<h2 id="variadic-argument-order">Variadic Argument Order</h2>
+
+<p>You can only have one variadic parameter in a function, and it must be the last parameter defined in the function. Defining parameters in a variadic function in any order other than the last parameter will result in a compilation error:</p>
+<div class="code-label " title="join.go">join.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    var line string
+
+    line = join(",", "Sammy", "Jessica", "Drew", "Jamie")
+    fmt.Println(line)
+
+    line = join(",", "Sammy", "Jessica")
+    fmt.Println(line)
+
+    line = join(",", "Sammy")
+    fmt.Println(line)
+}
+
+func join(values ...string, del string) string {
+    var line string
+    for i, v := range values {
+        line = line + v
+        if i != len(values)-1 {
+            line = line + del
+        }
+    }
+    return line
+}
+</code></pre>
+<p>This time we put the <code>values</code> parameter first in the <code>join</code> function. This will cause the following compilation error:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>./join_error.go:18:11: syntax error: cannot use ... with non-final parameter values
+</code></pre>
+<p>When defining any variadic function, only the last parameter can be variadic.</p>
+
+<h2 id="exploding-arguments">Exploding Arguments</h2>
+
+<p>So far, we have seen that we can pass zero, one, or more values to a variadic function. However, there will be occasions when we have a slice of values and we want to send them to a variadic function.</p>
+
+<p>Let&rsquo;s look at our <code>join</code> function from the last section to see what happens:</p>
+<div class="code-label " title="join.go">join.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    var line string
+
+    <span class="highlight">names := []string{"Sammy", "Jessica", "Drew", "Jamie"}</span>
+
+    line = join(",", <span class="highlight">names</span>)
+    fmt.Println(line)
+}
+
+func join(del string, values ...string) string {
+    var line string
+    for i, v := range values {
+        line = line + v
+        if i != len(values)-1 {
+            line = line + del
+        }
+    }
+    return line
+}
+</code></pre>
+<p>If we run this program, we will receive a compilation error:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>./join-error.go:10:14: cannot use names (type []string) as type string in argument to join
+</code></pre>
+<p>Even though the variadic function will convert the parameter of <code>values ...string</code> to a slice of strings <code>[]string</code>, we can&rsquo;t pass a slice of strings as the argument. This is because the compiler expects discrete arguments of strings.</p>
+
+<p>To work around this, we can <em>explode</em> a slice by suffixing it with a set of ellipses (<code>...</code>) and turning it into discrete arguments that will be passed to a variadic function:</p>
+<div class="code-label " title="join.go">join.go</div><pre class="code-pre "><code langs="">package main
+
+import "fmt"
+
+func main() {
+    var line string
+
+    names := []string{"Sammy", "Jessica", "Drew", "Jamie"}
+
+    line = join(",", <span class="highlight">names...</span>)
+    fmt.Println(line)
+}
+
+func join(del string, values ...string) string {
+    var line string
+    for i, v := range values {
+        line = line + v
+        if i != len(values)-1 {
+            line = line + del
+        }
+    }
+    return line
+}
+</code></pre>
+<p>This time, when we called the <code>join</code> function, we exploded the <code>names</code> slice by appending ellipses (<code>...</code>).</p>
+
+<p>This allows the program to now run as expected:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy,Jessica,Drew,Jamie
+</code></pre>
+<p>It&rsquo;s important to note that we can still pass a zero, one, or more arguments, as well as a slice that we explode. Here is the code passing all the variations that we have seen so far:</p>
+<div class="code-label " title="join.go">join.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    var line string
+
+    line = join(",", []string{"Sammy", "Jessica", "Drew", "Jamie"}<span class="highlight">...</span>)
+    fmt.Println(line)
+
+    line = join(",", "Sammy", "Jessica", "Drew", "Jamie")
+    fmt.Println(line)
+
+    line = join(",", "Sammy", "Jessica")
+    fmt.Println(line)
+
+    line = join(",", "Sammy")
+    fmt.Println(line)
+
+}
+
+func join(del string, values ...string) string {
+    var line string
+    for i, v := range values {
+        line = line + v
+        if i != len(values)-1 {
+            line = line + del
+        }
+    }
+    return line
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy,Jessica,Drew,Jamie
+Sammy,Jessica,Drew,Jamie
+Sammy,Jessica
+Sammy
+</code></pre>
+<p>We now know how to pass zero, one, or many arguments, as well as a slice that we explode, to a variadic function.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial, we have seen how variadic functions can make your code cleaner. While you won’t always need to use them, you may find them useful:</p>
+
+<ul>
+<li>If you find that you&rsquo;re creating a temporary slice just to pass to a function.</li>
+<li>When the number of input params are unknown or will vary when called.</li>
+<li>To make your code more readable.</li>
+</ul>
+
+<p>To learn more about creating and calling functions, you can read <a href="https://www.digitalocean.com/community/tutorials/how-to-define-and-call-functions-in-go">How to Define and Call Functions in Go</a>.</p>

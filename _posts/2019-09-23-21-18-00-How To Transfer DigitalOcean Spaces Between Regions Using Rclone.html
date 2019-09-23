@@ -1,0 +1,255 @@
+---
+layout: post
+title: How To Transfer DigitalOcean Spaces Between Regions Using Rclone
+network: digitalocean
+date: September 23, 2019 at 09:18PM
+url: https://www.digitalocean.com/community/tutorials/how-to-transfer-digitalocean-spaces-between-regions-using-rclone
+image: https://assets.digitalocean.com/articles/spaces-sync/endpoint.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://www.digitalocean.com/products/spaces/">DigitalOcean Spaces</a> is an object storage service designed to make it easy and cost effective to store and serve large amounts of data.</p>
+
+<p>In this guide, we will cover how to migrate data between Spaces regions, by using <a href="https://rclone.org/">Rclone</a> to transfer data between two Spaces. We will demonstrate how to install Rclone, the configuration settings needed to access multiple regions, and the commands that you can use to synchronize your files between regions and verify their integrity.</p>
+
+<h2 id="creating-api-keys-and-finding-spaces-endpoint-information">Creating API Keys and Finding Spaces Endpoint Information</h2>
+
+<p>Before we begin installing and configuring Rclone to copy our objects between Spaces, we will need some information about our DigitalOcean Spaces account. We will need a Spaces API key, and we will need to know the regions and names of our source and destination Spaces.</p>
+
+<h3 id="generating-a-digitalocean-spaces-api-key">Generating a DigitalOcean Spaces API Key</h3>
+
+<p>To create a DigitalOcean Spaces API key, follow the &ldquo;Creating an Access Key&rdquo; section of our <a href="https://www.digitalocean.com/docs/spaces/how-to/administrative-access/#access-keys">How To Create a DigitalOcean Space API Key</a> documentation.</p>
+
+<p>Save the access key ID and the secret key. We will use them later to configure Rclone to access our account.</p>
+
+<h3 id="finding-the-spaces-s3-compatible-endpoint">Finding the Spaces S3-Compatible Endpoint</h3>
+
+<p>Next, we need to find the endpoint for each Space. You can view the Space&rsquo;s endpoint within the DigitalOcean Control Panel by selecting the Space and viewing the <strong>Settings</strong> tab:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/spaces-sync/endpoint.png" alt="DigitalOcean Spaces endpoint"></p>
+
+<p>The endpoint will always be the region you created the Space in, followed by <code>.digitaloceanspaces.com</code>. Make note of the endpoint for both of your Spaces. Will we use this information when creating our <code>rclone</code> configuration.</p>
+
+<h2 id="installing-rclone">Installing Rclone</h2>
+
+<p>You&rsquo;re now ready to install <a href="https://rclone.org/">Rclone</a>. You can do this on your local machine, or – if you are bandwidth limited – you may want to install Rclone on a Droplet located in the source or destination Spaces region.</p>
+
+<p>Visit the <a href="https://rclone.org/downloads/">Downloads</a> section of the project&rsquo;s website to find binaries of the utility compiled for different platforms. Download the zipped binary that matches your computer&rsquo;s operating system to get started.</p>
+
+<p>Once you have the Rclone zip file downloaded to your computer, follow the section below that matches your platform.</p>
+
+<h3 id="linux">Linux</h3>
+
+<p>Before we can extract the archive, we will need to ensure that the <code>unzip</code> utility is available.</p>
+
+<p>If you are running <strong>Ubuntu</strong> or <strong>Debian</strong>, you can update the local package index and install <code>unzip</code> by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install unzip
+</li></ul></code></pre>
+<p>If you are running <strong>CentOS</strong> or <strong>Fedora</strong>, you can install <code>unzip</code> by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install unzip
+</li></ul></code></pre>
+<p>With <code>unzip</code> installed, navigate to the directory where you downloaded the <code>rclone</code> zip file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">~/Downloads</span>
+</li></ul></code></pre>
+<p>Next, unzip the archive and move into the newly created directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">unzip rclone*
+</li><li class="line" prefix="$">cd rclone-v*
+</li></ul></code></pre>
+<p>From here, we can copy the binary to the <code>/usr/local/bin</code> directory so that it is available system-wide:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp rclone /usr/local/bin
+</li></ul></code></pre>
+<p>Next, we add the manual page to our system, so that we can easily get help on the command syntax and available options. Make sure that the local manual directory is available and then copy the <code>rclone.1</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -p /usr/local/share/man/man1
+</li><li class="line" prefix="$">sudo cp rclone.1 /usr/local/share/man/man1
+</li></ul></code></pre>
+<p>Then update the <code>man</code> database to add the new manual page to the system:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mandb
+</li></ul></code></pre>
+<p>Finally, we can create the Rclone configuration directory and open up a configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/.config/rclone
+</li><li class="line" prefix="$">nano ~/.config/rclone/rclone.conf
+</li></ul></code></pre>
+<p>This will open your text editor with a new blank file. Skip ahead to the section on <a href="#configuring-rclone">Configuring Rclone</a> to continue.</p>
+
+<h3 id="macos">macOS</h3>
+
+<p>If you are running macOS, begin by navigating in the terminal to the directory where you downloaded the <code>rclone</code> zip file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">~/Downloads</span>
+</li></ul></code></pre>
+<p>Next, unzip the file and move into the newly created directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">unzip -a rclone*
+</li><li class="line" prefix="$">cd rclone-v*
+</li></ul></code></pre>
+<p>Next, make sure the <code>/usr/local/bin</code> directory is available and then copy the <code>rclone</code> binary to it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -p /usr/local/bin
+</li><li class="line" prefix="$">sudo cp rclone /usr/local/bin
+</li></ul></code></pre>
+<p>Finally, we can create the configuration directory and open up a configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/.config/rclone
+</li><li class="line" prefix="$">nano ~/.config/rclone/rclone.conf
+</li></ul></code></pre>
+<p>This will open up your text editor with a new blank file. Skip ahead to the section on <a href="#configuring-rclone">Configuring Rclone</a> to continue.</p>
+
+<h3 id="windows">Windows</h3>
+
+<p>If you are running Windows, begin by navigating to the Downloads directory in the Windows File Explorer. Select the <code>rclone</code> zip file and right-click. In the context menu that appears, click <strong>Extract All&hellip;</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/s3_migration/extract_archive.png" alt="Windows extract rclone zip file"></p>
+
+<p>Follow the prompts to extract the files from the zip archive.</p>
+
+<p>The <code>rclone.exe</code> utility must be run from the command line. Open a new <strong>Command Prompt</strong> (the <code>cmd.exe</code> program) window by clicking the Windows button in the lower-left corner, typing <strong>cmd</strong>, and selecting <strong>Command Prompt</strong>.</p>
+
+<p>Inside, navigate to the <code>rclone</code> path you extracted by typing:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="C:\&gt;">cd "%HOMEPATH%\Downloads\rclone*\rclone*"
+</li></ul></code></pre>
+<p>List the directory contents to verify that you are in the correct location:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="C:\&gt;">dir
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>10/23/2017  01:02 PM    &lt;DIR&gt;          .
+10/23/2017  01:02 PM    &lt;DIR&gt;          ..
+10/23/2017  01:02 PM                17 git-log.txt
+10/23/2017  01:02 PM           296,086 rclone.1
+10/23/2017  01:02 PM        16,840,192 rclone.exe
+10/23/2017  01:02 PM           315,539 README.html
+10/23/2017  01:02 PM           261,497 README.txt
+               5 File(s)     17,713,331 bytes
+               2 Dir(s)  183,296,266,240 bytes free
+</code></pre>
+<p>You will need to be in this directory whenever you want to use the <code>rclone.exe</code> command.</p>
+
+<p><span class='note'><strong>Note:</strong> On macOS and Linux, we run the tool by typing <code>rclone</code>, but on Windows, the command is called <code>rclone.exe</code>. Throughout the rest of this guide, we will be providing commands as <code>rclone</code>, so be sure to substitute <code>rclone.exe</code> each time when running on Windows.<br></span></p>
+
+<p>Next, we can create the configuration directory and open up a configuration file to define our S3 and Spaces credentials:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="C:\&gt;">mkdir "%HOMEPATH%\.config\rclone"
+</li><li class="line" prefix="C:\&gt;">notepad "%HOMEPATH%\.config\rclone\rclone.conf"
+</li></ul></code></pre>
+<p>This will open up your text editor with a new blank file. Continue ahead to learn how to define your Spaces regions in the configuration file.</p>
+
+<h2 id="configuring-rclone">Configuring Rclone</h2>
+
+<p>We will configure our two DigitalOcean Spaces regions as Rclone &ldquo;remotes&rdquo; in the Rclone configuration file. Paste the following section in the configuration file to define the first region:</p>
+<div class="code-label " title="~/.config/rclone/rclone.conf">~/.config/rclone/rclone.conf</div><pre class="code-pre "><code class="code-highlight language-ini">[spaces-<span class="highlight">sfo2</span>]
+type = s3
+env_auth = false
+access_key_id = <span class="highlight">your_spaces_access_key</span>
+secret_access_key = <span class="highlight">your_spaces_secret_key</span>
+endpoint = <span class="highlight">sfo2</span>.digitaloceanspaces.com
+acl = private
+</code></pre>
+<p>Here, we define a new <code>rclone</code> &ldquo;remote&rdquo; named <code>spaces-sfo2</code>. Change the region name to match the Spaces region you are configuring.</p>
+
+<p>We set the <code>type</code> to <code>s3</code> so that <code>rclone</code> knows the appropriate way to interact with and manage the remote storage resource. We will define the Spaces access credentials in this configuration file, so we can set <code>env_auth</code> to <code>false</code>.</p>
+
+<p>Next, we set the <code>access_key_id</code> and <code>secret_access_key</code> variables to our Spaces access key and secret key, respectively. Be sure to change the values to the credentials associated with your account.</p>
+
+<p>We set the <code>endpoint</code> to the Spaces endpoint we looked up earlier.</p>
+
+<p>Finally, we set the <code>acl</code> to <code>private</code> to protect our assets until we want to share them.</p>
+
+<p>Next, make a duplicate of the configuration block you just created, then update the name and endpoint region to reflect your second region:</p>
+<div class="code-label " title="~/.config/rclone/rclone.conf">~/.config/rclone/rclone.conf</div><pre class="code-pre "><code class="code-highlight language-ini">. . .
+
+[spaces-<span class="highlight">nyc3</span>]
+type = s3
+env_auth = false
+access_key_id = <span class="highlight">your_spaces_access_key</span>
+secret_access_key = <span class="highlight">your_spaces_secret_key</span>
+endpoint = <span class="highlight">nyc3</span>.digitaloceanspaces.com
+acl = private
+</code></pre>
+<p>The rest of the configuration should remain the same as for the first region. Save and close the file when you are finished.</p>
+
+<p>On macOS and Linux, be sure to lock down the permissions of the configuration file since our credentials are inside:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod 600 ~/.config/rclone/rclone.conf
+</li></ul></code></pre>
+<p>On Windows, permissions are denied to non-administrative users unless explicitly granted, so we shouldn&rsquo;t need to adjust access manually.</p>
+
+<p>Next, we&rsquo;ll use <code>rclone</code> to explore our Spaces and sync data between them.</p>
+
+<h2 id="copying-objects-from-s3-to-spaces">Copying Objects from S3 to Spaces</h2>
+
+<p>Now that our configuration is complete, we are ready to transfer our files.</p>
+
+<p>Begin by checking the <code>rclone</code> configured remotes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone listremotes
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>spaces-nyc3:
+spaces-sfo2:
+</code></pre>
+<p>Both of the regions we defined are displayed.</p>
+
+<p>We can view the available Spaces by asking <code>rclone</code> to list the &ldquo;directories&rdquo; associated with the remotes (make sure to add the colon to the end of the remote name):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone lsd spaces-<span class="highlight">sfo2</span>:
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>          -1 2019-09-23 13:07:54        -1 source-space
+</code></pre>
+<p>The above output indicates that one Space, called <code>source-space</code> was found in the <code>sfo2</code> region.</p>
+
+<p>You can repeat the procedure to view the other region:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone lsd spaces-<span class="highlight">nyc3</span>:
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>          -1 2019-09-23 13:08:28        -1 destination-space
+</code></pre>
+<p>To view the contents of a Space, you can use the <code>tree</code> command. Pass in the remote name, followed by a colon and the name of the &ldquo;directory&rdquo; you wish to list (the Space name):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone tree spaces-<span class="highlight">sfo2</span>:<span class="highlight">source-space</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/
+├── Photos
+│   ├── 2019.01.24-23.10.27.png
+│   ├── 2019.01.24-23.11.39.png
+│   ├── 2019.01.24-23.18.00.png
+│   ├── 2019.01.24-23.18.18.png
+│   ├── 2019.01.24-23.18.30.png
+│   ├── 2019.01.24-23.19.32.png
+│   ├── 2019.01.24-23.23.06.png
+│   ├── 2019.01.24-23.23.53.png
+│   ├── 2019.01.24-23.25.14.png
+│   ├── 2019.01.24-23.26.22.png
+│   ├── 2019.01.25-12.43.35.png
+│   ├── 2019.03.13-14.35.34.png
+│   └── 2019.03.13-14.40.52.png
+└── Photos.zip
+
+1 directories, 14 files
+</code></pre>
+<p>When you are ready, you can copy the files between Spaces by typing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone sync spaces-<span class="highlight">sfo2</span>:<span class="highlight">source-space</span> spaces-<span class="highlight">nyc3</span>:<span class="highlight">destination-space</span>
+</li></ul></code></pre>
+<p>Assuming everything went well, <code>rclone</code> will begin copying objects between the two Spaces.</p>
+
+<p><span class='note'><strong>Note:</strong> If you hadn&rsquo;t previously created the destination Space in the specified region, <code>rclone</code> will attempt to create one for you with the given name. This will fail if the name provided is already being used by another account or if the name doesn&rsquo;t meet the naming requirements for DigitalOcean Spaces (lowercase letters, numbers, and dashes only).<br></span></p>
+
+<p>When the transfer is complete, you can check that the objects have transferred by viewing them with the <code>tree</code> subcommand:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone tree spaces-<span class="highlight">nyc3</span>:<span class="highlight">destination-space</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/
+├── Photos
+│   ├── 2019.01.24-23.10.27.png
+│   ├── 2019.01.24-23.11.39.png
+│   ├── 2019.01.24-23.18.00.png
+│   ├── 2019.01.24-23.18.18.png
+│   ├── 2019.01.24-23.18.30.png
+│   ├── 2019.01.24-23.19.32.png
+│   ├── 2019.01.24-23.23.06.png
+│   ├── 2019.01.24-23.23.53.png
+│   ├── 2019.01.24-23.25.14.png
+│   ├── 2019.01.24-23.26.22.png
+│   ├── 2019.01.25-12.43.35.png
+│   ├── 2019.03.13-14.35.34.png
+│   └── 2019.03.13-14.40.52.png
+└── Photos.zip
+
+1 directories, 14 files
+</code></pre>
+<p>For more robust verification, use the <code>check</code> subcommand to compare the objects in both regions:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone check spaces-<span class="highlight">sfo2</span>:<span class="highlight">source-space</span> spaces-<span class="highlight">nyc3</span>:<span class="highlight">destination-space</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>2019/09/23 14:29:11 NOTICE: S3 bucket destination-space: 0 differences found
+2019/09/23 14:29:11 NOTICE: S3 bucket destination-space: 14 matching files
+</code></pre>
+<p>This will compare the hash values of each object in both remotes. You may receive a message indicating that some hashes could not be compared. In that case, you can rerun the command with the <code>--size-only</code> flag (which just compares based on file size) or the <code>--download</code> flag (which downloads each object from both remotes to compare locally) to verify the transfer integrity.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this guide, we&rsquo;ve covered how to transfer objects between two DigitalOcean Spaces regions. We gathered API credentials and endpoint information from the Spaces service, installed and configured the <code>rclone</code> utility on our local computer, and then copied all objects from a source Space to a destination Space.</p>
+
+<p>The <code>rclone</code> client can be used for many other object storage management tasks including uploading or downloading files, mounting Spaces on the local filesystem, and creating or deleting additional Spaces. Check out the <code>man</code> page to learn more about the functionality the tool provides.</p>

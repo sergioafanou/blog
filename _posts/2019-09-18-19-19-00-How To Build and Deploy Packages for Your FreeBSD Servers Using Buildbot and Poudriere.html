@@ -1,0 +1,795 @@
+---
+layout: post
+title: How To Build and Deploy Packages for Your FreeBSD Servers Using Buildbot and Poudriere
+network: digitalocean
+date: September 18, 2019 at 07:19PM
+url: https://www.digitalocean.com/community/tutorials/how-to-build-and-deploy-packages-for-your-freebsd-servers-using-buildbot-and-poudriere
+image: https://assets.digitalocean.com/articles/buildbot_poudriere/step6a.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/funds/foss-nonprofits">Free and Open Source Fund</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p>The <a href="https://www.freebsd.org/ports/">FreeBSD ports and packages collection</a>, hereafter called <em>ports tree</em>, is FreeBSD&rsquo;s build system for external software. It offers a <a href="https://www.freebsd.org/doc/en_US.ISO8859-1/books/developers-handbook/tools-make.html">Makefile</a>-based, consistent way of building packages. The <em>port</em> refers to the build recipe, that is the Makefile and related files; while <em>package</em> is the output of building one port into a binary (compressed) archive of the package files and its meta information.</p>
+
+<p>Manually building and installing a subset or all of the over 30,000 ports is possible with <code>make install</code>. However, the builds would run on one of your servers—not a clean environment. For production use cases, manual builds would also mean that each host needs the same revision of the ports tree, and needs to compile all packages for itself. This means repeated, error-prone work by humans and the servers. It is preferable to retrieve and use identical, pre-built binary packages on each host and serve them from a central, secure package repository.</p>
+
+<p>To achieve this, <a href="https://github.com/freebsd/poudriere/wiki">Poudriere</a> is the standard tool on FreeBSD to build, test, and audit packages as well as maintain the package repositories. Each build is run isolated in a fresh <a href="https://www.digitalocean.com/community/tutorials/how-to-install-buildbot-freebsd#step-1-%E2%80%93-setting-up-jails-for-the-buildbot-master-and-worker">jail</a>, running the desired version of FreeBSD, and starting with no packages installed. Only the base system, plus any explicitly specified dependencies, are available to the clean build. Poudriere takes care of rebuilding packages when necessary as well as updating the package repository after a build has finished. The <code>poudriere</code> command line tool is central to administering different ports trees, FreeBSD versions, port build options, and lastly, running the builds.</p>
+
+<p>In this tutorial you&rsquo;ll configure Poudriere, build a set of desired packages, set up HTTP-based package hosting, and automate the build using <a href="https://buildbot.net/">Buildbot</a> as a continuous integration platform. Finally, you will securely access the packages from a client machine.</p>
+
+<p><span class='note'><strong>Note:</strong> To cover production-like use cases, the tutorial examples use the <a href="https://wiki.freebsd.org/Ports/QuarterlyBranch">quarterly stable branches of the ports tree</a>. Staying on one such branch protects you from breaking changes and provides security and build fixes where necessary—if you regularly update the tree from upstream (Subversion, or its GitHub mirror). You can choose to stay on one branch for an extended period of time, depending on the pace at which your system updates can be handled by developer/infrastructure teams. The ports collection supports FreeBSD releases until they become end-of-life (EOL)—see <a href="https://www.freebsd.org/security/#sup">Supported FreeBSD releases</a>—so that OS and package updates can be handled independently. Alternatively, you could consider a local version control repository cloned from the upstream tree. That way, you can manage patches and only merge upstream changes at the time you desire.<br></span></p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide, you will need:</p>
+
+<ul>
+<li>A server running FreeBSD 11.2. If you&rsquo;re new to working with FreeBSD, you may find it helpful to customize this server by following our guide on <a href="https://www.digitalocean.com/community/tutorials/how-to-get-started-with-freebsd">How to Get Started with FreeBSD</a>.
+<strong>Note:</strong> FreeBSD 12.0 currently has an <a href="https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=231773">issue with nested jails</a>, which first needs to be fixed before 12.x can be used for this tutorial.</li>
+<li>10 GB free disk space or more to have enough capacity to store packages and logs.</li>
+<li>A basic Buildbot setup by completing the <a href="https://www.digitalocean.com/community/tutorials/how-to-install-buildbot-freebsd">How To Set Up Buildbot on FreeBSD</a> tutorial.</li>
+<li>Another server running FreeBSD, the same version, which you are going to use as a client to fetch and install the packages that you&rsquo;re going to automatically build and host in a HTTP/HTTPS-based package repository.</li>
+</ul>
+
+<h2 id="step-1-—-installing-poudriere-for-use-in-buildbot-worker">Step 1 — Installing Poudriere for Use in Buildbot Worker</h2>
+
+<p>After completing the prerequisite tutorial, you&rsquo;ll have a working Buildbot master and worker jail plus Nginx setup. You will build upon this existing setup in the following steps. In this first step, you&rsquo;re going to install the build tool Poudriere inside the worker jail, since that is where the Buildbot worker process will trigger builds later on.</p>
+
+<p>Connect to your server hosting Buildbot and open a <strong>root</strong> shell in the worker jail with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo jexec buildbot-worker0 csh
+</li></ul></code></pre>
+<p>Install Poudriere as a package:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">pkg install poudriere
+</li></ul></code></pre>
+<p>Then confirm installation by pressing <code>y</code> and then <code>ENTER</code>.</p>
+
+<span class='note'><p>
+<strong>Note:</strong> It is preferable to use the official FreeBSD package repository for installing Buildbot, Poudriere, and so on. If you build those tool packages yourself, you start off in a chicken-and-egg situation: wanting to install external software, but requiring Poudriere installed to get cleanly built packages. Since Poudriere is a very stable and backward-compatible tool, nothing speaks against updating it regularly and independently from your production packages.</p>
+
+<p>If you followed the prerequisite tutorial, this is already the case and you can continue without following this note.</p>
+
+<p></p></span>
+
+<p>You&rsquo;ve successfully installed the latest Poudriere tool and dependencies. In the next several steps, you will go through preparations to configure Poudriere.</p>
+
+<h2 id="step-2-—-creating-a-package-signing-key-optional">Step 2 — Creating a Package Signing Key (Optional)</h2>
+
+<p>It&rsquo;s recommended to set up digital signatures for built packages in order to provide more security. Skip this step if you want to secure your installation later, or in a different way. Otherwise, let&rsquo;s go ahead and create a key pair used to sign packages (using the private key) and verify packages (using the public part).</p>
+
+<p>Packages, by default, are built as <code>.txz</code> files, which are strongly compressed tarballs of the package contents. The compressed files&rsquo; checksums, together with serving the files via HTTP/HTTPS (TCP checksums), already provide some protection against corrupted data. Package contents typically comprise files and directories plus meta information such as the package name, version, and miscellaneous options. Files may even include <a href="https://en.wikipedia.org/wiki/Setuid#Security"><code>setuid</code>-able programs</a> (as seen in the <code>sudo</code> package—though <em>sudo</em> is not built into FreeBSD), and the installation-time scripts run as <strong>root</strong> user. Installing from unverified sources therefore poses a security risk.</p>
+
+<p>By serving the packages over HTTPS, you cannot detect whether someone tampered with the packages on-disk. Integrity and authenticity of your packages can be added by configuring Poudriere to sign the package repository with an RSA private key. Signed digests and the corresponding public key are thereby stored in the package repository&rsquo;s <code>digests.txz</code> file. The required key pair (RSA private and public key) can be kept unchanged for a long time unless the private key was lost or compromised.</p>
+
+<p>In this step you&rsquo;ll create the key pair where the builds run (worker jail) and download the public part for later use on package clients (discussed in a later step).</p>
+
+<p>Ensure you&rsquo;re still in the worker jail <strong>root</strong> shell.</p>
+
+<p>Create a new RSA private key:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">openssl genrsa -out /usr/local/etc/poudriere.key 4096
+</li></ul></code></pre>
+<p>The private key file only needs to be accessible by <strong>root</strong>—the user that runs Poudriere. Protect its access permissions:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">chmod 0600 /usr/local/etc/poudriere.key
+</li></ul></code></pre>
+<p>Later, you&rsquo;ll need the public key part available on clients for verifying package signatures. Let&rsquo;s extract the public key now:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">openssl rsa -in /usr/local/etc/poudriere.key -pubout -out /tmp/poudriere.pub
+</li></ul></code></pre>
+<p>Lastly, download the public key file from your own computer:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp <span class="highlight">your-server</span>:/usr/jails/buildbot-worker0/tmp/poudriere.pub /tmp/poudriere.pub
+</li></ul></code></pre>
+<p>This concludes the optional creation of a key pair for package signing. You will later configure the actual signing with Poudriere and use the downloaded public key file on clients for the verification.</p>
+
+<p>Another optional step follows: if you use the ZFS filesystem, Poudriere can make use of it to speed up builds. Otherwise, you can skip to <a href="https://www.digitalocean.com/community/tutorials/how-to-build-and-deploy-packages-for-your-freebsd-servers-using-buildbot-and-poudriere#step-4-%E2%80%94-configuring-poudriere,-the-build-jail,-and-the-ports-tree">Step 4</a> to configure Poudriere in order to get ready for running the first build.</p>
+
+<h2 id="step-3-—-setting-up-zfs-optional">Step 3 — Setting Up ZFS (Optional)</h2>
+
+<p>This step only applies if you run a FreeBSD system on top of the <a href="https://en.wikipedia.org/wiki/ZFS">ZFS filesystem</a>. For instance if you&rsquo;re using a DigitalOcean Droplet the image is labeled <strong><span class="highlight">11.2</span> x64 zfs</strong> (for FreeBSD <span class="highlight">11.2</span>). In this step, you&rsquo;re going to create the filesystems that Poudriere can use to create and manage jails faster, potentially speeding up your builds.</p>
+
+<p>You can find out whether you&rsquo;re using ZFS by listing pools. Make sure you&rsquo;re on the server&rsquo;s shell, not inside a jail.</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">exit
+</li></ul></code></pre>
+<p>Run the following command to list the zpools:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo zpool list
+</li></ul></code></pre>
+<p>If any pool is available, it will print information about it:</p>
+<pre class="code-pre text"><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME    SIZE  ALLOC   FREE  CKPOINT  EXPANDSZ   FRAG    CAP  DEDUP  HEALTH  ALTROOT
+zroot   148G  94.4G  54.1G        -         -    66%    63%  1.00x  ONLINE  -
+</code></pre>
+<p>Otherwise if ZFS support is not available the tool will print <code>no pools available</code>, or <code>failed to initialize ZFS library</code>. This means that none of your system is using ZFS; in this case, skip to the next step. If you have decided to use another disk or storage type, such as the UFS filesystem, you can also move on to the next step.</p>
+
+<p>If you plan to use ZFS, remember the printed pool name on which you want to store build-related data. You should plan for several gigabytes of storage.</p>
+
+<p>ZFS is helpful to separate the various datasets of Poudriere, like build jails, ports trees, logs, packages, and other data. These are stored independently and as a result can be deleted quickly with the certainty of not leaving free space or traces behind.</p>
+
+<p>For Poudriere to make use of ZFS, you need to do three things: create a parent ZFS dataset, allow for the creation and deletion of ZFS datasets (which the Buildbot worker jail, or any other jail, by default cannot do), and edit Poudriere&rsquo;s configuration accordingly.</p>
+
+<p>In the prerequisite tutorial, you configured the Buildbot worker jail in <code>/etc/jail.buildbot-worker0.conf</code>. Open this file with your preferred text editor and add the following highlighted lines to delegate a parent dataset to allow the jail to administer ZFS datasets beneath the parent. Remember to replace <code>zroot</code> with your desired pool name:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ee /etc/jail.buildbot-worker0.conf
+</li></ul></code></pre><div class="code-label " title="/etc/jail.buildbot-worker0.conf">/etc/jail.buildbot-worker0.conf</div><pre class="code-pre text"><code langs="">buildbot-worker0 {
+    host.hostname = buildbot-worker0.localdomain;
+    ip4.addr = "lo1|10.0.0.3/24";
+    path = "/usr/jails/buildbot-worker0";
+    exec.start = "/bin/sh /etc/rc";
+    exec.stop = "/bin/sh /etc/rc.shutdown";
+    mount.devfs; # need /dev/*random for Python
+    persist;
+
+    <span class="highlight">exec.poststart = "/sbin/zfs jail buildbot-worker0 zroot/pdr/w0";</span>
+}
+</code></pre>
+<p>In this article we will store build-related data on the ZFS pool <code>zroot</code>—please adapt this ZFS-related configuration here and throughout the rest of the article if you chose a pool of a different name.</p>
+
+<p>After adding this content, save and exit the editor. If you&rsquo;re using <code>ee</code>, do this by pressing <code>CTRL+C</code>, typing <code>exit</code>, and pressing <code>ENTER</code>.</p>
+
+<p>Create the parent ZFS dataset mentioned in the configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo zfs create zroot/pdr
+</li><li class="line" prefix="$">sudo zfs create zroot/pdr/w0
+</li></ul></code></pre>
+<p>This deliberately assumes that you may want to add more workers in the future and therefore creates a sub-dataset for your first worker. The dataset name is short on purpose, since older versions of FreeBSD (before 12.0) had a mount name limit of 88 characters.</p>
+
+<p>In order for a jail to take control of a parent dataset and administer any children, the dataset must be marked with the following flag:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo zfs set jailed=on zroot/pdr/w0
+</li></ul></code></pre>
+<p>With the preconditions now met, the jail will start correctly with the new configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service jail restart buildbot-worker0
+</li></ul></code></pre>
+<p>With these instructions, you successfully created the required filesystems—ZFS datasets—and allowed the jail to manage the parent dataset. In the next step, you will configure Poudriere, which involves specifying the chosen zpool and dataset used to store build-related data.</p>
+
+<h2 id="step-4-—-configuring-poudriere-the-build-jail-and-the-ports-tree">Step 4 — Configuring Poudriere, the Build Jail, and the Ports Tree</h2>
+
+<p>Until this point, you&rsquo;ve installed Poudriere and optionally covered requirements for package signing and ZFS. For Poudriere to be able to run in a &ldquo;jailed&rdquo; fashion—that is, functioning correctly from within the Buildbot worker jail—you need to provide certain permissions to the jail. For example, if you use ZFS, you have already delegated a parent dataset for use and administration by the jail.</p>
+
+<p>Let&rsquo;s first configure the loopback IP and all of the permissions, and then step through the respective meaning following the changes.</p>
+
+<p>Poudriere wants to start two build jails per build: one with loopback-only networking and one with internet access. Only build stages that are supposed to reach the internet will use the latter. For example, the <code>fetch</code> may download source tarballs, but the <code>build</code> phase is not allowed internet access. The existing configuration of the worker jail has <code>ip4.addr = "lo1|10.0.0.3/24"</code> that allows internet access. In order to allow Poudriere to assign a loopback address to freshly started build jails, the IP must also be passed to its parent (the worker jail). For this to work, please ensure you have applied the latest version of the firewall configuration file <code>/usr/local/etc/ipfw.rules</code> from the prerequisite tutorial, which will block the loopback interface <code>lo0</code> from opening outgoing connections through NAT.</p>
+
+<p>Add the highlighted lines to your worker jail configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ee /etc/jail.buildbot-worker0.conf
+</li></ul></code></pre><div class="code-label " title="/etc/jail.buildbot-worker0.conf">/etc/jail.buildbot-worker0.conf</div><pre class="code-pre text"><code langs="">buildbot-worker0 {
+    host.hostname = buildbot-worker0.localdomain;
+    ip4.addr = "lo1|10.0.0.3/24";
+    <span class="highlight">ip4.addr += "lo0|127.0.0.3";</span>
+    path = "/usr/jails/buildbot-worker0";
+    exec.start = "/bin/sh /etc/rc";
+    exec.stop = "/bin/sh /etc/rc.shutdown";
+    mount.devfs; # need /dev/*random for Python
+    persist;
+
+    # If you followed the ZFS setup step, you have this line
+    # already (keep it). For non-ZFS setup, this line must be absent.
+    exec.poststart = "/sbin/zfs jail buildbot-worker0 zroot/pdr/w0";
+
+    <span class="highlight">allow.chflags;</span>
+    <span class="highlight">allow.mount;</span>
+    <span class="highlight">allow.mount.devfs;</span>
+    <span class="highlight">allow.mount.nullfs;</span>
+    <span class="highlight">allow.mount.procfs;</span>
+    <span class="highlight">allow.mount.tmpfs;</span>
+    <span class="highlight">allow.mount.zfs; # only needed if you use ZFS</span>
+    <span class="highlight">allow.raw_sockets; # optional</span>
+    <span class="highlight">allow.socket_af; # optional</span>
+    <span class="highlight">allow.sysvipc; # optional</span>
+    <span class="highlight">children.max=16;</span>
+    <span class="highlight">enforce_statfs=1;</span>
+}
+</code></pre>
+<p>Here you&rsquo;ve added the following (also see the <a href="https://www.freebsd.org/cgi/man.cgi?jail(8)">jail(8) manpage</a>):</p>
+
+<ul>
+<li><code>ip4.addr += "lo0|127.0.0.3"</code> adds another IPv4 address to the jail. You will later configure Poudriere&rsquo;s <code>LOIP4</code> variable in order to assign this loopback address to build jails that are not supposed to talk to the internet or other machines in your network, such as during the <code>build</code> phase. If you ever have a build that requires internet access during build, Poudriere supports a variable <code>ALLOW_NETWORKING_PACKAGES</code> as a workaround. However, it is preferable to follow best practice and perform downloads, and other internet-facing tasks earlier, in the <code>fetch</code> phase for which Poudriere permits internet access.</li>
+<li><code>allow.chflags</code> allows Poudriere to render certain system files like <code>/bin/sh</code> immutable in the build jail.</li>
+<li><code>allow.mount</code> and the other <code>allow.mount.*</code> options enable Poudriere to mount certain required filesystems into the build jails.</li>
+<li><code>allow.raw_sockets</code> which permits use of raw sockets, and <code>allow.socket_af</code> which permits use of any socket address family, are both applied to the internet-capable build jails. This is helpful so that you can run tools like <code>ping</code> in interactive mode, like when entering a build jail to debug problems.</li>
+<li><code>allow.sysvipc</code> is deprecated in favor of three separate settings <code>sysvmsg</code>/<code>sysvsem</code>/<code>sysvshm</code> to restrict jails to only see their own shared memory objects (via &ldquo;SYS V&rdquo; IPC primitives). However, Poudriere can only pass on <code>allow.sysvipc</code> to build jails because it cannot read the relevant sysctl information for the three separate parameters (as of FreeBSD 11.2). With this deprecated configuration, the jail could read shared memory of processes outside the jail. This is only relevant for certain software that depends on IPC features, like PostgreSQL, so chances are small for this to affect security. You can remove this configuration unless you depend on a port that requires it during build.</li>
+<li><code>children.max=16</code> allows 16 sub-jails below the worker jail. You can raise this number later if you have a lot of CPUs and Poudriere tries to create more build jails than permitted. Each Poudriere build will try to create a reference jail and two build jails per &ldquo;job&rdquo;, and its default is to use the number of CPUs (as output by <code>sysctl -n hw.ncpu</code>) as the job count.</li>
+<li><code>enforce_statfs=1</code> is required together with <code>allow.mount</code> in order to mount certain filesystems.</li>
+</ul>
+
+<p>Save and exit the configuration file.</p>
+
+<p>Restart the jail for its configuration to take affect immediately:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service jail restart buildbot-worker0
+</li></ul></code></pre>
+<p>The respective kernel modules must be loaded so that Poudriere can perform mounts. Run the following commands to load the modules at boot time and immediately:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysrc -f /boot/loader.conf nullfs_load=YES
+</li><li class="line" prefix="$">sudo kldload -n nullfs
+</li><li class="line" prefix="$">sudo sysrc -f /boot/loader.conf tmpfs_load=YES
+</li><li class="line" prefix="$">sudo kldload -n tmpfs
+</li></ul></code></pre>
+<p>You already installed the Poudriere package earlier, which has copied the sample file <code>/usr/local/etc/poudriere.conf.sample</code> to <code>/usr/local/etc/poudriere.conf</code>. Next, you will make edits to the configuration file. All possible configuration variables already exist in the sample, so uncomment or adapt the respective line in the file to set a variable to a certain value.</p>
+
+<p>For the following commands, please ensure you are still in a <strong>root</strong> shell in the worker jail:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo jexec buildbot-worker0 csh
+</li></ul></code></pre>
+<p>Open the file with the following command:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">ee /usr/local/etc/poudriere.conf
+</li></ul></code></pre>
+<p>If you have decided to use ZFS, please fill in your desired zpool and parent dataset:</p>
+<div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# Poudriere can optionally use ZFS for its ports/jail storage. For
+# ZFS define ZPOOL, otherwise set NO_ZFS=yes
+#
+#### ZFS
+# The pool where poudriere will create all the filesystems it needs
+# poudriere will use ${ZPOOL}/${ZROOTFS} as its root
+#
+# You need at least 7GB of free space in this pool to have a working
+# poudriere.
+#
+<span class="highlight">ZPOOL=zroot</span>
+
+### NO ZFS
+# To not use ZFS, define NO_ZFS=yes
+<span class="highlight">#NO_ZFS=yes</span>
+
+# root of the poudriere zfs filesystem, by default /poudriere
+<span class="highlight">ZROOTFS=/pdr/w0</span>
+. . .
+</code></pre>
+<p>Otherwise, if you decided against ZFS, please disable ZFS support:</p>
+<div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# Poudriere can optionally use ZFS for its ports/jail storage. For
+# ZFS define ZPOOL, otherwise set NO_ZFS=yes
+#
+#### ZFS
+# The pool where poudriere will create all the filesystems it needs
+# poudriere will use ${ZPOOL}/${ZROOTFS} as its root
+#
+# You need at least 7GB of free space in this pool to have a working
+# poudriere.
+#
+#ZPOOL=zroot
+
+### NO ZFS
+# To not use ZFS, define NO_ZFS=yes
+<span class="highlight">NO_ZFS=yes</span>
+
+# root of the poudriere zfs filesystem, by default /poudriere
+# ZROOTFS=/poudriere
+. . .
+</code></pre>
+<p>You will later instruct Poudriere to download a FreeBSD base system and thereby bootstrap the first build jail. This requires specifying a download host, add the following highlighted line:</p>
+<div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# the host where to download sets for the jails setup
+# You can specify here a host or an IP
+# replace _PROTO_ by http or ftp
+# replace _CHANGE_THIS_ by the hostname of the mirrors where you want to fetch
+# by default: ftp://ftp.freebsd.org
+#
+# Also note that every protocols supported by fetch(1) are supported here, even
+# file:///
+# Suggested: https://download.FreeBSD.org
+<span class="highlight">FREEBSD_HOST=https://download.FreeBSD.org</span>
+</code></pre>
+<p>Since Poudriere will run jailed, the mount name limit of 88 characters of FreeBSD versions before 12.0 is especially harmful, as the full path of the jail <code>/usr/jails/buildbot-worker0</code> is part of each mount path. Exceeding the limit would fatally break the builds, so let&rsquo;s take good care to reduce path lengths. Instead of the typical directory <code>/usr/local/poudriere</code>, you can use <code>/pdr</code> like the following:</p>
+<div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# The directory where poudriere will store jails and ports
+<span class="highlight">BASEFS=/pdr</span>
+</code></pre>
+<p>Now, create that directory:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">mkdir /pdr
+</li></ul></code></pre>
+<p>Switch again to your editor of <code>poudriere.conf</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">ee /usr/local/etc/poudriere.conf
+</li></ul></code></pre>
+<p>Poudriere will mount a central directory for <em>dist files</em> (the source code tarballs for each port) while running builds so that all builders share the same cache. The default directory is:</p>
+<div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# If set the given directory will be used for the distfiles
+# This allows to share the distfiles between jails and ports tree
+# If this is "no", poudriere must be supplied a ports tree that already has
+# the required distfiles.
+<span class="highlight">DISTFILES_CACHE=/usr/ports/distfiles</span>
+</code></pre>
+<p>Now, create that directory:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">mkdir -p /usr/ports/distfiles
+</li></ul></code></pre>
+<p>If you followed Step 2 and created a package repository signing key, please enter the editor again and specify it:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">ee /usr/local/etc/poudriere.conf
+</li></ul></code></pre><div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# Path to the RSA key to sign the PKG repo with. See pkg-repo(8)
+<span class="highlight">PKG_REPO_SIGNING_KEY=/usr/local/etc/poudriere.key</span>
+</code></pre>
+<p>Builds will run much faster if you cache C/C++ compiler and linker outputs for next time. The ports tree supports this directly by leveraging the tool <a href="https://ccache.dev/">ccache</a>. Please enable it and create the respective cache directory if you can spare at least 5GB more space (the default cache size):</p>
+<div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# ccache support. Supply the path to your ccache cache directory.
+# It will be mounted into the jail and be shared among all jails.
+# It is recommended that extra ccache configuration be done with
+# ccache -o rather than from the environment.
+<span class="highlight">CCACHE_DIR=/var/cache/ccache</span>
+</code></pre><pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">mkdir /var/cache/ccache
+</li></ul></code></pre>
+<p>Building and running Linux software is uncommon, so disable it until needed:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">ee /usr/local/etc/poudriere.conf
+</li></ul></code></pre><div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs="">. . .
+# Disable linux support
+<span class="highlight">NOLINUX=yes</span>
+</code></pre>
+<p>The jails should get a loopback address assigned, or Poudriere will warn about it. We can inherit the jail&rsquo;s IP because it is on a loopback-only network interface (<code>lo1</code>). For this, please add the following line to the end of the configuration file:</p>
+<div class="code-label " title="/usr/local/etc/poudriere.conf (snippet)">/usr/local/etc/poudriere.conf (snippet)</div><pre class="code-pre text"><code langs=""><span class="highlight">LOIP4=127.0.0.3</span>
+</code></pre>
+<p>Save and exit the configuration file.</p>
+
+<p>For working builds, we need two more resources: a FreeBSD base system to use as the build jail template and an up-to-date ports tree. Choose the FreeBSD version you are targeting. In this tutorial, we will tell Poudriere to download FreeBSD <span class="highlight">11.2</span> for <span class="highlight">amd64</span> architecture. You can name the jail how you like, but a consistent naming scheme like <code>112amd64</code> is recommended. Also keep in mind the choice between quarterly, stable ports tree branches (here, we use <code>2019Q2</code>) and the bleeding edge &ldquo;head&rdquo; branch that might lead to breaking builds after updates every now and then. FreeBSD versions newer than that on the server can&rsquo;t be used in the build jail.</p>
+
+<p>Download and create the build jail:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">poudriere jail -c -j <span class="highlight">112amd64</span> -v <span class="highlight">11.2-RELEASE</span> -a <span class="highlight">amd64</span>
+</li></ul></code></pre>
+<p>Lastly, let&rsquo;s download the ports tree. The default download method is <a href="https://www.freebsd.org/cgi/man.cgi?portsnap(8)">portsnap</a>, which uses compressed snapshots of the tree without history information. Either Subversion or Git are preferable to merge upstream changes or contribute back. This is also important if you want to use a custom, self-hosted tree in a version control system. In the following command, please fill in the current year and quarter.</p>
+
+<p>If you want to start with the upstream, official ports tree:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">poudriere ports -c -p <span class="highlight">2019Q2</span> -m <span class="highlight">svn+https</span> -B <span class="highlight">branches/2019Q2</span>
+</li></ul></code></pre>
+<p>The method <code>svn+https</code> would sync from the FreeBSD Subversion host (<a href="https://svnweb.freebsd.org/ports/">viewable online here</a>). If you plan to use an alternative source, read the following note, otherwise skip it.</p>
+
+<span class='note'><p>
+<strong>Note:</strong> As an alternative, the method <code>git</code> clones the tree from the <a href="https://github.com/freebsd/freebsd-ports/">mirror</a> on GitHub by default.</p>
+
+<p>To use the &ldquo;head&rdquo; branch, replace the last parameter with <code>-B head</code> (for Subversion) or <code>-B master</code> (for Git).</p>
+
+<p>If you prefer to use your own Git repository, you will have to explicitly specify your repository URL and branch name. Let&rsquo;s assume you want to name your tree <code>customtree</code> and use the branch <code>custom</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">poudriere ports -c -p <span class="highlight">customtree</span> -m <span class="highlight">git</span> -B <span class="highlight">custom</span> -U <span class="highlight">https://github.com/AndiDog/freebsd-ports.git</span>
+</li></ul></code></pre>
+<p>The example URL points to a fork of freebsd-ports on GitHub, but could be any Git or other supported type of repository to which the CI server has access.</p>
+
+<p></p></span>
+
+<p>Available trees can be listed with <code>poudriere ports -l</code>, which outputs a listing like:</p>
+<pre class="code-pre text"><code langs=""><div class="secondary-code-label " title="Output">Output</div>PORTSTREE METHOD    TIMESTAMP           PATH
+2019Q2    svn+https 2019-04-20 19:23:19 /pdr/ports/2019Q2
+</code></pre>
+<p>You&rsquo;re now done setting up Poudriere&rsquo;s configuration and resources. You&rsquo;ve configured Poudriere with the required data to trigger the first builds and enabled the jail to create subjails. Next, you&rsquo;re going to run the first build manually to verify that the setup is working.</p>
+
+<h2 id="step-5-—-running-a-manual-test-build">Step 5 — Running a Manual Test Build</h2>
+
+<p>You can use the command <code>poudriere bulk</code> to build one or more packages and all its dependencies. After the first build of a package, Poudriere also automatically detects if a rebuild is necessary, or otherwise leaves the existing package file untouched. While the <code>bulk</code> subcommand only builds packages, running a build using <code>poudriere testport</code> would also test the specified ports using the definition of &ldquo;testing&rdquo; given in the port&rsquo;s Makefile. For the scope of this article, we&rsquo;re only interested in providing packages for installation on clients, so we are using bulk builds.</p>
+
+<p>Ensure you&rsquo;re still in a root shell of the worker jail where you have installed Poudriere. Later on, this will also be where the Buildbot worker process will run builds automatically.</p>
+
+<p>Run the build, filling in the placeholders with the build jail name and ports tree name you chose earlier:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">poudriere bulk -j <span class="highlight">112amd64</span> -p <span class="highlight">2019Q2</span> ports-mgmt/pkg
+</li></ul></code></pre>
+<p>This builds the port <code>ports-mgmt/pkg</code>. Ports in the official tree are stored in a <code>&lt;category&gt;/&lt;name&gt;</code> hierarchy, and those paths (called <em>package origin</em>) are used to tell Poudriere which packages should be built. For the start, we have chosen to only build the package manager <em>pkg</em>, which does not have any third-party dependencies and is therefore a good, quick check on the configuration. If everything runs fine, you&rsquo;ll see output like this:</p>
+<pre class="code-pre text"><code langs=""><div class="secondary-code-label " title="Output">Output</div>[00:00:00] Creating the reference jail... done
+[00:00:06] Mounting system devices for 112amd64-2019Q2
+[00:00:06] Mounting ports/packages/distfiles
+[00:00:06] Using packages from previously failed build
+[00:00:06] Mounting ccache from: /var/cache/ccache
+[00:00:06] Mounting packages from: <span class="highlight">/pdr/data/packages/112amd64-2019Q2</span>
+/etc/resolv.conf -&gt; /pdr/data/.m/112amd64-2019Q2/ref/etc/resolv.conf
+[00:00:06] Starting jail 112amd64-2019Q2
+[00:00:07] Logs: <span class="highlight">/pdr/data/logs/bulk/112amd64-2019Q2/2019-04-20_19h35m00s</span>
+[00:00:07] Loading MOVED for /pdr/data/.m/112amd64-2019Q2/ref/usr/ports
+[00:00:08] Ports supports: FLAVORS SELECTED_OPTIONS
+[00:00:08] Gathering ports metadata
+[00:00:08] Calculating ports order and dependencies
+[00:00:08] pkg package missing, skipping sanity
+[00:00:08] Skipping incremental rebuild and repository sanity checks
+[00:00:08] Cleaning the build queue
+[00:00:08] Sanity checking build queue
+[00:00:08] Processing PRIORITY_BOOST
+[00:00:08] Balancing pool
+[00:00:08] Recording filesystem state for prepkg... done
+[00:00:08] Building 1 packages using 1 builders
+[00:00:08] Starting/Cloning builders
+[00:00:14] Hit CTRL+t at any time to see build progress and stats
+[00:00:14] [01] [00:00:00] Building ports-mgmt/pkg | pkg-1.10.5_5
+[00:03:24] [01] [00:03:10] Finished ports-mgmt/pkg | pkg-1.10.5_5: <span class="highlight">Success</span>
+[00:03:25] Stopping 1 builders
+[00:03:25] Creating pkg repository
+Creating repository in /tmp/packages: 100%
+Packing files for repository: 100%
+[00:03:25] Committing packages to repository
+[00:03:25] Removing old packages
+[00:03:25] Built ports: ports-mgmt/pkg
+[112amd64-2019Q2] [2019-04-20_19h35m00s] [committing:] <span class="highlight">Queued: 1  Built: 1  Failed: 0  Skipped: 0  Ignored: 0</span>  Tobuild: 0   Time: 00:03:18
+[00:03:25] Logs: /pdr/data/logs/bulk/112amd64-2019Q2/2019-04-20_19h35m00s
+[00:03:25] Cleaning up
+[00:03:25] Unmounting file systems
+</code></pre>
+<p>This output shows where packages will go after build, and from where existing packages are taken in case they don&rsquo;t need rebuild (here: <code>/pdr/data/packages/112amd64-2019Q2</code>). Also, the output shows an overview of running builds while Poudriere runs (you can press <code>CTRL+T</code> in an interactive shell to print the progress). In the final summary you&rsquo;ll see one package was built. You can view verbose build output in the log directory (<code>/pdr/data/logs/bulk/112amd64-2019Q2/*</code>).</p>
+
+<p>This output confirms a successful build. If Poudriere has built at least one package successfully, it will automatically commit it to the package repository. This means that packages are only available after all builds have finished, even if other packages failed to build. You now have a working package repository at <code>/pdr/data/packages/112amd64-2019Q2</code> within the Buildbot worker jail.</p>
+
+<p>You&rsquo;ve completed all the configuration needed to return working Poudriere builds, and you&rsquo;ve successfully verified with a manual build. You&rsquo;ll see this same output later in the tutorial once you&rsquo;ve automated the bulk build in Buildbot. In addition, a link to view the detailed logs shall be accessible from the web interface. To achieve this, and to serve the package repository to clients, you&rsquo;ll set up a web server next.</p>
+
+<h2 id="step-6-—-configuring-nginx-to-serve-the-poudriere-web-interface-and-package-repository">Step 6 — Configuring Nginx to Serve the Poudriere Web Interface and Package Repository</h2>
+
+<p>Poudriere provides several output artifacts that we want to host using a web server:</p>
+
+<ul>
+<li><strong>Package repositories</strong> are made available to clients so they can access them with the regular <code>pkg update</code> and <code>pkg install</code> commands, using HTTPS or HTTP as transport.</li>
+<li><strong>Detailed build logs</strong> are helpful for developers to debug problematic builds or to investigate build output. They are stored per package and per build—in the Poudriere output from the last step, you saw that logs are stored in one directory per build, labeled with date and time.</li>
+<li><strong>Poudriere&rsquo;s built-in web interface</strong> is a small, single HTML page per build that uses WebSockets to regularly update the status shown on the page. This is helpful to get a better overview of how far a build is, which dependencies triggered other package builds to fail, and lastly as a replacement for the command line output, which only shows a summary at the end unless you specifically make it print the current build progress.</li>
+</ul>
+
+<p>The configuration change in Nginx is short, as only static files need to be served. Since you&rsquo;ll serve them to the outside world, you&rsquo;re now going to configure the existing Nginx instance on the server, outside the jails, to serve the mentioned files from paths within the worker jail.</p>
+
+<p>Please exit the jail shell since you&rsquo;re now going to work on the server:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">exit
+</li></ul></code></pre>
+<p>Open an editor with the Nginx configuration <code>/usr/local/etc/nginx/nginx.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ee /usr/local/etc/nginx/nginx.conf
+</li></ul></code></pre>
+<p>Add the following locations inside the <code>server {</code> block:</p>
+<div class="code-label " title="/usr/local/etc/nginx/nginx.conf">/usr/local/etc/nginx/nginx.conf</div><pre class="code-pre text"><code langs="">. . .
+http {
+    . . .
+    server {
+        . . .
+        location / {
+            root /usr/local/www/nginx;
+            index index.html index.htm;
+        }
+
+        <span class="highlight"># poudriere logs</span>
+        <span class="highlight">location ~ ^/logs(/(.*))?$ {</span>
+            <span class="highlight">include mime.types;</span>
+            <span class="highlight">types {</span>
+                <span class="highlight">text/plain log;</span>
+            <span class="highlight">}</span>
+
+            <span class="highlight">alias /usr/jails/buildbot-worker0/pdr/data/logs/bulk$1;</span>
+            <span class="highlight">index index.html index.htm;</span>
+            <span class="highlight">autoindex on;</span>
+        <span class="highlight">}</span>
+
+        <span class="highlight"># poudriere packages</span>
+        <span class="highlight">location ~ ^/packages(/(.*))?$ {</span>
+            <span class="highlight">alias /usr/jails/buildbot-worker0/pdr/data/packages$1;</span>
+            <span class="highlight">index no-index-file-but-required-directive-to-list-dir-contents;</span>
+            <span class="highlight">autoindex on;</span>
+        <span class="highlight">}</span>
+
+        location /buildbot/ {
+            proxy_pass http://10.0.0.2:8010/;
+        }
+
+        . . .
+    }
+}
+. . .
+</code></pre>
+<p>Save and close the Nginx configuration file. Then, reload the Nginx service:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service nginx reload
+</li></ul></code></pre>
+<p>Let&rsquo;s now check out the artifacts created by the first manual build. Open up your preferred web browser on your local machine to access the resources.</p>
+
+<p>The <strong>package repository</strong> is below <code>http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/packages/</code> (or <code>http://<span class="highlight">your-server-ip</span>/</code>). You will find meta information in the root directory, e.g. <code>112amd64-2019Q2</code>, and all built packages in the subdirectory <code>All</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/buildbot_poudriere/step6a.png" alt="Package repository listing"></p>
+
+<p><strong>Detailed build logs</strong> and <strong>Poudriere&rsquo;s built-in web interface</strong> can be found below <code>http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/logs/</code>. Click through the directory hierarchy to reach the data of your previous manual build. In this example, you might end up on a URL like <code>http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/logs/112amd64-2019Q2/latest/build.html</code>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/buildbot_poudriere/step6b.png" alt="Poudriere web interface"></p>
+
+<p>If you did not set up a domain name for your server, you will need to enter your server&rsquo;s public IP address for these examples, e.g. <code>http://<span class="highlight">your-server-ip</span>/logs/</code>.</p>
+
+<p>This concludes all manual setup to get working builds and have visibility into the output (packages and logs). Going forward, you will automate builds to achieve <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-continuous-integration-delivery-and-deployment">continuous integration</a>.</p>
+
+<h2 id="step-7-—-setting-up-a-buildbot-builder-for-your-packages">Step 7 — Setting Up a Buildbot Builder for Your Packages</h2>
+
+<p>Your goal in this step is to automate bulk-package builds by executing Poudriere in the same way you already have manually—by adding to the existing Buildbot sample configuration. By the end of this step, Buildbot will trigger the package build whenever the chosen branch of the ports tree changes. In this tutorial&rsquo;s examples, that would be the quarterly branch <code>2019Q2</code>.</p>
+
+<p>All necessary changes are done in the Buildbot master configuration, so please open a <strong>root</strong> shell in the master jail:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo jexec buildbot-master csh
+</li></ul></code></pre>
+<p>First, a <em>builder</em> must be defined that describes the commands and actions performed to run a build. In the existing configuration <code>/var/buildbot-master/master.cfg</code>, you will find a section <code>####### BUILDERS</code>—open an editor and <strong>replace</strong> the whole section until the next heading starting with <code>####### ...</code>, with the following configuration:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-master:/ #">ee /var/buildbot-master/master.cfg
+</li></ul></code></pre><div class="code-label " title="/var/buildbot-master/master.cfg (snippet)">/var/buildbot-master/master.cfg (snippet)</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+####### BUILDERS
+
+c['builders'] = []
+
+PORTS_TO_BUILD = {
+    'security/sudo',
+    'shells/bash',
+    'sysutils/tmux',
+}
+
+
+# Custom classes
+class PoudriereLogLineObserver(util.LogLineObserver):
+    _logsRe = re.compile(r'Logs: /pdr/data/logs/bulk(/[-_/0-9A-Za-z]+)$')
+
+    def __init__(self):
+        super().__init__()
+        self._hadUrls = False
+
+    def outLineReceived(self, line):
+        if not self._hadUrls:
+            m = self._logsRe.search(line.strip())
+            if m:
+                poudriereUiUrl = f'''{re.sub('/buildbot/$', '', c['buildbotURL'])}/logs{m.group(1)}'''
+                self.step.addURL('Poudriere build', poudriereUiUrl)
+                self.step.addURL('Poudriere logs', poudriereUiUrl + '/logs/')
+                self._hadUrls = True
+
+
+class PoudriereCompileStep(steps.Compile):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.addLogObserver('stdio', PoudriereLogLineObserver())
+
+
+# Poudriere bulk build
+bulkBuildFactory = util.BuildFactory()
+bulkBuildFactory.addSteps([
+    steps.ShellCommand(
+        name='update ports tree',
+        command=['sudo', 'poudriere', 'ports', '-u', '-p', '2019Q2', '-v'],
+        haltOnFailure=True,
+    ),
+    PoudriereCompileStep(
+        name='make bulk',
+        command=['sudo', 'poudriere', 'bulk', '-j', '112amd64', '-p', '2019Q2'] + list(sorted(PORTS_TO_BUILD)),
+        haltOnFailure=True,
+    ),
+])
+c['builders'].append(util.BuilderConfig(name='bulk-112amd64-2019Q2',
+                                        workernames=['worker0'],
+                                        factory=bulkBuildFactory))
+. . .
+</code></pre>
+<p>Note how this makes use of Buildbot&rsquo;s extensibility: custom classes are used to observe and parse information from Poudriere&rsquo;s log output. Namely, <code>PoudriereLogLineObserver</code> is added as &ldquo;log observer&rdquo;, i.e. gets called whenever a new log line is printed during the build. The class searches the logs for the log directory and converts that into hyperlinks. Those links will be displayed alongside the build step and take the user directly to Poudriere&rsquo;s web interface and logs.</p>
+
+<p>In the first build step &ldquo;update ports tree&rdquo;, we use Poudriere&rsquo;s built-in update command (<code>ports -u</code>) to pull the latest version of the ports tree. This will use the previously configured method automatically (for example SVN/Git). This way, you can be sure the packages are always built against the latest committed tree, which is especially helpful if you have your own versioned repository where you maintain software versions and patches.</p>
+
+<p>At the top, the list <code>PORTS_TO_BUILD</code> specifies which ports should be built. It is used in the steps of the <em>build factory</em> specified at the bottom of the block. The build factory is a template used to instantiate a build. Buildbot creates a unique build whenever one is triggered, and the build uses a copy of the steps that were defined for the build factory at the time. In this case, we configured exactly two steps:</p>
+
+<ul>
+<li>Update the ports tree. Since this example uses the quarterly branch <code>2019Q2</code>, it will not receive changes very often (typically only security and build fixes).</li>
+<li>Run the bulk build using the same tree.</li>
+</ul>
+
+<p>To make the added code block work, please add a required import to the top of the file:</p>
+<div class="code-label " title="/var/buildbot-master/master.cfg (snippet)">/var/buildbot-master/master.cfg (snippet)</div><pre class="code-pre "><code class="code-highlight language-python"># -*- python -*-
+# ex: set filetype=python:
+
+<span class="highlight">import re</span>
+
+from buildbot.plugins import *
+</code></pre>
+<p>The <code>re</code> library in Python implements <em>regular expressions</em>, a feature to search or replace parts of a string—the <code>PoudriereLogLineObserver</code> class uses it to search for a line <code>Logs: /pdr/data/logs/...</code> that mentions the log directory.</p>
+
+<p>The build commands use <code>sudo</code> to run certain commands. This is required because Poudriere needs superuser privileges when running a build—in order to create, manage, and destroy the build jails—and also the ports trees managed by Poudriere are created with the root user as owner. In the previous tutorial, we configured the user that runs the Buildbot worker process with <code>sysrc buildbot_worker_uid=buildbot-worker</code>. Hence, we want to allow the <code>buildbot-worker</code> user to run exactly the necessary commands as root, but not other commands (for security reasons). Let&rsquo;s install the <code>sudo</code> program and configure it accordingly.</p>
+
+<p>This needs to be done on the worker jail, not the master. Please exit the master jail shell and enter the worker jail:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-master:/ #">exit
+</li></ul></code></pre><pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo jexec buildbot-worker0 csh
+</li></ul></code></pre>
+<p>Install the <code>sudo</code> package:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">pkg install sudo
+</li></ul></code></pre>
+<p>Confirm installation with <code>y</code> and <code>ENTER</code>.</p>
+
+<p>On FreeBSD, the <em>sudo</em> package by default reads configuration files from <code>/usr/local/etc/sudoers.d/</code>. Open an editor to create a new configuration file:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">env EDITOR=ee visudo /usr/local/etc/sudoers.d/buildbot-worker
+</li></ul></code></pre>
+<p>The use of <code>visudo</code> is intentional, since it will warn on syntax errors and allow fixing them instead of committing a bad configuration.</p>
+
+<p>Specify which commands the <code>buildbot-worker</code> user can run as root without requiring any password:</p>
+<div class="code-label " title="/usr/local/etc/sudoers.d/buildbot-worker">/usr/local/etc/sudoers.d/buildbot-worker</div><pre class="code-pre text"><code langs="">buildbot-worker ALL=(ALL) NOPASSWD: /usr/local/bin/poudriere bulk *
+buildbot-worker ALL=(ALL) NOPASSWD: /usr/local/bin/poudriere ports -u *
+</code></pre>
+<p>Save the file and switch back to the master jail for further required configuration of the Buildbot master:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-worker0:/ #">exit
+</li></ul></code></pre><pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo jexec buildbot-master csh
+</li></ul></code></pre>
+<p>You just fulfilled the requirements to get the bulk build to work. But as mentioned, each build must be <em>triggered</em> to run. Buildbot uses the term <em>scheduler</em> for an object that defines when a build is triggered, and with which extra information, such as which branch has been changed. Please <strong>remove</strong> the existing section <code>SCHEDULERS</code> from the configuration file, and place the following content <strong>after</strong> the <code>BUILDERS</code> section, so that the code can use all existing builder names:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-master:/ #">ee /var/buildbot-master/master.cfg
+</li></ul></code></pre><div class="code-label " title="/var/buildbot-master/master.cfg (snippet)">/var/buildbot-master/master.cfg (snippet)</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+####### SCHEDULERS
+
+c['schedulers'] = []
+
+# Forceful scheduler allowed for all builders
+c['schedulers'].append(schedulers.ForceScheduler(
+    name='force',
+    builderNames=[builder.name for builder in c['builders']]))
+
+# Watch ports tree for changes on given branch
+c['schedulers'].append(schedulers.SingleBranchScheduler(
+    name='sched-bulk-112amd64-2019Q2',
+    change_filter=util.ChangeFilter(project='freebsd-ports', branch='branches/2019Q2'),
+    builderNames=['bulk-112amd64-2019Q2']))
+. . .
+</code></pre>
+<p>This replaces the sample configuration so that a <strong>force</strong> button appears on every builder. And most importantly, it creates a scheduler that watches all changes pertaining to the given <code>project</code>/<code>branch</code> and triggers a build for each change. Yet, no such change events can occur—you first have to create a <em>change source</em>. Typically, those are <em>version control systems</em> like SVN or Git on which one can detect changes on a branch. Buildbot supports the most popular ones, so we can use its functionality to add our chosen upstream ports tree repository as source. Completely replace the section <code>CHANGESOURCES</code> with the following configuration:</p>
+<div class="code-label " title="/var/buildbot-master/master.cfg (snippet)">/var/buildbot-master/master.cfg (snippet)</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+####### CHANGESOURCES
+
+c['change_source'] = []
+
+c['change_source'].append(changes.SVNPoller(
+    'svn://svn.freebsd.org/ports/',
+    project='freebsd-ports',
+    split_file=util.svn.split_file_branches,
+    svnbin='svnlite',
+    pollInterval=4 * 3600))
+
+# Example for Git:
+# c['change_source'].append(changes.GitPoller(
+#     repourl='https://github.com/AndiDog/freebsd-ports.git',
+#     project='freebsd-ports',
+#     branches=['custom'],
+#     pollInterval=4 * 3600))
+. . .
+</code></pre>
+<p>This polls the SVN repository every four hours on the Buildbot master, and any new (not seen before) changes are forwarded to matching schedulers which in turn would trigger builds that are eventually dispatched to run on our single Buildbot worker. The ports tree is very large, and at first run these pollers will download the full history (for Git, only the specified branches), which can take a few minutes and require significant space (several gigabytes).</p>
+
+<p>Apply the new configuration file by restarting Buildbot:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@buildbot-master:/ #">service buildbot restart
+</li></ul></code></pre>
+<p>In this example, you have used the upstream ports collection from <code>svn://svn.freebsd.org/ports/</code> and builds are scheduled whenever the branch <code>2019Q2</code> changes. As noted before, quarterly branches are mostly stable and do not receive updates very often. Since you probably do not want to wait for such a change to come in before the build is triggered the first time, let&rsquo;s run it once by hand.</p>
+
+<p>Open your Buildbot web interface (<code>http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/buildbot/</code>), navigate to <strong>Builds &gt; Builders &gt; bulk-112amd64-2019Q2</strong>. It will not show any builds yet.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/buildbot_poudriere/step7a.png" alt="Bulk builder page – no builds yet"></p>
+
+<p>Click the <strong>force</strong> button at the top-right and then <strong>Start Build</strong>. That will trigger the build using its default settings, i.e. reason, branch, and other values are not overridden. The &ldquo;update ports tree&rdquo; step might take a minute to run, and eventually the Poudriere build should also run through successfully. The web interface will show the build as successful.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/buildbot_poudriere/step7b.png" alt="Successful build"></p>
+
+<p>Clicking one of the links (<strong>Poudriere build</strong> and <strong>Poudriere logs</strong>) will take you to the Poudriere web interface and build logs for this specific build, respectively (as shown in Step 6). Expand by clicking the arrow next to <strong>make bulk</strong> and then <strong>stdio &gt; view all &hellip; lines</strong> to show the full output of the <code>poudriere bulk ...</code> command.</p>
+
+<p>Having completed the first build, the packages are now available, as configured in Nginx in Step 6. Head to <code>http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/packages/</code> (or <code>http://<span class="highlight">your-server-ip</span>/packages/</code>) in a browser and click through the package repository created by Poudriere. You can find the actual package files (<code>*.txz</code>) once you enter one of the repositories and navigate to the <code>All/</code> subdirectory.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/buildbot_poudriere/step7c.png" alt="List of package repositories"></p>
+
+<p>Now that packages are available over HTTPS (or HTTP if you decided so) and built automatically on ports tree changes, you can configure one or more hosts to use those packages.</p>
+
+<h2 id="step-8-—-configuring-package-clients">Step 8 — Configuring Package Clients</h2>
+
+<p>In this step, you need a second FreeBSD server and will set it up such that it can fetch and install the packages built on the CI server. We will call this second server the <strong>package client</strong>.</p>
+
+<p>SSH into the <strong>client</strong> host. Most remaining instructions in this section will be done on the <strong>client</strong>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">package-client</span>
+</li></ul></code></pre>
+<p>Create the directory for custom package repository configurations:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -p /usr/local/etc/pkg/repos
+</li></ul></code></pre>
+<p>As <strong>root</strong> user, open an editor to create the file <code>/usr/local/etc/pkg/repos/ci.conf</code>, and specify how and from where to retrieve packages:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ee /usr/local/etc/pkg/repos/ci.conf
+</li></ul></code></pre>
+<p>In case you chose package signing, use this content:</p>
+<div class="code-label " title="/usr/local/etc/pkg/repos/ci.conf">/usr/local/etc/pkg/repos/ci.conf</div><pre class="code-pre yaml"><code langs="">ci: {
+    url: "http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/packages/<span class="highlight">112amd64-2019Q2</span>",
+    signature_type: "pubkey",
+    pubkey: "/usr/local/etc/pkg/repos/ci.pub",
+    enabled: yes
+}
+</code></pre>
+<p>Alternatively, if you decided to go without package signing, disable signature checks as follows:</p>
+<div class="code-label " title="/usr/local/etc/pkg/repos/ci.conf">/usr/local/etc/pkg/repos/ci.conf</div><pre class="code-pre yaml"><code langs="">ci: {
+    url: "http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/packages/<span class="highlight">112amd64-2019Q2</span>",
+    signature_type: "none",
+    enabled: yes
+}
+</code></pre>
+<span class='note'><p>
+<strong>Note:</strong> This note applies only if you followed Step 2 to create a package repository signing key. Please skip it otherwise.</p>
+
+<p>From your <strong>local machine</strong>, upload the public key to the package client:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp /tmp/poudriere.pub <span class="highlight">package-client</span>:/tmp/ci.pub
+</li></ul></code></pre>
+<p>Using the <strong>client shell</strong> again, move the key into place so it can verify the authenticity of packages:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv /tmp/ci.pub /usr/local/etc/pkg/repos/ci.pub
+</li></ul></code></pre>
+<p></p></span>
+
+<p>You completed configuring the package repository and enabled it, but on a regular FreeBSD installation, the official package repository &ldquo;FreeBSD&rdquo; would be enabled as well. Mixing installed packages from different sources is a foolproof way to have your production software crash at some point due to incompatible software versions or differing ABI, API, or build options. All packages on a host should stem from the same source.</p>
+
+<p>The default configuration of the official repository is stored in <code>/etc/pkg/FreeBSD.conf</code>. This file belongs to the base system and should not be touched. However, you can override its settings—namely, we want to disable the repository altogether—by adding the respective flag in a configuration file under <code>/usr/local/etc/pkg/repos</code>, where also your own repository is configured. Please create a new file <code>/usr/local/etc/pkg/repos/FreeBSD.conf</code> with an editor, and use the following content to disable the FreeBSD repository:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ee /usr/local/etc/pkg/repos/FreeBSD.conf
+</li></ul></code></pre><div class="code-label " title="/usr/local/etc/pkg/repos/FreeBSD.conf">/usr/local/etc/pkg/repos/FreeBSD.conf</div><pre class="code-pre yaml"><code langs="">FreeBSD: {
+    enabled: no
+}
+</code></pre>
+<p>If you are on a fully pristine <strong>package client</strong> host, no packages are installed yet and you can immediately begin using your own package repository. However, if even only one package was installed from another source, you are recommended to uninstall those packages and begin from scratch using your own source. The package manager <code>pkg</code> itself is installed as a package—to solve the chicken-and-egg problem, FreeBSD&rsquo;s base system ships with a small executable <code>/usr/sbin/pkg</code>, which can bootstrap the package manager. That is, download the <code>pkg</code> package and install it as the very first package on the system. From that point on, the executable <code>/usr/local/sbin/pkg</code> of that package supports you as full-blown package manager.</p>
+
+<p>Run the following command to bootstrap <code>pkg</code>:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo pkg bootstrap
+</li></ul></code></pre>
+<p>In the output of <code>pkg bootstrap</code>, you should see that packages are taken from your own package repository which we called <code>ci</code> in the configuration file. If you are using a package signing key, the output will also hint about the security verification.</p>
+<pre class="code-pre text"><code langs=""><div class="secondary-code-label " title="Output">Output</div>The package management tool is not yet installed on your system.
+Do you want to fetch and install it now? [y/N]: y
+Bootstrapping pkg from http<span class="highlight">s</span>://<span class="highlight">your-domain</span>/packages/<span class="highlight">112amd64-2019Q2</span>, please wait...
+<span class="highlight">Verifying signature with public key /usr/local/etc/pkg/repos/ci.pub</span>... done
+Installing pkg-1.10.5_5...
+Extracting pkg-1.10.5_5: 100%
+</code></pre>
+<p>If you see this successful output, please skip to the next note block. However, if the package manager or other packages had already been installed from another source, and you get this error:</p>
+<pre class="code-pre text"><code langs=""><div class="secondary-code-label " title="Output">Output</div>pkg already bootstrapped at /usr/local/sbin/pkg
+</code></pre>
+<p>Then please follow the instructions in the note.</p>
+
+<span class='note'><p>
+<strong>Note – only if package manager was bootstrapped already:</strong></p>
+
+<p>You can list installed packages with <code>pkg info</code>. In this case, you should uninstall all of them including <code>pkg</code>, and reinstall them later. To do that, please first list the manually installed packages with <code>pkg query -e "%a==0" "%n"</code>. Remember which of them you want to install again later. If, for instance, you use a shell which is not part of the base system (e.g. bash is an external package), you will want to reinstall it later or you might not be able to log in again.</p>
+
+<p>The following commands will remove all existing packages and the package manager, bootstrap the package manager again from your own package repository, and give an example of reinstalling your desired packages such as bash. Note though that you will only be able to install packages that you have built through the CI, i.e. listed in the Buildbot master configuration (variable <code>PORTS_TO_BUILD</code>).</p>
+
+<p>First, open a <strong>root</strong> shell before uninstalling the <code>sudo</code> package, or else you may not be able to gain superuser privileges anymore. Keep it open until you have bootstrapped <code>pkg</code> through the course of the tutorial and successfully reinstalled <code>sudo</code>:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sh
+</li></ul></code></pre>
+<p>Uninstall all packages, including <code>pkg</code>:</p>
+<pre class="code-pre custom_prefix fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">pkg delete --all --force
+</li></ul></code></pre>
+<p>Bootstrap the package manager:</p>
+<pre class="code-pre custom_prefix fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">pkg bootstrap
+</li></ul></code></pre>
+<p>Confirm to bootstrap the package manager by pressing <code>y</code>, followed by <code>ENTER</code>.</p>
+
+<p></p></span>
+
+<p>In the likely case that you set up your package host using a Let&rsquo;s Encrypt certificate for HTTPS, you will run into the chicken-and-egg problem where your package host is not trusted but you would need to install the package <code>ca_root_nss</code> (containing trustworthy root certificate authorities) to trust the Let&rsquo;s Encrypt CA and thereby also trust the server hosting your custom-built packages. The same problem would arise if you used an internal CA (self-signed by you or your company). Certificate verification errors would result in error output like this when bootstrapping the package manager:</p>
+<pre class="code-pre text"><code langs=""><div class="secondary-code-label " title="Output">Output</div>The package management tool is not yet installed on your system.
+Do you want to fetch and install it now? [y/N]: y
+Bootstrapping pkg from https://example.com/packages/112amd64-2019Q2, please wait...
+Certificate verification failed for /C=US/O=Let's Encrypt/CN=Let's Encrypt Authority X3
+34389740104:error:14090086:SSL routines:ssl3_get_server_certificate:certificate verify failed:/usr/src/crypto/openssl/ssl/s3_clnt.c:1269:
+[...]
+</code></pre>
+<p>If you see this error, please follow the instructions in the note below. Otherwise, you are all set and can skip this part and continue after the note.</p>
+
+<span class='note'><p>
+<strong>Note – only if using HTTPS and certificate verification failed:</strong></p>
+
+<p>There is one straight workaround: trust the security of the package signing key, hence bootstrapping <code>pkg</code> and installing the <code>ca_root_nss</code> package via unencrypted HTTP. Since this is not always an option because of privacy concerns, blocked HTTP ports etc., we should prefer a more &ldquo;best practice&rdquo; way. The official FreeBSD repository is also signed by Let&rsquo;s Encrypt, so we cannot simply install the <code>ca_root_nss</code> package from there. No matter which CA it is, you are recommended to set up your package clients with a fixed set of HTTPS CAs to trust. You can achieve exactly that within the next few instructions. We are going to assume this is for Let&rsquo;s Encrypt, but the instructions will work the same way for your own, self-signed CA (you&rsquo;ll need its certificate chain handy).</p>
+
+<p>In your web browser, visit Let&rsquo;s Encrypt&rsquo;s certificate listing at <a href="https://letsencrypt.org/certificates/">https://letsencrypt.org/certificates/</a>. Make sure the web site is trusted by the browser. Download the certificates under <strong>Root Certificates &gt; Active &gt; ISRG Root X1 (self-signed)</strong> and <strong>Intermediate Certificates &gt; Active &gt; Let’s Encrypt Authority X3 (Signed by ISRG Root X1)</strong> in PEM format to <code>/tmp/root.pem</code> and <code>/tmp/intermediate.pem</code> on your local computer, respectively.</p>
+
+<p>After the download has succeeded, concatenate the files into a certificate chain:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /tmp/intermediate.pem /tmp/root.pem &gt;/tmp/letsencrypt-chain.pem
+</li></ul></code></pre><pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp /tmp/letsencrypt-chain.pem <span class="highlight">package-client</span>:/tmp/.
+</li></ul></code></pre>
+<p><strong>Back in the shell of the package client</strong>, you now need to specify this chain of trust in the package manager configuration <code>/usr/local/etc/pkg.conf</code> so it gets used for TLS verification. Add these lines using an editor, and create the file if it does not exist yet:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ee /usr/local/etc/pkg.conf
+</li></ul></code></pre><div class="code-label " title="/usr/local/etc/pkg.conf (snippet)">/usr/local/etc/pkg.conf (snippet)</div><pre class="code-pre yaml"><code langs="">pkg_env: {
+    SSL_CA_CERT_FILE: "/usr/local/etc/pkg/repos/letsencrypt-chain.pem",
+}
+</code></pre>
+<p>Move the CA chain into place:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv /tmp/letsencrypt-chain.pem /usr/local/etc/pkg/repos/.
+</li></ul></code></pre>
+<p>If you stayed in a root shell until now because the sudo package was removed, this command must be run without <code>sudo</code>. The same applies to the next command within this note.</p>
+
+<p>With this setting, you can try bootstrapping once again and should not get any more TLS errors. There is one small twist: the FreeBSD built-in <code>/usr/sbin/pkg</code>, which bootstraps the full package manager, does not honor the configured <code>pkg_env</code> setting, so we have to override the respective environment variable for this one time only, using the same value as configured:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo env SSL_CA_CERT_FILE=/usr/local/etc/pkg/repos/letsencrypt-chain.pem pkg bootstrap
+</li></ul></code></pre>
+<p></p></span>
+
+<p>If you previously deleted existing packages, it&rsquo;s a good time to reinstall essential tools now (e.g. sudo), plus any other desired packages.</p>
+<pre class="code-pre custom_prefix fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">pkg install bash sudo
+</li></ul></code></pre>
+<p>And drop out of the root shell, if that is still the case:</p>
+<pre class="code-pre custom_prefix fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">exit
+</li></ul></code></pre>
+<p>In order to test whether everything works, install packages from the list specified in the Buildbot master config (variable <code>PORTS_TO_BUILD</code>). For example, the Bash shell and sudo:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo pkg install bash sudo tmux
+</li></ul></code></pre>
+<p>Again, confirm installation by pressing <code>y</code> and then <code>ENTER</code>. The package installation should run through without any issues.</p>
+
+<p>You can use <code>pkg info</code> to list which packages are currently installed (including dependencies, if any). To verify that no packages from other sources are installed, possibly causing clashes or incompatibilities, you could list installed packages with these details using <code>pkg query "%n: autoinstalled=%a from repo=%R"</code>. Mind that <code>pkg</code> will be shown as bootstrapped from <code>unknown-repository</code>—this is why previously, you verified the bootstrapping output to see that the package manager itself is also taken from your own package repository.</p>
+
+<p>In this last step, you configured access to the CI&rsquo;s package repository on a client, optionally enabled package signature verification for security purposes, ensured that packages only come from a single source to avoid compatibility issues, bootstrapped the package manager <code>pkg</code>, and installed your desired packages as built by the CI.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial, you have installed and configured Poudriere, automated running package builds, and configured secure access to the package repository from a client host, ending up with the latest built packages installed from a single, central source. The setup puts you in an excellent position to keep your servers consistent and up-to-date, and manage version upgrades of external software packages.</p>
+
+<p>To further enhance your current setup, you could consider select follow-up steps:</p>
+
+<ul>
+<li><strong>Private access only</strong>: By default, Droplets have a public IP address on the internet. Also, Buildbot <a href="http://docs.buildbot.net/latest/developer/auth.html">supports authentication</a> but is by default unprotected.</li>
+<li><strong>Alert on build problems</strong>: Check out how to set up <a href="https://docs.buildbot.net/latest/manual/configuration/reporters.html">Buildbot reporters</a> to get started.</li>
+<li><strong>Keep ports tree up to date</strong>: In the examples from the tutorial, the <a href="https://wiki.freebsd.org/Ports/QuarterlyBranch">quarterly branch</a> 2019Q2 was used, but you should switch to a newer tree eventually or use your own version-controlled repository to apply desired patches.</li>
+<li><strong>Adding builds for own projects</strong>: The <a href="https://www.freebsd.org/doc/en/books/porters-handbook/">FreeBSD Porter&rsquo;s Handbook</a> explains how to write a build recipe (a <em>port</em>) if you want to build and install your internal software as FreeBSD packages.</li>
+<li><strong>Monitor outdated packages on clients</strong>:  You can compare installed packages on a client with the latest available packages on the CI using the output of <code>sudo pkg update -q &amp;&amp; sudo pkg version -q --not-like "="</code> which prints all packages whose version does not exactly match. See the <a href="https://www.freebsd.org/cgi/man.cgi?query=pkg-version&amp;sektion=8&amp;n=1">manpage of pkg-version</a> for more details.</li>
+<li><strong>Add cleanup job</strong>: Over time, the Buildbot worker jail will run full of old build log files, source tarballs, and possibly deprecated packages. Use the commands <code>poudriere {logclean,distclean,pkgclean}</code> to clean up (see <a href="https://www.freebsd.org/cgi/man.cgi?query=poudriere&amp;sektion=8&amp;manpath=freebsd-release-ports">manpage of poudriere</a>).</li>
+</ul>

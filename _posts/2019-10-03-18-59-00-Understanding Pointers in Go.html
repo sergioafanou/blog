@@ -1,0 +1,400 @@
+---
+layout: post
+title: Understanding Pointers in Go
+network: digitalocean
+date: October 03, 2019 at 06:59PM
+url: https://www.digitalocean.com/community/tutorials/understanding-pointers-in-go
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>When you write software in Go you&rsquo;ll be writing functions and methods. You pass data to these functions as <em>arguments</em>. Sometimes, the function needs a local copy of the data, and you want the original to remain unchanged. For example, if you&rsquo;re a bank, and you have a function that shows the user the changes to their balance depending on the savings plan they choose, you don&rsquo;t want to change the customer&rsquo;s actual balance before they choose a plan; you just want to use it in calculations. This is called <em>passing by value</em>, because you&rsquo;re sending the value of the variable to the function, but not the variable itself.</p>
+
+<p>Other times, you may want the function to be able to alter the data in the original variable. For instance, when the bank customer makes a deposit to their account, you want the deposit function to be able to access the actual balance, not a copy. In this case, you don&rsquo;t need to send the actual data to the function; you just need to tell the function where the data is located in memory. A data type called a <em>pointer</em> holds the memory address of the data, but not the data itself. The memory address tells the function where to find the data, but not the value of the data. You can pass the pointer to the function instead of the data, and the function can then alter the original variable in place. This is called <em>passing by reference</em>, because the value of the variable isn&rsquo;t passed to the function, just its location.</p>
+
+<p>In this article, you will create and use pointers to share access to the memory space for a variable. </p>
+
+<h2 id="defining-and-using-pointers">Defining and Using Pointers</h2>
+
+<p>When you use a pointer to a variable, there are a couple of different syntax elements that you need to understand.  The first one is the use of the ampersand (<code>&amp;</code>).  If you place an ampersand in front of a variable name, you are stating that you want to get the <em>address</em>, or a pointer to that variable. The second syntax element is the use of the asterisk (<code>*</code>) or <em>dereferencing</em> operator. When you declare a pointer variable, you follow the variable name with the type of the variable that the pointer points to, prefixed with an <code>*</code>, like this:</p>
+<pre class="code-pre "><code class="code-highlight language-go">var myPointer *int32 = &amp;someint
+</code></pre>
+<p>This creates <code>myPointer</code> as a pointer to an <code>int32</code> variable, and initializes the pointer with the address of <code>someint</code>. The pointer doesn&rsquo;t actually contain an <code>int32</code>, just the address of one.</p>
+
+<p>Let&rsquo;s take a look at a pointer to a <code>string</code>.  The following code declares both a value of a string, and a pointer to a string:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    var creature string = "shark"
+    var pointer *string = &amp;creature
+
+    fmt.Println("creature =", creature)
+    fmt.Println("pointer =", pointer)
+}
+
+</code></pre>
+<p>Run the program with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>When you run the program, it will print out the value of the variable, as well as the address of where the variable is stored (the pointer address). The memory address is a hexadecimal number, and not meant to be human-readable. In practice, you&rsquo;ll probably never output a memory address to look at it. We&rsquo;re showing you for illustrative purposes. Because each program is created in its own memory space when it is run, the value of the pointer will be different each time you run it, and will be different than the output shown here:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>creature = shark
+pointer = 0xc0000721e0
+</code></pre>
+<p>The first variable we defined we named <code>creature</code>, and set it equal to a <code>string</code> with the value of <code>shark</code>.  We then created another variable named <code>pointer</code>.  This time, we set the value of the <code>pointer</code> variable to the address of the <code>creature</code> variable. We store the address of a value in a variable by using the ampersand (<code>&amp;</code>) symbol. This means that the <code>pointer</code> variable is storing the <strong>address</strong> of the <code>creature</code> variable, not the actual value. </p>
+
+<p>This is why when we printed out the value of <code>pointer</code>, we received the value of <code>0xc0000721e0</code>, which is the address of where the <code>creature</code> variable is currently stored in computer memory. </p>
+
+<p>If you want to print out the value of the variable being pointed at from the <code>pointer</code> variable, you need to <em>dereference</em> that variable. The following code uses the <code>*</code> operator to dereference the <code>pointer</code> variable and retrieve its value:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">
+package main
+
+import "fmt"
+
+func main() {
+    var creature string = "shark"
+    var pointer *string = &amp;creature
+
+    fmt.Println("creature =", creature)
+    fmt.Println("pointer =", pointer)
+
+    <span class="highlight">fmt.Println("*pointer =", *pointer)</span>
+}
+</code></pre>
+<p>If you run this code, you&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>creature = shark
+pointer = 0xc000010200
+*pointer = shark
+</code></pre>
+<p>The last line we added now dereferences then <code>pointer</code> variable, and prints out the value that is stored at that address. </p>
+
+<p>If you want to modify the value stored at the <code>pointer</code> variable&rsquo;s location, you can use the dereference operator as well:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    var creature string = "shark"
+    var pointer *string = &amp;creature
+
+    fmt.Println("creature =", creature)
+    fmt.Println("pointer =", pointer)
+
+    fmt.Println("*pointer =", *pointer)
+
+    <span class="highlight">*pointer = "jellyfish"</span>
+    <span class="highlight">fmt.Println("*pointer =", *pointer)</span>
+}
+
+</code></pre>
+<p>Run this code to see the output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>creature = shark
+pointer = 0xc000094040
+*pointer = shark
+*pointer = jellyfish
+</code></pre>
+<p>We set the value the <code>pointer</code> variable refers to by using the asterisk (<code>*</code>) in front of the variable name, and then providing a new value of <code>jellyfish</code>.  As you can see, when we print the dereferenced value, it is now set to <code>jellyfish</code>.</p>
+
+<p>You may not have realized it, but we actually changed the value of the <code>creature</code> variable as well.  This is because the <code>pointer</code> variable is actually pointing at the <code>creature</code> variable&rsquo;s address. This means that if we change the value pointed at from the <code>pointer</code> variable, we also change the value of the <code>creature</code> variable.</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    var creature string = "shark"
+    var pointer *string = &amp;creature
+
+    fmt.Println("creature =", creature)
+    fmt.Println("pointer =", pointer)
+
+    fmt.Println("*pointer =", *pointer)
+
+    *pointer = "jellyfish"
+    fmt.Println("*pointer =", *pointer)
+
+    <span class="highlight">fmt.Println("creature =", creature)</span>
+}
+</code></pre>
+<p>The output looks like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>creature = shark
+pointer = 0xc000010200
+*pointer = shark
+*pointer = jellyfish
+creature = jellyfish
+</code></pre>
+<p>Although this code illustrates how a pointer works, this is not the typical way in which you would use pointers in Go. It is more common to use them when defining function arguments and return values, or using them when defining methods on custom types.  Let&rsquo;s look at how you would use pointers with functions to share access to a variable.</p>
+
+<p>Again, keep in mind that we are printing the value of <code>pointer</code> to illustrate that it is a pointer.  In practice, you wouldn&rsquo;t use the value of a pointer, other than to reference the underlying value to retrieve or update that value.</p>
+
+<h2 id="function-pointer-receivers">Function Pointer Receivers</h2>
+
+<p>When you write a function, you can define arguments to be passed ether by <em>value</em>, or by <em>reference</em>.  Passing by <em>value</em> means that a copy of that value is sent to the function, and any changes to that argument within that function <em>only</em> effect that variable within that function, and not where it was passed from. However, if you pass by <em>reference</em>, meaning you pass a pointer to that argument, you can change the value from within the function, and also change the value of the original variable that was passed in. You can read more about how to define functions in our <a href="">How To Define and Call Functions in Go</a>.</p>
+
+<p>Deciding when to pass a pointer as opposed when to send a value is all about knowing if you want the value to change or not.  If you don&rsquo;t want the value to change, send it as a value.  If you want the function you are passing your variable to be able to change it, then you would pass it as a pointer.</p>
+
+<p>To see the difference, let&rsquo;s first look at a function that is passing in an argument by <code>value</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Creature struct {
+    Species string
+}
+
+func main() {
+    var creature Creature = Creature{Species: "shark"}
+
+    fmt.Printf("1) %+v\n", creature)
+    changeCreature(creature)
+    fmt.Printf("3) %+v\n", creature)
+}
+
+func changeCreature(creature Creature) {
+    creature.Species = "jellyfish"
+    fmt.Printf("2) %+v\n", creature)
+}
+
+</code></pre>
+<p>The output looks like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1) {Species:shark}
+2) {Species:jellyfish}
+3) {Species:shark}
+</code></pre>
+<p>First we created a custom type named <code>Creature</code>.  It has one field named <code>Species</code>, which is a string.  In the <code>main</code> function, we created an instance of our new type named <code>creature</code> and set the <code>Species</code> field to <code>shark</code>.  We then printed out the variable to show the current value stored within the <code>creature</code> variable.</p>
+
+<p>Next, we call <code>changeCreature</code> and pass in a copy of the <code>creature</code> variable.</p>
+
+<p>The function <code>changeCreature</code> is defined as taking one argument named <code>creature</code>, and it is of type <code>Creature</code> that we defined earlier. We then change the value of the <code>Species</code> field to <code>jellyfish</code> and print it out.  Notice that within the <code>changeCreature</code> function, the value of <code>Species</code> is now <code>jellyfish</code>, and it prints out <code>2) {Species:jellyfish}</code>.  This is because we are allowed to change the value within our function scope.</p>
+
+<p>However, when the last line of the <code>main</code> function prints the value of <code>creature</code>, the value of <code>Species</code> is still <code>shark</code>.  The reason that the value didn&rsquo;t change is because we passed the variable by <em>value</em>.  This means that a copy of the value was created in memory, and passed to the <code>changeCreature</code> function.  This allows us to have a function that can make changes to any arguments passed in as needed, but will not affect any of those variables outside of the function.</p>
+
+<p>Next, let&rsquo;s change the <code>changeCreature</code> function to take an argument by <em>reference</em>.  We can do this by changing the type from <code>creature</code> to a pointer by using the asterisk (<code>*</code>) operator.  Instead of passing a <code>creature</code>, we&rsquo;re now passing a pointer to a <code>creature</code>, or a <code>*creature</code>. In the previous example, <code>creature</code> is a <code>struct</code> that has a <code>Species</code> value of <code>shark</code>. <code>*creature</code> is a pointer, not a struct, so its value is a memory location, and that&rsquo;s what we pass to <code>changeCreature()</code>.</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Creature struct {
+    Species string
+}
+
+func main() {
+    var creature Creature = Creature{Species: "shark"}
+
+    fmt.Printf("1) %+v\n", creature)
+    changeCreature(<span class="highlight">&amp;</span>creature)
+    fmt.Printf("3) %+v\n", creature)
+}
+
+func changeCreature(creature <span class="highlight">*</span>Creature) {
+    creature.Species = "jellyfish"
+    fmt.Printf("2) %+v\n", creature)
+}
+</code></pre>
+<p>Run this code to see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1) {Species:shark}
+2) &amp;{Species:jellyfish}
+3) {Species:jellyfish}
+</code></pre>
+<p>Notice that now when we change the value of <code>Species</code> to <code>jellyfish</code> in the <code>changeCreature</code> function, it changes the original value defined in the <code>main</code> function as well.  This is because we passed the <code>creature</code> variable by <em>reference</em>, which allows access to the original value and can change it as needed.</p>
+
+<p>Therefore, if you want a function to be able to change a value, you need to pass it by reference. To pass by reference, you pass the pointer to the variable, and not the variable itself.</p>
+
+<p>However, sometimes you may not have an actual value defined for a pointer. In those cases, it is possible to have a <a href="https://www.digitalocean.com/community/tutorials/handling-panics-in-go">panic</a> in the program. Let&rsquo;s look at how that happens and how to plan for that potential problem.</p>
+
+<h2 id="nil-pointers">Nil Pointers</h2>
+
+<p>All variables in Go have a <a href="https://www.digitalocean.com/community/tutorials/how-to-use-variables-and-constants-in-go#zero-values">zero value</a>. This is true even for a pointer. If you declare a pointer to a type, but assign no value, the zero value will be <code>nil</code>.  <code>nil</code> is a way to say that <code>nothing has been initialized</code> for the variable.</p>
+
+<p>In the following program, we are defining a pointer to a <code>Creature</code> type, but we are never instantiating that actual instance of a <code>Creature</code> and assigning the address of it to the <code>creature</code> pointer variable.  The value will be <code>nil</code> and we can&rsquo;t reference any of the fields or methods that would be defined on the <code>Creature</code> type:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Creature struct {
+    Species string
+}
+
+func main() {
+    var creature *Creature
+
+    fmt.Printf("1) %+v\n", creature)
+    changeCreature(creature)
+    fmt.Printf("3) %+v\n", creature)
+}
+
+func changeCreature(creature *Creature) {
+    creature.Species = "jellyfish"
+    fmt.Printf("2) %+v\n", creature)
+}
+</code></pre>
+<p>The output looks like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1) &lt;nil&gt;
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x8 pc=0x109ac86]
+
+goroutine 1 [running]:
+main.changeCreature(0x0)
+        /Users/corylanou/projects/learn/src/github.com/gopherguides/learn/_training/digital-ocean/pointers/src/nil.go:18 +0x26
+    main.main()
+            /Users/corylanou/projects/learn/src/github.com/gopherguides/learn/_training/digital-ocean/pointers/src/nil.go:13 +0x98
+        exit status 2
+</code></pre>
+<p>When we run the program, it printed out the value of the <code>creature</code> variable, and  the value is <code>&lt;nil&gt;</code>.  We then call the <code>changeCreature</code> function, and when that function tries to set the value of the <code>Species</code> field, it <em>panics</em>.  This is because there is no instance of the variable actually created.  Because of this, the program has no where to actually store the value, so the program panics.</p>
+
+<p>It is common in Go that if you are receiving an argument as a pointer, you check to see if it was nil or not before performing any operations on it to prevent the program from panicking.</p>
+
+<p>This is a common approach for checking for <code>nil</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">if someVariable == nil {
+    // print an error or return from the method or fuction
+}
+</code></pre>
+<p>Effectively you want to make sure you don&rsquo;t have a <code>nil</code> pointer that was passed into your function or method.  If you do, you&rsquo;ll likely just want to return, or return an error to show that an invalid argument was passed to the function or method. The following code demonstrates checking for <code>nil</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Creature struct {
+    Species string
+}
+
+func main() {
+    var creature *Creature
+
+    fmt.Printf("1) %+v\n", creature)
+    changeCreature(creature)
+    fmt.Printf("3) %+v\n", creature)
+}
+
+func changeCreature(creature *Creature) {
+    <span class="highlight">if creature == nil {</span>
+        <span class="highlight">fmt.Println("creature is nil")</span>
+        <span class="highlight">return</span>
+    <span class="highlight">}</span>
+
+    creature.Species = "jellyfish"
+    fmt.Printf("2) %+v\n", creature)
+}
+</code></pre>
+<p>We added a check in the <code>changeCreature</code> to see if the value of the <code>creature</code> argument was <code>nil</code>.  If it was, we print out <code>creature is nil</code>, and return out of the function.  Otherwise, we continue and change the value of the <code>Species</code> field.  If we run the program, we will now get the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1) &lt;nil&gt;
+creature is nil
+3) &lt;nil&gt;
+</code></pre>
+<p>Notice that while we still had a <code>nil</code> value for the <code>creature</code> variable, we are no longer panicking because we are checking for that scenario.</p>
+
+<p>Finally, if we create an instance of the <code>Creature</code> type and assign it to the <code>creature</code> variable, the program will now change the value as expected:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Creature struct {
+    Species string
+}
+
+func main() {
+    var creature *Creature
+    <span class="highlight">creature = &amp;Creature{Species: "shark"}</span>
+
+    fmt.Printf("1) %+v\n", creature)
+    changeCreature(creature)
+    fmt.Printf("3) %+v\n", creature)
+}
+
+func changeCreature(creature *Creature) {
+    if creature == nil {
+        fmt.Println("creature is nil")
+        return
+    }
+
+    creature.Species = "jellyfish"
+    fmt.Printf("2) %+v\n", creature)
+}
+</code></pre>
+<p>Now that we have an instance of the <code>Creature</code> type, the program will run and we will get the following expected output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1) &amp;{Species:shark}
+2) &amp;{Species:jellyfish}
+3) &amp;{Species:jellyfish}
+</code></pre>
+<p>When you are working with pointers, there is a potential for the program to panic.  To avoid panicking, you should check to see if a pointer value is <code>nil</code> prior to trying to access any of the fields or methods defined on it.</p>
+
+<p>Next, let&rsquo;s look at how using pointers and values affects defining methods on a type.</p>
+
+<h2 id="method-pointer-receivers">Method Pointer Receivers</h2>
+
+<p>A <code>receiver</code> in go is the argument that is defined in a method declaration.  Take a look at the following code:</p>
+<pre class="code-pre "><code class="code-highlight language-go">type Creature struct {
+    Species string
+}
+
+func (<span class="highlight">c Creature</span>) String() string {
+    return c.Species
+}
+</code></pre>
+<p>The receiver in this method is <code>c Creature</code>.  It is stating that the instance of <code>c</code> is of type <code>Creature</code> and you will reference that type via that instance variable.</p>
+
+<p>Just like the behavior of functions is different based on whether you send in an argument as a pointer or a value, methods also have different behavior. The big difference is that if you define a method with a value receiver, you are not able to make changes to the instance of that type that the method was defined on.</p>
+
+<p>There will be times that you would like your method to be able to update the instance of the variable that you are using.  To allow for this, you would want to make the receiver a pointer.</p>
+
+<p>Let&rsquo;s add a <code>Reset</code> method to our <code>Creature</code> type that will set the <code>Species</code> field to an empty string:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Creature struct {
+    Species string
+}
+
+func (c Creature) Reset() {
+    c.Species = ""
+}
+
+func main() {
+    var creature Creature = Creature{Species: "shark"}
+
+    fmt.Printf("1) %+v\n", creature)
+    creature.Reset()
+    fmt.Printf("2) %+v\n", creature)
+}
+</code></pre>
+<p>If we run the program, we will get the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1) {Species:shark}
+2) {Species:shark}
+</code></pre>
+<p>Notice that even though in the <code>Reset</code> method we set the value of <code>Species</code> to an empty string, that when we print out the value of our <code>creature</code> variable in the <code>main</code> function, the value is still set to <code>shark</code>. This is because we defined the <code>Reset</code> method has having a <code>value</code> receiver.  This means that the method will only have access to a <em>copy</em> of the <code>creature</code> variable.</p>
+
+<p>If we want to be able to modify the instance of the <code>creature</code> variable in the methods, we need to define them as having a <code>pointer</code> receiver:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Creature struct {
+    Species string
+}
+
+func (c <span class="highlight">*</span>Creature) Reset() {
+    c.Species = ""
+}
+
+func main() {
+    var creature Creature = Creature{Species: "shark"}
+
+    fmt.Printf("1) %+v\n", creature)
+    creature.Reset()
+    fmt.Printf("2) %+v\n", creature)
+}
+</code></pre>
+<p>Notice that we now added an asterisk (<code>*</code>) in front of the <code>Creature</code> type in when we defined the <code>Reset</code> method. This means that the instance of <code>Creature</code> that is passed to the <code>Reset</code> method is now a pointer, and as such when we make changes it will affect the original instance of that variables.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1) {Species:shark}
+2) {Species:}
+</code></pre>
+<p>The <code>Reset</code> method has now changed the value of the <code>Species</code> field.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Defining a function or method as a pass by <code>value</code> or pass by <code>reference</code> will affect what parts of your program are able to make changes to other parts. Controlling when that variable can be changed will allow you to write more robust and predictable software.  Now that you have learned about pointers, you can see how they are used in interfaces as well.</p>

@@ -1,0 +1,190 @@
+---
+layout: post
+title: How to Install and Secure the Mosquitto MQTT Messaging Broker on Debian 10
+network: digitalocean
+date: October 08, 2019 at 08:51PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-the-mosquitto-mqtt-messaging-broker-on-debian-10
+image: http://assets.digitalocean.com/articles/mosquitto/paho-update.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="http://mqtt.org/">MQTT</a> is a machine-to-machine messaging protocol, designed to provide lightweight publish/subscribe communication to &ldquo;Internet of Things&rdquo; devices. It is commonly used for geo-tracking fleets of vehicles, home automation, environmental sensor networks, and utility-scale data collection.</p>
+
+<p><a href="https://mosquitto.org/">Mosquitto</a> is a popular MQTT server (or <em>broker</em>, in MQTT parlance) that has great community support and is easy to install and configure.</p>
+
+<p>In this tutorial, we&rsquo;ll install Mosquitto and set up our broker to use SSL to secure our password-protected MQTT communications.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before starting this tutorial, you will need:</p>
+
+<ul>
+<li><p>A Debian 10 server with a non-root, sudo-enabled user and basic firewall set up, as detailed in <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">this Debian 10 server setup tutorial</a>.</p></li>
+<li><p>A domain name pointed at your server, as documented in our <a href="https://www.digitalocean.com/docs/networking/dns/">DigitalOcean DNS product documentation</a>. This tutorial will use <code><span class="highlight">mqtt.example.com</span></code> throughout.</p></li>
+<li><p>An auto-renewable Let’s Encrypt SSL certificate for use with your domain and Mosquitto, generated using the Certbot tool. You can learn how to set this up in <a href="https://www.digitalocean.com/community/tutorials/how-to-use-certbot-standalone-mode-to-retrieve-let-s-encrypt-ssl-certificates-on-debian-10">How To Use Certbot Standalone Mode to Retrieve Let&rsquo;s Encrypt SSL Certificates on Debian 10<br>
+</a>. You can add <code>systemctl restart mosquitto</code> as a <code>renew_hook</code> in Step 4. Be sure to use the same domain configured in the previous prerequisite step.</p></li>
+</ul>
+
+<h2 id="step-1-—-installing-mosquitto">Step 1 — Installing Mosquitto</h2>
+
+<p>Debian 10 has a fairly recent version of Mosquitto in its default software repository, so we can install it from there.</p>
+
+<p>First, log in using your non-root user and update the package lists using <code>apt update</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Now, install Mosquitto using <code>apt install</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install mosquitto mosquitto-clients
+</li></ul></code></pre>
+<p>By default, Debian will start the Mosquitto service after install. Let&rsquo;s test the default configuration. We&rsquo;ll use one of the Mosquitto clients we just installed to subscribe to a topic on our broker.</p>
+
+<p><em>Topics</em> are labels that you publish messages to and subscribe to. They are arranged as a hierarchy, so you could have <code>sensors/outside/temp</code> and <code>sensors/outside/humidity</code>, for example. How you arrange topics is up to you and your needs. Throughout this tutorial we will use a simple test topic to test our configuration changes.</p>
+
+<p>Log in to your server a second time, so you have two terminals side-by-side. In the new terminal, use <code>mosquitto_sub</code> to subscribe to the test topic:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mosquitto_sub -h localhost -t test
+</li></ul></code></pre>
+<p><code>-h</code> is used to specify the hostname of the MQTT server, and <code>-t</code> is the topic name. You&rsquo;ll see no output after hitting <code>ENTER</code> because <code>mosquitto_sub</code> is waiting for messages to arrive. Switch back to your other terminal and publish a message:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mosquitto_pub -h localhost -t test -m "hello world"
+</li></ul></code></pre>
+<p>The options for <code>mosquitto_pub</code> are the same as <code>mosquitto_sub</code>, though this time we use the additional <code>-m</code> option to specify our message. Hit <code>ENTER</code>, and you should see <strong>hello world</strong> pop up in the other terminal. You&rsquo;ve sent your first MQTT message!</p>
+
+<p>Enter <code>CTRL+C</code> in the second terminal to exit out of <code>mosquitto_sub</code>, but keep the connection to the server open. We&rsquo;ll use it again for another test in Step 5.</p>
+
+<p>Next, we&rsquo;ll secure our installation using password-based authentication.</p>
+
+<h2 id="step-2-—-configuring-mqtt-passwords">Step 2 — Configuring MQTT Passwords</h2>
+
+<p>Let&rsquo;s configure Mosquitto to use passwords. Mosquitto includes a utility to generate a special password file called <code>mosquitto_passwd</code>. This command will prompt you to enter a password for the specified username, and place the results in <code>/etc/mosquitto/passwd</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mosquitto_passwd -c /etc/mosquitto/passwd <span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Now we&rsquo;ll open up a new configuration file for Mosquitto and tell it to use this password file to require logins for all connections:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/mosquitto/conf.d/default.conf
+</li></ul></code></pre>
+<p>This should open an empty file. Paste in the following:</p>
+<div class="code-label " title="/etc/mosquitto/conf.d/default.conf">/etc/mosquitto/conf.d/default.conf</div><pre class="code-pre "><code langs="">allow_anonymous false
+password_file /etc/mosquitto/passwd
+
+</code></pre>
+<p>Be sure to leave a trailing newline at the end of the file.</p>
+
+<p><code>allow_anonymous false</code> will disable all non-authenticated connections, and the <code>password_file</code> line tells Mosquitto where to look for user and password information. Save and exit the file.</p>
+
+<p>Now we need to restart Mosquitto and test our changes.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart mosquitto
+</li></ul></code></pre>
+<p>Try to publish a message without a password:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mosquitto_pub -h localhost -t "test" -m "hello world"
+</li></ul></code></pre>
+<p>The message should be rejected:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Connection Refused: not authorised.
+Error: The connection was refused.
+</code></pre>
+<p>Before we try again with the password, switch to your second terminal window again, and subscribe to the &lsquo;test&rsquo; topic, using the username and password this time:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mosquitto_sub -h localhost -t test -u "<span class="highlight">sammy</span>" -P "<span class="highlight">password</span>"
+</li></ul></code></pre>
+<p>It should connect and sit, waiting for messages. You can leave this terminal open and connected for the rest of the tutorial, as we&rsquo;ll periodically send it test messages.</p>
+
+<p>Now publish a message with your other terminal, again using the username and password:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mosquitto_pub -h localhost -t "test" -m "hello world" -u "<span class="highlight">sammy</span>" -P "<span class="highlight">password</span>"
+</li></ul></code></pre>
+<p>The message should go through as in Step 1. We&rsquo;ve successfully added password protection to Mosquitto. Unfortunately, we&rsquo;re sending passwords unencrypted over the internet. We&rsquo;ll fix that next by adding SSL encryption to Mosquitto.</p>
+
+<h2 id="step-3-—-configuring-mqtt-ssl">Step 3 — Configuring MQTT SSL</h2>
+
+<p>To enable SSL encryption, we need to tell Mosquitto where our Let&rsquo;s Encrypt certificates are stored. Open up the configuration file we previously started:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/mosquitto/conf.d/default.conf
+</li></ul></code></pre>
+<p>Paste in the following at the end of the file, leaving the two lines we already added:</p>
+<div class="code-label " title="/etc/mosquitto/conf.d/default.conf">/etc/mosquitto/conf.d/default.conf</div><pre class="code-pre "><code langs="">. . .
+listener 1883 localhost
+
+listener 8883
+certfile /etc/letsencrypt/live/<span class="highlight">mqtt.example.com</span>/cert.pem
+cafile /etc/letsencrypt/live/<span class="highlight">mqtt.example.com</span>/chain.pem
+keyfile /etc/letsencrypt/live/<span class="highlight">mqtt.example.com</span>/privkey.pem
+
+</code></pre>
+<p>Again, be sure to leave a trailing newline at the end of the file.</p>
+
+<p>We&rsquo;re adding two separate <code>listener</code> blocks to the config. The first, <code>listener 1883 localhost</code>, updates the default MQTT listener on port <code>1883</code>, which is what we&rsquo;ve been connecting to so far. <code>1883</code> is the standard unencrypted MQTT port. The <code>localhost</code> portion of the line instructs Mosquitto to only bind this port to the localhost interface, so it&rsquo;s not accessible externally. External requests would have been blocked by our firewall anyway, but it&rsquo;s good to be explicit.</p>
+
+<p><code>listener 8883</code> sets up an encrypted listener on port <code>8883</code>. This is the standard port for MQTT + SSL, often referred to as MQTTS. The next three lines, <code>certfile</code>, <code>cafile</code>, and <code>keyfile</code>, all point Mosquitto to the appropriate Let&rsquo;s Encrypt files to set up the encrypted connections.</p>
+
+<p>Save and exit the file, then restart Mosquitto to update the settings:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart mosquitto
+</li></ul></code></pre>
+<p>Update the firewall to allow connections to port <code>8883</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 8883
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Rule added
+Rule added (v6)
+</code></pre>
+<p>Now we test again using <code>mosquitto_pub</code>, with a few different options for SSL:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mosquitto_pub -h <span class="highlight">mqtt.example.com</span> -t test -m "hello again" -p 8883 --capath /etc/ssl/certs/ -u "<span class="highlight">sammy</span>" -P "<span class="highlight">password</span>"
+</li></ul></code></pre>
+<p>Note that we&rsquo;re using the full hostname instead of <code>localhost</code>. Because our SSL certificate is issued for <code><span class="highlight">mqtt.example.com</span></code>, if we attempt a secure connection to <code>localhost</code> we&rsquo;ll get an error saying the hostname does not match the certificate hostname (even though they both point to the same Mosquitto server).</p>
+
+<p><code>--capath /etc/ssl/certs/</code> enables SSL for <code>mosquitto_pub</code>, and tells it where to look for root certificates. These are typically installed by your operating system, so the path is different for Mac OS, Windows, etc. <code>mosquitto_pub</code> uses the root certificate to verify that the Mosquitto server&rsquo;s certificate was properly signed by the Let&rsquo;s Encrypt certificate authority. It&rsquo;s important to note that <code>mosquitto_pub</code> and <code>mosquitto_sub</code> will not attempt an SSL connection without this option (or the similar <code>--cafile</code> option), even if you&rsquo;re connecting to the standard secure port of <code>8883</code>.</p>
+
+<p>If all goes well with the test, we&rsquo;ll see <strong>hello again</strong> show up in the other <code>mosquitto_sub</code> terminal. This means your server is fully set up! If you&rsquo;d like to extend the MQTT protocol to work with websockets, you can follow the final step.</p>
+
+<h2 id="step-4-—-configuring-mqtt-over-websockets-optional">Step 4 — Configuring MQTT Over Websockets (Optional)</h2>
+
+<p>In order to speak MQTT using JavaScript from within web browsers, the protocol was adapted to work over standard websockets. If you don&rsquo;t need this functionality, you may skip this step.</p>
+
+<p>We need to add one more <code>listener</code> block to our Mosquitto config:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/mosquitto/conf.d/default.conf
+</li></ul></code></pre>
+<p>At the end of the file, add the following:</p>
+<div class="code-label " title="/etc/mosquitto/conf.d/default.conf">/etc/mosquitto/conf.d/default.conf</div><pre class="code-pre "><code langs="">. . .
+listener 8083
+protocol websockets
+certfile /etc/letsencrypt/live/<span class="highlight">mqtt.example.com</span>/cert.pem
+cafile /etc/letsencrypt/live/<span class="highlight">mqtt.example.com</span>/chain.pem
+keyfile /etc/letsencrypt/live/<span class="highlight">mqtt.example.com</span>/privkey.pem
+
+</code></pre>
+<p>Again, be sure to leave a trailing newline at the end of the file.</p>
+
+<p>This is mostly the same as the previous block, except for the port number and the <code>protocol websockets</code> line. There is no official standardized port for MQTT over websockets, but <code>8083</code> is the most common.</p>
+
+<p>Save and exit the file, then restart Mosquitto.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart mosquitto
+</li></ul></code></pre>
+<p>Now, open up port <code>8083</code> in the firewall.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 8083
+</li></ul></code></pre>
+<p>To test this functionality, we&rsquo;ll use a public, browser-based MQTT client. There are a few out there, but the <a href="https://www.eclipse.org/paho/clients/js/utility/">Eclipse Paho JavaScript Client</a> is simple and straightforward to use. <a href="https://www.eclipse.org/paho/clients/js/utility/">Open the Paho client in your browser</a>. You&rsquo;ll see the following:</p>
+
+<p><img src="http://assets.digitalocean.com/articles/mosquitto/paho-update.png" alt="Paho Client Screen"></p>
+
+<p>Fill out the connection information as follows:</p>
+
+<ul>
+<li><strong>Host</strong> should be the domain for your Mosquitto server, <code><span class="highlight">mqtt.example.com</span></code>.</li>
+<li><strong>Port</strong> should be <code>8083</code>.</li>
+<li><strong>ClientId</strong> can be left to the default value, <strong>js-utility-DI1m6</strong>.</li>
+<li><strong>Path</strong> can be left to the default value, <strong>/mqtt</strong>.</li>
+<li><strong>Username</strong> should be your Mosquitto username; here, we used <strong>sammy</strong>.</li>
+<li><strong>Password</strong> should be the password you chose.</li>
+</ul>
+
+<p>The remaining fields can be left to their default values.</p>
+
+<p>After pressing <strong>Connect</strong>, the Paho browser-based client will connect to your Mosquitto server. </p>
+
+<p>To publish a message, navigate to the <strong>Publish Message</strong> pane, fill out <strong>Topic</strong> as <strong>test</strong>, and enter any message in the <strong>Message</strong> section. Next, press <strong>Publish</strong>. The message will show up in your <code>mosquitto_sub</code> terminal.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>We&rsquo;ve now set up a secure, password-protected and SSL-secured MQTT server. This can serve as a robust and secure messaging platform for whatever projects you dream up. Some popular software and hardware that work well with the MQTT protocol include:</p>
+
+<ul>
+<li><a href="https://owntracks.org/">OwnTracks</a>, an open-source geo-tracking app you can install on your phone. OwnTracks will periodically report position information to your MQTT server, which you could then store and display on a map, or create alerts and activate IoT hardware based on your location.</li>
+<li><a href="https://nodered.org/">Node-RED</a> is a browser-based graphical interface for 'wiring&rsquo; together the Internet of Things. You drag the output of one node to the input of another, and can route information through filters, between various protocols, into databases, and so on. MQTT is very well supported by Node-RED.</li>
+<li>The <a href="https://www.espressif.com/en/products/hardware/esp-wroom-32/overview">ESP32</a> is an inexpensive wifi microcontroller with MQTT capabilities. You could wire one up to publish temperature data to a topic, or perhaps subscribe to a barometric pressure topic and sound a buzzer when a storm is coming!</li>
+</ul>
+
+<p>These are just a few popular examples from the MQTT ecosystem. There is much more hardware and software out there that speaks the protocol. If you already have a favorite hardware platform, or software language, it probably has MQTT capabilities. Have fun getting your &ldquo;things&rdquo; talking to each other!</p>

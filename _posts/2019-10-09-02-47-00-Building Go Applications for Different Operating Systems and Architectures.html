@@ -1,0 +1,289 @@
+---
+layout: post
+title: Building Go Applications for Different Operating Systems and Architectures
+network: digitalocean
+date: October 09, 2019 at 02:47AM
+url: https://www.digitalocean.com/community/tutorials/building-go-applications-for-different-operating-systems-and-architectures
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p>In software development, it is important to consider the <a href="https://en.wikipedia.org/wiki/Operating_system">operating system</a> and underlying processor <a href="https://en.wikipedia.org/wiki/Microarchitecture">architecture</a> that you would like to compile your binary for. Since it is often slow or impossible to run a binary on a different OS/architecture platform, it is a common practice to build your final binary for many different platforms to maximize your program&rsquo;s audience. However, this can be difficult when the platform you are using for development is different from the platform you want to deploy your program to. In the past, for example, developing a program on Windows and deploying it to a Linux or a macOS machine would involve setting up build machines for each of the environments you wanted binaries for. You’d also need to keep your tooling in sync, in addition to other considerations that would add cost and make collaborative testing and distribution more difficult.</p>
+
+<p>Go solves this problem by building support for multiple platforms directly into the <code>go build</code> tool, as well as the rest of the Go toolchain. By using <a href="https://www.digitalocean.com/community/tutorials/how-to-read-and-set-environmental-and-shell-variables-on-a-linux-vps">environment variables</a> and <a href="https://www.digitalocean.com/community/tutorials/customizing-go-binaries-with-build-tags">build tags</a>, you can control which OS and architecture your final binary is built for, in addition to putting together a workflow that can quickly toggle the inclusion of platform-dependent code without changing your codebase.  </p>
+
+<p>In this tutorial, you will put together a sample application that joins <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-working-with-strings-in-go">strings</a> together into a filepath, create and selectively include platform-dependent snippets, and build binaries for multiple operating systems and system architectures on your own system, showing you how to use this powerful capability of the Go programming language.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To follow the example in this article, you will need:</p>
+
+<ul>
+<li>A Go workspace set up by following <a href="https://www.digitalocean.com/community/tutorial_series/how-to-install-and-set-up-a-local-programming-environment-for-go">How To Install Go and Set Up a Local Programming Environment</a>.</li>
+</ul>
+
+<h2 id="possible-platforms-for-goos-and-goarch">Possible Platforms for <code>GOOS</code> and <code>GOARCH</code></h2>
+
+<p>Before showing how to control the build process to build binaries for different platforms, let&rsquo;s first inspect what kinds of platforms Go is capable of building for, and how Go references these platforms using the environment variables <code>GOOS</code> and <code>GOARCH</code>. </p>
+
+<p>The Go tooling has a command that can print a list of the possible platforms that Go can build on. This list can change with each new Go release, so the combinations discussed here might not be the same on another version of Go. At the time of writing this tutorial, the current Go release is <a href="https://golang.org/doc/go1.13"><code>1.13</code></a>.</p>
+
+<p>To find this list of possible platforms, run the following:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go tool dist list
+</li></ul></code></pre>
+<p>You will receive an output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>aix/ppc64        freebsd/amd64   linux/mipsle   openbsd/386
+android/386      freebsd/arm     linux/ppc64    openbsd/amd64
+android/amd64    illumos/amd64   linux/ppc64le  openbsd/arm
+android/arm      js/wasm         linux/s390x    openbsd/arm64
+android/arm64    linux/386       nacl/386       plan9/386
+darwin/386       linux/amd64     nacl/amd64p32  plan9/amd64
+darwin/amd64     linux/arm       nacl/arm       plan9/arm
+darwin/arm       linux/arm64     netbsd/386     solaris/amd64
+darwin/arm64     linux/mips      netbsd/amd64   windows/386
+dragonfly/amd64  linux/mips64    netbsd/arm     windows/amd64
+freebsd/386      linux/mips64le  netbsd/arm64   windows/arm
+</code></pre>
+<p>This output is a set of key-value pairs separated by a <code>/</code>. The first part of the combination, before the <code>/</code>, is the operating system. In Go, these operating systems are possible values for the environment variable <code>GOOS</code>, pronounced &ldquo;goose&rdquo;, which stands for <strong>Go Operating System</strong>. The second part, after the <code>/</code>, is the architecture. As before, these are all possible values for an environment variable: <code>GOARCH</code>. This is pronounced &ldquo;gore-ch&rdquo;, and stands for <strong>Go Architecture</strong>. </p>
+
+<p>Let&rsquo;s break down one of these combinations to understand what it means and how it works, using <code>linux/386</code> as an example. The key-value pair starts with the <code>GOOS</code>, which in this example would be <code>linux</code>, referring to the <a href="https://www.digitalocean.com/community/tutorial_series/getting-started-with-linux">Linux OS</a>. The <code>GOARCH</code> here would be <code>386</code>, which stands for the <a href="https://en.wikipedia.org/wiki/Intel_80386">Intel 80386 microprocessor</a>.</p>
+
+<p>There are many platforms available with the <code>go build</code> command, but a majority of the time you&rsquo;ll end up using <code>linux</code> , <code>windows</code>, or <code>darwin</code> as a value for <code>GOOS</code>. These cover the big three OS platforms: <a href="https://en.wikipedia.org/wiki/Linux">Linux</a>, <a href="https://en.wikipedia.org/wiki/Microsoft_Windows">Windows</a>, and <a href="https://en.wikipedia.org/wiki/MacOS">macOS</a>, which is based on the <a href="https://en.wikipedia.org/wiki/Darwin_(operating_system)">Darwin operating system</a> and is thus called <code>darwin</code>. However, Go can also cover less mainstream platforms like <code>nacl</code>, which represents <a href="https://developer.chrome.com/native-client">Google&rsquo;s Native Client</a>.</p>
+
+<p>When you run a command like <code>go build</code>, Go uses the current platform&rsquo;s <code>GOOS</code> and <code>GOARCH</code> to determine how to build the binary. To find out what combination your platform is, you can use the <code>go env</code> command and pass <code>GOOS</code> and <code>GOARCH</code> as arguments:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go env GOOS GOARCH
+</li></ul></code></pre>
+<p>In testing this example, we ran this command on macOS on a machine with an <a href="https://en.wikipedia.org/wiki/X86-64">AMD64 architecture</a>, so we will receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">darwin</span>
+<span class="highlight">amd64</span>
+</code></pre>
+<p>Here the output of the command tells us that our system has <code>GOOS=darwin</code> and <code>GOARCH=amd64</code>.</p>
+
+<p>You now know what the <code>GOOS</code> and <code>GOARCH</code> are in Go, as well as their possible values. Next, you will put together a program to use as an example of how to use these environment variables and build tags to build binaries for other platforms.</p>
+
+<h2 id="write-a-platform-dependent-program-with-filepath-join">Write a Platform-Dependent Program with <code>filepath.Join()</code></h2>
+
+<p>Before you start building binaries for other platforms, let&rsquo;s build an example program. A good sample for this purpose is the <code>Join</code> function in the <a href="https://godoc.org/path/filepath"><code>path/filepath</code></a> package in the Go standard library. This function takes a number of strings and returns one string that is joined together with the correct filepath separator.</p>
+
+<p>This is a good example program because the operation of the program depends on which OS it is running on. On Windows, the path separator is a backslash, <code>\</code>, while Unix-based systems use a forward slash, <code>/</code>.</p>
+
+<p>Let&rsquo;s start with building an application that uses <code>filepath.Join()</code>, and later, you&rsquo;ll write your own implementation of the <code>Join()</code> function that customizes the code to the platform-specific binaries.</p>
+
+<p>First, create a folder in your <code>src</code> directory with the name of your app:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir <span class="highlight">app</span>
+</li></ul></code></pre>
+<p>Move into that directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">app</span>
+</li></ul></code></pre>
+<p>Next, create a new file in your text editor of choice named <code>main.go</code>. For this tutorial, we will use Nano:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano main.go
+</li></ul></code></pre>
+<p>Once the file is open, add the following code:</p>
+<div class="code-label " title="src/app/main.go">src/app/main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+  "fmt"
+  "path/filepath"
+)
+
+func main() {
+  s := filepath.Join("a", "b", "c")
+  fmt.Println(s)
+}
+</code></pre>
+<p>The <code>main()</code> function in this file uses <code>filepath.Join()</code> to concatenate three <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-working-with-strings-in-go">strings</a> together with the correct, platform-dependent path separator.</p>
+
+<p>Save and exit the file, then run the program:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>When running this program, you will receive different output depending on which platform you are using. On Windows, you will see the strings separated by <code>\</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>a<span class="highlight">\</span>b<span class="highlight">\</span>c
+</code></pre>
+<p>On Unix systems like macOS and Linux, you will receive the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>a<span class="highlight">/</span>b<span class="highlight">/</span>c
+</code></pre>
+<p>This shows that, because of the different filesystem protocols used on these operating systems, the program will have to build different code for the different platforms. But since it already uses a different file separator depending on the OS, we know that <code>filepath.Join()</code> already accounts for the difference in platform. This is because the Go tool chain automatically detects your machine&rsquo;s <code>GOOS</code> and <code>GOARCH</code> and uses this information to use the code snippet with the right <a href="https://www.digitalocean.com/community/tutorials/customizing-go-binaries-with-build-tags">build tags</a> and file separator.</p>
+
+<p>Let&rsquo;s consider where the <code>filepath.Join()</code> function gets its separator from. Run the following command to inspect the relevant snippet from Go&rsquo;s standard library:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">less /usr/local/go/src/os/path_unix.go
+</li></ul></code></pre>
+<p>This will display the contents of <code>path_unix.go</code>. Look for the following part of the file:</p>
+<div class="code-label " title="/usr/local/go/os/path_unix.go">/usr/local/go/os/path_unix.go</div><pre class="code-pre "><code class="code-highlight language-go">. . .
+<span class="highlight">// +build aix darwin dragonfly freebsd js,wasm linux nacl netbsd openbsd solaris</span>
+
+package os
+
+const (
+  PathSeparator     = '/' // OS-specific path separator
+  PathListSeparator = ':' // OS-specific path list separator
+)
+. . .
+</code></pre>
+<p>This section defines the <code>PathSeparator</code> for all of the varieties of Unix-like systems that Go supports. Notice all of the build tags at the top, which are each one of the possible Unix <code>GOOS</code> platforms associated with Unix. When the <code>GOOS</code> matches these terms, your program will yield the Unix-styled filepath separator.</p>
+
+<p>Press <code>q</code> to return to the command line.</p>
+
+<p>Next, open the file that defines the behavior of <code>filepath.Join()</code> when used on Windows:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">less /usr/local/go/src/os/path_windows.go
+</li></ul></code></pre>
+<p>You will see the following:</p>
+<div class="code-label " title="/usr/local/go/os/path_unix.go">/usr/local/go/os/path_unix.go</div><pre class="code-pre "><code class="code-highlight language-go">. . .
+package os
+
+const (
+        PathSeparator     = '\\' // OS-specific path separator
+        PathListSeparator = ';'  // OS-specific path list separator
+)
+. . .
+</code></pre>
+<p>Although the value of <code>PathSeparator</code> is <code>\\</code> here, the code will render the single backslash (<code>\</code>) needed for Windows filepaths, since the first backslash is only needed as an escape character.</p>
+
+<p>Notice that, unlike the Unix file, there are no build tags at the top. This is because <code>GOOS</code> and <code>GOARCH</code> can also be passed to <code>go build</code> by adding an underscore (<code>_</code>) and the environment variable value as a suffix to the filename, something we will go into more in the section <a href="https://www.digitalocean.com/community/tutorials/building-go-applications-for-different-operating-systems-and-architectures#using-goos-and-goarch-filename-suffixes"><strong>Using GOOS and GOARCH File Name Suffixes</strong></a>. Here, the <code>_windows</code> part of <code>path_windows.go</code> makes the file act as if it had the build tag <code>// +build windows</code> at the top of the file. Because of this, when your program is run on Windows, it will use the constants of <code>PathSeparator</code> and <code>PathListSeparator</code> from the <code>path_windows.go</code> code snippet.</p>
+
+<p>To return to the command line, quit <code>less</code> by pressing <code>q</code>.</p>
+
+<p>In this step, you built a program that showed how Go converts the <code>GOOS</code> and <code>GOARCH</code> automatically into build tags. With this in mind, you can now update your program and write your own implementation of <code>filepath.Join()</code>, using build tags to manually set the correct <code>PathSeparator</code> for Windows and Unix platforms.</p>
+
+<h2 id="implementing-a-platform-specific-function">Implementing a Platform-Specific Function</h2>
+
+<p>Now that you know how Go&rsquo;s standard library implements platform-specific code, you can use build tags to do this in your own <code><span class="highlight">app</span></code> program. To do this, you will write your own implementation of <code>filepath.Join()</code>.</p>
+
+<p>Open up your <code>main.go</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano main.go
+</li></ul></code></pre>
+<p>Replace the contents of <code>main.go</code> with the following, using your own function called <code>Join()</code>:</p>
+<div class="code-label " title="src/app/main.go">src/app/main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+  "fmt"
+  "strings"
+)
+
+func Join(parts ...string) string {
+  return strings.Join(parts, PathSeparator)
+}
+
+func main() {
+  s := Join("a", "b", "c")
+  fmt.Println(s)
+}
+</code></pre>
+<p>The <code>Join</code> function takes a number of <code>parts</code> and joins them together using the <a href="https://godoc.org/strings.Join"><code>strings.Join()</code></a> method from the <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-the-strings-package-in-go"><code>strings</code> package</a> to concatenate the <code>parts</code> together using the <code>PathSeparator</code>.</p>
+
+<p>You haven&rsquo;t defined the <code>PathSeparator</code> yet, so do that now in another file. Save and quit <code>main.go</code>, open your favorite editor, and create a new file named <code>path.go</code>:</p>
+<pre class="code-pre text"><code langs="">nano path.go
+</code></pre>
+<p>Define the <code>PathSeparator</code> and set it equal to the Unix filepath separator, <code>/</code>:</p>
+<div class="code-label " title="src/app/path.go">src/app/path.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+const PathSeparator = "/"
+</code></pre>
+<p>Compile and run the application:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go build
+</li><li class="line" prefix="$">./app
+</li></ul></code></pre>
+<p>You&rsquo;ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>a/b/c
+</code></pre>
+<p>This runs successfully to get a Unix-style filepath. But this isn&rsquo;t yet what we want: the output is always <code>a/b/c</code>, regardless of what platform it runs on. To add in the functionality to create Windows-style filepaths, you will need to add a Windows version of the <code>PathSeparator</code> and tell the <code>go build</code> command which version to use. In the next section, you will use <a href="https://www.digitalocean.com/community/tutorials/customizing-go-binaries-with-build-tags">build tags</a> to accomplish this.</p>
+
+<h2 id="using-goos-or-goarch-build-tags">Using <code>GOOS</code> or <code>GOARCH</code> Build Tags</h2>
+
+<p>To account for Windows platforms, you will now create an alternate file to <code>path.go</code> and use build tags to make sure the code snippets only run when <code>GOOS</code> and <code>GOARCH</code> are the appropriate platform.</p>
+
+<p>But first, add a build tag to <code>path.go</code> to tell it to build for everything except for Windows. Open up the file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano path.go
+</li></ul></code></pre>
+<p>Add the following highlighted build tag to the file:</p>
+<div class="code-label " title="src/app/path.go">src/app/path.go</div><pre class="code-pre "><code langs=""><span class="highlight">// +build !windows</span>
+
+package main
+
+const PathSeparator = "/"
+</code></pre>
+<p>Go build tags allow for inverting, meaning that you can instruct Go to build this file for any platform except for Windows. To invert a build tag, place a <code>!</code> before the tag.</p>
+
+<p>Save and exit the file.</p>
+
+<p>Now, if you were to run this program on Windows, you would get the following error:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>./main.go:9:29: undefined: PathSeparator
+</code></pre>
+<p>In this case, Go would not be able to include <code>path.go</code> to define the variable <code>PathSeparator</code>.</p>
+
+<p>Now that you have ensured that <code>path.go</code> will not run when <code>GOOS</code> is Windows, add a new file, <code>windows.go</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano windows.go
+</li></ul></code></pre>
+<p>In <code>windows.go</code>, define the Windows <code>PathSeparator</code>, as well as a build tag to let the <code>go build</code> command know it is the Windows implementation:</p>
+<div class="code-label " title="src/app/windows.go">src/app/windows.go</div><pre class="code-pre "><code class="code-highlight language-go">// +build windows
+
+package main
+
+const PathSeparator = "\\"
+</code></pre>
+<p>Save the file and exit from the text editor. The application can now compile one way for Windows and another for all other platforms. </p>
+
+<p>While the binaries will now build correctly for their platforms, there are further changes you must make in order to compile for a platform that you do not have access to. To do this, you will alter your local <code>GOOS</code> and <code>GOARCH</code> environment variables in the next step.</p>
+
+<h2 id="using-your-local-goos-and-goarch-environment-variables">Using Your Local <code>GOOS</code> and <code>GOARCH</code> Environment Variables</h2>
+
+<p>Earlier, you ran the <code>go env GOOS GOARCH</code> command to find out what OS and architecture you were working on. When you ran the <code>go env</code> command, it looked for the two environment variables <code>GOOS</code> and <code>GOARCH</code>; if found, their values would be used, but if not found, then Go would set them with the information for the current platform. This means that you can change <code>GOOS</code> or <code>GOARCH</code> so that they do not default to your local OS and architecture.</p>
+
+<p>The <code>go build</code> command behaves in a similar manner to the <code>go env</code> command. You can set either the <code>GOOS</code> or <code>GOARCH</code> environment variables to build for a different platform using <code>go build</code>.</p>
+
+<p>If you are not using a Windows system, build a <code>windows</code> binary of <code><span class="highlight">app</span></code> by setting the <code>GOOS</code> environment variable to <code>windows</code> when running the <code>go build</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">GOOS=windows go build
+</li></ul></code></pre>
+<p>Now list the files in your current directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls
+</li></ul></code></pre>
+<p>The output of listing the directory shows there is now an <code>app.exe</code> Windows executable in the project directory:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>app  <span class="highlight">app.exe</span>  main.go  path.go  windows.go
+</code></pre>
+<p>Using the <code>file</code> command, you can get more information about this file, confirming its build:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">file app.exe
+</li></ul></code></pre>
+<p>You will receive:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>app.exe: PE32+ executable (console) x86-64 (stripped to external PDB), <span class="highlight">for MS Windows</span>
+</code></pre>
+<p>You can also set one, or both environment variables at build time. Run the following:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">GOOS=linux GOARCH=ppc64 go build
+</li></ul></code></pre>
+<p>Your <code><span class="highlight">app</span></code> executable will now be replaced by a file for a different architecture. Run the <code>file</code> command on this binary:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">file app
+</li></ul></code></pre>
+<p>You will receive output like the following:</p>
+<pre class="code-pre "><code langs="">app: ELF 64-bit MSB executable, <span class="highlight">64-bit PowerPC or cisco 7500</span>, version 1 (SYSV), statically linked, not stripped
+</code></pre>
+<p>By setting your local <code>GOOS</code> and <code>GOARCH</code> environment variables, you can now build binaries for any of Go&rsquo;s compatible platforms without a complicated configuration or setup. Next, you will use filename conventions to keep your files neatly organized and build for specific platforms automatically wihout build tags.</p>
+
+<h2 id="using-goos-and-goarch-filename-suffixes">Using <code>GOOS</code> and <code>GOARCH</code> Filename Suffixes</h2>
+
+<p>As you saw earlier, the Go standard library makes heavy use of build tags to simplify code by separating out different platform implementations into different files. When you opened the <code>os/path_unix.go</code> file, there was a build tag that listed all of the possible combinations that are considered Unix-like platforms. The <code>os/path_windows.go</code> file, however, contained no build tags, because the suffix on the filename sufficed to tell Go which platform the file was meant for.</p>
+
+<p>Let&rsquo;s look at the syntax of this feature. When naming a <code>.go</code> file, you can add <code>GOOS</code> and <code>GOARCH</code> as suffixes to the file&rsquo;s name in that order, separating the values by underscores (<code>_</code>). If you had a Go file named <code>filename.go</code>, you could specify the OS and architecture by changing the filename to <code>filename_<span class="highlight">GOOS</span>_<span class="highlight">GOARCH</span>.go</code>. For example, if you wished to compile it for Windows with 64-bit <a href="https://en.wikipedia.org/wiki/ARM_architecture">ARM architecture</a>, you would make the name of the file <code>filename_windows_arm64.go</code>. This naming convention helps keep code neatly organized.</p>
+
+<p>Update your program to use the filename suffixes instead of build tags. First, rename the <code>path.go</code> and <code>windows.go</code> file to use the convention used in the <code>os</code> package:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mv path.go path_unix.go
+</li><li class="line" prefix="$">mv windows.go path_windows.go
+</li></ul></code></pre>
+<p>With the two filenames changed, you can remove the build tag you added to <code>path_windows.go</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano path_windows.go
+</li></ul></code></pre>
+<p>Remove <code>// +build windows</code> so that your file looks like this:</p>
+<div class="code-label " title="path_windows.go">path_windows.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+const PathSeparator = "\\"
+</code></pre>
+<p>Save and exit from the file.</p>
+
+<p>Because <code>unix</code> is not a valid <code>GOOS</code>, the <code>_unix.go</code> suffix has no meaning to the Go compiler. It does, however, convey the intended purpose of the file. Like the <code>os/path_unix.go</code> file, your <code>path_unix.go</code> file still needs to use build tags, so keep that file unchanged. </p>
+
+<p>By using filename conventions, you removed uneeded build tags from your source code and made the filesystem cleaner and clearer.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>The ability to generate binaries for multiple platforms that require no dependencies is a powerful feature of the Go toolchain. In this tutorial, you used this capability by adding build tags and filename suffixes to mark certain code snippets to only compile for certain architectures. You created your own platorm-dependent program, then manipulated the <code>GOOS</code> and <code>GOARCH</code> environment variables to generate binaries for platforms beyond your current platform. This is a valuable skill, because it is a common practice to have a continuous integration process that automatically runs through these environment variables to build binaries for all platforms.</p>
+
+<p>For further study on <code>go build</code>, check out our <a href="https://www.digitalocean.com/community/tutorials/customizing-go-binaries-with-build-tags">Customizing Go Binaries with Build Tags</a> tutorial. If you&rsquo;d like to learn more about the Go programming language in general, check out the entire <a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-go">How To Code in Go series</a>.</p>

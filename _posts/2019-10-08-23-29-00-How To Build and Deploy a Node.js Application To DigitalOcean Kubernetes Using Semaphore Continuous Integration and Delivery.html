@@ -1,0 +1,1123 @@
+---
+layout: post
+title: How To Build and Deploy a Node.js Application To DigitalOcean Kubernetes Using Semaphore Continuous Integration and Delivery
+network: digitalocean
+date: October 08, 2019 at 11:29PM
+url: https://www.digitalocean.com/community/tutorials/how-to-build-and-deploy-a-node-js-application-to-digitalocean-kubernetes-using-semaphore-continuous-integration-and-delivery
+image: https://assets.digitalocean.com/articles/semaphore_doks/jnOY5HR.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/funds/open-internet-free-speech">Open Internet / Free Speech fund</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://kubernetes.io">Kubernetes</a> allows users to create resilient and scalable services with a single command. Like anything that sounds too good to be true, it has a catch: you must first prepare a suitable <a href="https://www.docker.com">Docker</a> image and thoroughly test it.</p>
+
+<p><a href="https://semaphoreci.com/continuous-integration">Continuous Integration (CI)</a> is the practice of testing the application on each update. Doing this manually is tedious and error-prone, but a CI platform runs the tests for you, catches errors early, and locates the point at which the errors were introduced. Release and deployment procedures are often complicated, time-consuming, and require a reliable build environment. With <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-continuous-integration-delivery-and-deployment">Continuous Delivery (CD)</a> you can build and deploy your application on each update without human intervention.</p>
+
+<p>To automate the whole process, you’ll use <a href="https://semaphoreci.com">Semaphore</a>, a Continuous Integration and Delivery (CI/CD) platform. </p>
+
+<p>In this tutorial, you’ll build an address book API service with <a href="https://nodejs.org">Node.js</a>.  The API exposes a simple <a href="https://en.wikipedia.org/wiki/Representational_state_transfer">RESTful API</a> interface to  create, delete, and find people in the database.  You&rsquo;ll use <a href="https://git-scm.com">Git</a> to push the code to <a href="https://github.com">GitHub</a>.  Then you&rsquo;ll use Semaphore to test the application, build a Docker image, and deploy it to a <a href="https://www.digitalocean.com/products/kubernetes/">DigitalOcean Kubernetes</a> cluster. For the database, you’ll create a PostgreSQL cluster using <a href="https://www.digitalocean.com/products/managed-databases/">DigitalOcean Managed Databases</a>.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before reading on, ensure you have the following:</p>
+
+<ul>
+<li>A DigitalOcean account and a Personal Access Token. Follow <a href="https://www.digitalocean.com/docs/api/create-personal-access-token/">Create a Personal Access Token</a> to set one up for your account.</li>
+<li>A <a href="https://docs.docker.com/docker-hub/">Docker Hub</a> account.</li>
+<li>A <a href="https://github.com">GitHub</a> account.</li>
+<li>A <a href="https://semaphoreci.com">Semaphore</a> account; you can sign up with your GitHub account.</li>
+<li>A new GitHub repository called <code>addressbook</code> for the project. When creating the repository, select the <strong>Initialize this repository with a README</strong> checkbox and select <strong>Node</strong> in the <strong>Add .gitignore</strong> menu. Follow GitHub’s <a href="https://help.github.com/en/articles/create-a-repo">Create a Repo</a>  help page for more details. </li>
+<li><a href="https://git-scm.com">Git</a> installed on your local machine and <a href="https://help.github.com/en/articles/set-up-git">set up</a> to work with your GitHub account.  If you are unfamiliar or need a refresher, consider reading the <a href="https://www.digitalocean.com/community/tutorials/how-to-use-git-a-reference-guide">How to use Git</a> reference guide.</li>
+<li><a href="https://curl.haxx.se/">curl</a> installed on your local machine.</li>
+<li><a href="https://nodejs.org">Node.js</a> installed on your local machine. In this tutorial, you&rsquo;ll use Node.js version <code>10.16.0</code>.</li>
+</ul>
+
+<h2 id="step-1-—-creating-the-database-and-the-kubernetes-cluster">Step 1 — Creating the Database and the Kubernetes Cluster</h2>
+
+<p>Start by provisioning the services that will power the application: the DigitalOcean Database Cluster and the DigitalOcean Kubernetes Cluster.</p>
+
+<p>Log in to your DigitalOcean account and <a href="https://www.digitalocean.com/docs/projects/how-to/create/">create a project</a>. A project lets you organize all the resources that make up the application. Call the project <code>addressbook</code>.</p>
+
+<p>Next, create a <a href="https://www.digitalocean.com/docs/databases/how-to/clusters/create/">PostgreSQL</a> cluster. The PostgreSQL database service will hold the application’s data. You can pick the latest version available. It should take a few minutes before the service is ready.</p>
+
+<p>Once the PostgreSQL service is ready, <a href="https://www.digitalocean.com/docs/databases/how-to/clusters/add-users-and-databases/">create a database and a user</a>. Set the database name to <code>addessbook_db</code> and set the username to <code>addressbook_user</code>. Take note of the password that&rsquo;s generated for your new user. Databases are PostgreSQL’s way of organizing data. Usually, each application has its own database, although there are no hard rules about this. The application will use the username and password to get access to the database so it can save and retrieve its data.</p>
+
+<p>Finally, create a <a href="https://www.digitalocean.com/docs/kubernetes/quickstart/">Kubernetes</a> Cluster. Choose the same region in which the database is running. Name the cluser <code>addressbook-server</code> and set the number of nodes to <code>3</code>.</p>
+
+<p>While the nodes are provisioning, you can start building your application.</p>
+
+<h2 id="step-2-—-writing-the-application">Step 2 — Writing the Application</h2>
+
+<p>Let&rsquo;s build the address book application you&rsquo;re going to deploy. To start, clone the GitHub repository you created in the prerequisites so you have a local copy of the <code>.gitignore</code> file GitHub created for you, and you&rsquo;ll be able to commit your application code quickly without having to manually create a repository. Open your browser and go to your new GitHub repository. Click on the <strong>Clone or download</strong> button and copy the provided URL. Use Git to clone the empty repository to your machine:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/<span class="highlight">your_github_username</span>/addressbook
+</li></ul></code></pre>
+<p>Enter the project directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd addressbook
+</li></ul></code></pre>
+<p>With the repository cloned, you can start writing the app. You’ll build two components: a module that interacts with the database, and a module that provides the HTTP service. The database module will know how to save and retrieve persons from the address book database, and the HTTP module will receive requests and respond accordingly.</p>
+
+<p>While not strictly mandatory, it’s good practice to test your code while you write it, so you’ll also create a testing module. This is the planned layout for the application:</p>
+
+<ul>
+<li><code>database.js</code>: database module. It handles database operations.</li>
+<li><code>app.js</code>: the end user module and the main application. It provides an HTTP service for the users to connect to.</li>
+<li><code>database.test.js</code>: tests for the database module.</li>
+</ul>
+
+<p>In addition, you&rsquo;ll want a <a href="https://docs.npmjs.com/creating-a-package-json-file">package.json</a> file for your project, which describes the project and its required dependencies. You can either create it manually with your editor, or interactively using npm. Run the <code>npm init</code> command to create the file interactively:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm init
+</li></ul></code></pre>
+<p>The command will ask for some information to get started. Fill in the values as shown in the example. If you don&rsquo;t see an answer listed, leave the answer blank, which uses the default value in parentheses:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="npm output">npm output</div>package name: (addressbook) <span class="highlight">addressbook</span>
+version: (1.0.0) <span class="highlight">1.0.0</span>
+description: <span class="highlight">Addressbook API and database</span>
+entry point: (index.js) <span class="highlight">app.js</span>
+test command: 
+git repository: <span class="highlight">URL for your GitHub repository</span>
+keywords: 
+author: <span class="highlight">Sammy the Shark &lt;sammy@example.com&gt;</span>"
+license: (ISC) 
+About to write to package.json:
+
+{
+  "name": "addressbook",
+  "version": "1.0.0",
+  "description": "Addressbook API and database",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" &amp;&amp; exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
+
+
+Is this OK? (yes) <span class="highlight">yes</span>
+</code></pre>
+<p>Now you can start writing the code. The database is at the core of the service you’re developing. It’s essential to have a well-designed database model before writing any other components. Consequently, it makes sense to start with the database code.  </p>
+
+<p>You don’t have to code all the bits of the application; Node.js has a large library of reusable modules. For instance, you don’t have to write any SQL queries if you have the <a href="https://sequelize.org/">Sequelize ORM</a> module in the project. This module provides an interface that handles databases as JavaScript objects and methods. It can also create tables in your database. Sequelize needs the <a href="https://www.npmjs.com/package/pg">pg</a> module to work with PostgreSQL.</p>
+
+<p>Install modules using the <code>npm install</code> command with the <code>--save</code> option, which tells <code>npm</code> to save the module in <code>package.json</code>. Execute this command to install both <code>sequelize</code> and <code>pg</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install --save sequelize pg
+</li></ul></code></pre>
+<p>Create a new JavaScript file to hold the database code:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano database.js
+</li></ul></code></pre>
+<p>Import the <code>sequelize</code> module by adding this line to the file:</p>
+<div class="code-label " title="database.js">database.js</div><pre class="code-pre "><code class="code-highlight language-javascript">const Sequelize = require('sequelize');
+
+. . .
+</code></pre>
+<p>Then, below that line, initialize a <code>sequelize</code> object with the database connection parameters, which you&rsquo;ll retrieve from the system environment. This keeps the credentials out of your code so you don&rsquo;t accidentally share your credentials when you push your code to GitHub. You can use <code>process.env</code> to access environment variables, and JavaScripts’s  <code>||</code> operator to set defaults for undefined variables:</p>
+<div class="code-label " title="database.js">database.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+const sequelize = new Sequelize(process.env.DB_SCHEMA || 'postgres',
+                                process.env.DB_USER || 'postgres',
+                                process.env.DB_PASSWORD || '',
+                                {
+                                    host: process.env.DB_HOST || 'localhost',
+                                    port: process.env.DB_PORT || 5432,
+                                    dialect: 'postgres',
+                                    dialectOptions: {
+                                        ssl: process.env.DB_SSL == "true"
+                                    }
+                                });
+
+. . .
+</code></pre>
+<p>Now define the <code>Person</code> model. To keep the example from getting too complex, you&rsquo;ll only create two fields: <code>firstName</code> and <code>lastName</code>, both storing string values.  Add the following code to define the model:</p>
+<div class="code-label " title="database.js">database.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+const Person = sequelize.define('Person', {
+    firstName: {
+        type: Sequelize.STRING,
+        allowNull: false
+    },
+    lastName: {
+        type: Sequelize.STRING,
+        allowNull: true
+    },
+});
+
+. . .
+</code></pre>
+<p>This defines the two fields, making <code>firstName</code> mandatory with <code>allowNull: false</code>. Sequelize&rsquo;s <a href="https://docs.sequelizejs.com/manual/models-definition.html">model definition documentation</a> shows the available data types and options. </p>
+
+<p>Finally, export the <code>sequelize</code> object and the <code>Person</code> model so other modules can use them:</p>
+<div class="code-label " title="database.js">database.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+module.exports = {
+    sequelize: sequelize,
+    Person: Person
+};
+</code></pre>
+<p>It’s handy to have a table-creation script in a separate file that you can call at any time during development. These types of files are called <em>migrations</em>. Create a new file to hold this code:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano migrate.js
+</li></ul></code></pre>
+<p>Add these lines to the file to import the database model you defined, and call the <code>sync()</code> function to initialize the database, which creates the table for your model:</p>
+<div class="code-label " title="migrate.js">migrate.js</div><pre class="code-pre "><code class="code-highlight language-javascript">var db = require('./database.js');
+db.sequelize.sync();
+</code></pre>
+<p>The application is looking for database connection information in system environment variables. Create a file called <code>.env</code> to hold those values, which you will load into the environment during development:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .env
+</li></ul></code></pre>
+<p>Add the following variable declarations to the file. Ensure that you set <code>DB_HOST</code>, <code>DB_PORT</code>, and <code>DB_PASSWORD</code> to those associated with your DigitalOcean PostgreSQL cluster:</p>
+<div class="code-label " title=".env">.env</div><pre class="code-pre "><code langs="">export DB_SCHEMA=<span class="highlight">addressbook_db</span>
+export DB_USER=<span class="highlight">addressbook_user</span>
+export DB_PASSWORD=<span class="highlight">your_db_user_password</span>
+export DB_HOST=<span class="highlight">your_db_cluster_host</span>
+export DB_PORT=<span class="highlight">your_db_cluster_port</span>
+export DB_SSL=true
+export PORT=3000
+</code></pre>
+<p>Save the file.</p>
+
+<span class='warning'><p>
+<strong>Warning</strong>: never check environment files into source control.  They usually have sensitive information.</p>
+
+<p>Since you defined a default <code>.gitignore</code> file when you created the repository, this file is already ignored.<br></p></span>
+
+<p>You are ready to initialize the database. Import the environment file and run <code>migrate.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ./.env
+</li><li class="line" prefix="$">node migrate.js
+</li></ul></code></pre>
+<p>This creates the database table:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+Executing (default): CREATE TABLE IF NOT EXISTS "People" ("id"   SERIAL , "firstName" VARCHAR(255) NOT NULL, "lastName" VARCHAR(255), "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL, "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL, PRIMARY KEY ("id"));
+Executing (default): SELECT i.relname AS name, ix.indisprimary AS primary, ix.indisunique AS unique, ix.indkey AS indkey, array_agg(a.attnum) as column_indexes, array_agg(a.attname) AS column_names, pg_get_indexdef(ix.indexrelid) AS definition FROM pg_class t, pg_class i, pg_index ix, pg_attribute a WHERE t.oid = ix.indrelid AND i.oid = ix.indexrelid AND a.attrelid = t.oid AND t.relkind = 'r' and t.relname = 'People' GROUP BY i.relname, ix.indexrelid, ix.indisprimary, ix.indisunique, ix.indkey ORDER BY i.relname;
+</code></pre>
+<p>The output shows two commands. The first one creates the <code>People</code> table as per your definition. The second command checks that the table was indeed created by looking it up in the PostgreSQL catalog.</p>
+
+<p>It’s good practice to create tests for your code. With tests, you can validate the code&rsquo;s behavior. You can write a check for each function, method, or any other part of your system and verify that it works the way you&rsquo;d expect, without having to test things manually.</p>
+
+<p>The <a href="https://www.npmjs.com/package/jest">jest</a> testing framework is a great fit for writing tests against Node.js applications. Jest scans the files in the project for test files and executes them one a time. Install Jest with the <code>--save-dev</code> option, which tells <code>npm</code> that the module is not required to run the program, but it is a dependency for developing the application:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install --save-dev jest
+</li></ul></code></pre>
+<p>You&rsquo;ll write tests to verify that you can insert, read, and delete records from your database. These tests will verify that your database connection and permissions are configured properly, and will also provide some tests you can use in your CI/CD pipeline later.</p>
+
+<p>Create the <code>database.test.js</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano database.test.js
+</li></ul></code></pre>
+<p>Add the following content. Start by importing the database code:</p>
+<div class="code-label " title="database.test.js">database.test.js</div><pre class="code-pre "><code class="code-highlight language-javascript">const db = require('./database');
+
+. . .
+</code></pre>
+<p>To ensure the database is ready to use, call <code>sync()</code> inside the <code>beforeAll</code> function:</p>
+<div class="code-label " title="database.test.js">database.test.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+beforeAll(async () =&gt; {
+    await db.sequelize.sync();
+});
+
+. . .
+</code></pre>
+<p>The first test creates a person record in the database. The <code>sequelize</code> library executes all queries asynchronously, which means it doesn’t wait for the results of the query. To make the test wait for results so you can verify them, you must use the <code>async</code> and <code>await</code> keywords. This test calls the <code>create()</code> method to insert a new row in the database. Use <code>expect</code> to compare the <code>person.id</code> column with <code>1</code>. The test will fail if you get a different value:</p>
+<div class="code-label " title="database.test.js">database.test.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+test('create person', async () =&gt; {
+    expect.assertions(1);
+    const person = await db.Person.create({
+        id: 1,
+        firstName: 'Sammy',
+        lastName: 'Davis Jr.',
+        email: 'sammy@example.com'
+    });
+    expect(person.id).toEqual(1);
+});
+
+. . .
+</code></pre>
+<p>In the next test, use the <code>findByPk()</code> method to retrieve the row with <code>id=1</code>. Then, validate the <code>firstName</code> and <code>lastName</code> values. Once again, use <code>async</code> and <code>await</code>:</p>
+<div class="code-label " title="database.test.js">database.test.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+test('get person', async () =&gt; {
+    expect.assertions(2);
+    const person = await db.Person.findByPk(1);
+    expect(person.firstName).toEqual('Sammy');
+    expect(person.lastName).toEqual('Davis Jr.');
+});
+
+. . .
+</code></pre>
+<p>Finally, test removing a person from the database. The <code>destroy()</code> method deletes the person with <code>id=1</code>. To ensure that it worked, try retrieving the person a second time and checking that the returned value is <code>null</code>:</p>
+<div class="code-label " title="database.test.js">database.test.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+test('delete person', async () =&gt; {
+    expect.assertions(1);
+    await db.Person.destroy({
+        where: {
+            id: 1
+        }
+    });
+    const person = await db.Person.findByPk(1);
+    expect(person).toBeNull();
+});
+
+. . .
+</code></pre>
+<p>Finally, add this code to close the connection to the database with <code>close()</code> once all tests have finished:</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+afterAll(async () =&gt; {
+    await db.sequelize.close();
+});
+</code></pre>
+<p>Save the file. </p>
+
+<p>The <code>jest</code>  command runs the test suite for your program, but you can also store commands in <code>package.json</code>. Open this file in your editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano package.json
+</li></ul></code></pre>
+<p>Locate the <code>scripts</code> keyword and replace the existing <code>test</code> line (which was just a placeholder). The test command is <code>jest</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+  "scripts": {
+    "test": "jest"
+  },
+
+. . .
+</code></pre>
+<p>Now you can call <code>npm run test</code> to invoke the test suite. This may be a longer command, but if you need to modify the <code>jest</code> command later, external services won&rsquo;t have to change; they can continue calling <code>npm run test</code>. </p>
+
+<p>Run the tests:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm run test
+</li></ul></code></pre>
+<p>Then, check the results:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>  console.log node_modules/sequelize/lib/sequelize.js:1176
+    Executing (default): CREATE TABLE IF NOT EXISTS "People" ("id"   SERIAL , "firstName" VARCHAR(255) NOT NULL, "lastName" VARCHAR(255), "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL, "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL, PRIMARY KEY ("id"));
+
+  console.log node_modules/sequelize/lib/sequelize.js:1176
+    Executing (default): SELECT i.relname AS name, ix.indisprimary AS primary, ix.indisunique AS unique, ix.indkey AS indkey, array_agg(a.attnum) as column_indexes, array_agg(a.attname) AS column_names, pg_get_indexdef(ix.indexrelid) AS definition FROM pg_class t, pg_class i, pg_index ix, pg_attribute a WHERE t.oid = ix.indrelid AND i.oid = ix.indexrelid AND a.attrelid = t.oid AND t.relkind = 'r' and t.relname = 'People' GROUP BY i.relname, ix.indexrelid, ix.indisprimary, ix.indisunique, ix.indkey ORDER BY i.relname;
+
+  console.log node_modules/sequelize/lib/sequelize.js:1176
+    Executing (default): INSERT INTO "People" ("id","firstName","lastName","createdAt","updatedAt") VALUES ($1,$2,$3,$4,$5) RETURNING *;
+
+  console.log node_modules/sequelize/lib/sequelize.js:1176
+    Executing (default): SELECT "id", "firstName", "lastName", "createdAt", "updatedAt" FROM "People" AS "Person" WHERE "Person"."id" = 1;
+
+  console.log node_modules/sequelize/lib/sequelize.js:1176
+    Executing (default): DELETE FROM "People" WHERE "id" = 1
+
+  console.log node_modules/sequelize/lib/sequelize.js:1176
+    Executing (default): SELECT "id", "firstName", "lastName", "createdAt", "updatedAt" FROM "People" AS "Person" WHERE "Person"."id" = 1;
+
+ PASS  ./database.test.js
+  ✓ create person (344ms)
+  ✓ get person (173ms)
+  ✓ delete person (323ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        5.315s
+Ran all test suites.
+</code></pre>
+<p>With the database code tested, you can build the API service to manage the people in the address book. </p>
+
+<p>To serve HTTP requests, you’ll use the <a href="https://expressjs.com">Express</a> web framework. Install Express and save it as a dependency using <code>npm install</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install --save express
+</li></ul></code></pre>
+<p>You&rsquo;ll also need the <a href="https://www.npmjs.com/package/body-parser"><code>body-parser</code></a> module, which you&rsquo;ll use to access the HTTP request body. Install this as a dependency as well:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install --save body-parser 
+</li></ul></code></pre>
+<p>Create the main application file <code>app.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Import the <code>express</code>, <code>body-parser</code>, and <code>database</code> modules. Then create an instance of the <code>express</code> module called <code>app</code> to control and configure the service. You use <code>app.use()</code> to add features such as middleware. Use this to add the <code>body-parser</code> module so the application can read <a href="https://en.wikipedia.org/wiki/Percent-encoding">url-encoded</a> strings:</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">var express = require('express');
+var bodyParser = require('body-parser');
+var db = require('./database');
+var app = express();
+app.use(bodyParser.urlencoded({ extended: true }));
+
+. . .
+</code></pre>
+<p>Next, add routes to the application. Routes are similar to buttons in an app or website; they trigger some action in your application. Routes link unique URLs to actions in the application. Each route will serve a specific path and support a different operation.</p>
+
+<p>The first route you&rsquo;ll define handles <code>GET</code> requests for the <code>/person/$ID</code> path, which will display the database record for the person with the specified ID. Express automatically sets the value of the requested <code>$ID</code> in the <code>req.params.id</code> variable.</p>
+
+<p>The application must reply with the person data encoded as a JSON string. As you did in the database tests, use the <code>findByPk()</code> method to retrieve the person by id and reply to the request with HTTP status <code>200</code> (OK) and send the person record as JSON. Add the following code:</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+app.get("/person/:id", function(req, res) {
+    db.Person.findByPk(req.params.id)
+        .then( person =&gt; {
+            res.status(200).send(JSON.stringify(person));
+        })
+        .catch( err =&gt; {
+            res.status(500).send(JSON.stringify(err));
+        });
+});
+
+. . .
+</code></pre>
+<p>Errors cause the code in <code>catch()</code> to be executed. For instance, if the database is down, the connection will fail, and this will execute instead.  In case of trouble, set the HTTP status to <code>500</code> (Internal Server Error) and send the error message back to the user:</p>
+
+<p>Add another route to create a person in the database. This route will handle <code>PUT</code> requests and access the person’s data from the <code>req.body</code>. Use the <code>create()</code> method to insert a row in the database:</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+app.put("/person", function(req, res) {
+    db.Person.create({
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        id: req.body.id
+    })
+        .then( person =&gt; {
+            res.status(200).send(JSON.stringify(person));
+        })
+        .catch( err =&gt; {
+            res.status(500).send(JSON.stringify(err));
+        });
+});
+
+. . .
+</code></pre>
+<p>Add another route to handle <code>DELETE</code> requests, which will remove records from the address book. First, use the ID to locate the record and then use the <code>destroy</code> method to remove it:</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+app.delete("/person/:id", function(req, res) {
+    db.Person.destroy({
+        where: {
+            id: req.params.id
+        }
+    })
+        .then( () =&gt; {
+            res.status(200).send();
+        })
+        .catch( err =&gt; {
+            res.status(500).send(JSON.stringify(err));
+        });
+});
+
+. . .
+</code></pre>
+<p>And for convenience, add a route that retrieves all people in the database using the <code>/all</code> path:</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+app.get("/all", function(req, res) {
+    db.Person.findAll()
+        .then( persons =&gt; {
+            res.status(200).send(JSON.stringify(persons));
+        })
+        .catch( err =&gt; {
+            res.status(500).send(JSON.stringify(err));
+        });
+});
+
+. . .
+</code></pre>
+<p>One last route left. If the request did not match any of the previous routes,  send status code <code>404</code> (Not Found):</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+app.use(function(req, res) {
+    res.status(404).send("404 - Not Found");
+});
+
+. . .
+</code></pre>
+<p>Finally, add the <code>listen()</code> method, which starts up the service. If the environment variable <code>PORT</code> is defined, then the service listens in that port; otherwise, it defaults to port <code>3000</code>:</p>
+<div class="code-label " title="app.js">app.js</div><pre class="code-pre "><code class="code-highlight language-javascript">. . .
+
+var server = app.listen(process.env.PORT || 3000, function() {
+    console.log("app is running on port", server.address().port);
+});
+</code></pre>
+<p>As you&rsquo;ve learned, the <code>package.json</code> file lets you define various commands to run tests, start your apps, and other tasks, which often lets you run common commands with much less typing. Add a new command on <code>package.json</code> to start the application. Edit the file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano package.json
+</li></ul></code></pre>
+<p>Add the <code>start</code> command, so it looks like this:</p>
+<div class="code-label " title="package.json">package.json</div><pre class="code-pre "><code langs="">. . .
+
+  "scripts": {
+    "test": "jest"<span class="highlight">,</span>
+    <span class="highlight">"start": "node app.js"</span>
+  },
+
+. . .
+</code></pre>
+<p>Don&rsquo;t forget to add a comma to the previous line, as the <code>scripts</code> section needs its entries separated by commas.</p>
+
+<p>Save the file and start the application for the first time. First, load the environment file with <code>source</code>; this imports the variables into the session and makes them available to the application. Then, start the application with <code>npm run start</code>: </p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ./.env
+</li><li class="line" prefix="$">npm run start
+</li></ul></code></pre>
+<p>The app starts on port <code>3000</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>app is running on port 3000
+</code></pre>
+<p>Open a browser and navigate to <code>http://localhost:3000/all</code>. You’ll see a page showing <code>[]</code>. </p>
+
+<p>Switch back to your terminal and press <code>CTRL-C</code> to stop the application.  </p>
+
+<p>Now is an excellent time to add code quality tests. Code quality tools, also known as linters, scan the project for issues in the code. Bad coding practices like leaving unused variables, not ending statements with a semicolon, or missing curly braces can cause bugs that are difficult to find.</p>
+
+<p>Install <a href="https://jshint.com/">jshint</a> tool, a JavaScript linter, as a development dependency:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install --save-dev jshint
+</li></ul></code></pre>
+<p>Over the years, JavaScript has received of updates, features, and syntax changes. The language has been standardized by <a href="http://ecma-international.org">ECMA International</a> under the name of “ECMAScript”. About once a year, ECMA releases a new version of ECMAScript with new features.</p>
+
+<p>By default, <code>jshint</code> assumes that your code is compatible with ES6 (ECMAScript Version 6), and will throw an error if it finds any keywords not supported in that version. You&rsquo;ll want to find the version that is compatible with your code. If you look at the <a href="https://en.wikipedia.org/wiki/ECMAScript">feature table</a> for all the recent versions, you’ll find that the <code>async/await</code> keywords were not introduced until ES8. You used both keywords in the database test code, so that sets the minimum compatible version to ES8. </p>
+
+<p>To tell <code>jshint</code> the version you&rsquo;re using, create a file called <code>.jshintrc</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .jshintrc
+</li></ul></code></pre>
+<p>In the file, specify <code>esversion</code>. The <code>jshintrc</code> file uses JSON, so create a new JSON object in the file:</p>
+<div class="code-label " title=".jshintrc">.jshintrc</div><pre class="code-pre "><code class="code-highlight language-json">{ "esversion": 8 }
+</code></pre>
+<p>Save the file and exit the editor.</p>
+
+<p>Add a command to run <code>jshint</code>. Edit <code>package.json</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano package.json
+</li></ul></code></pre>
+<p>Add a <code>lint</code> command to your project in the <code>scripts</code> section of <code>package.json</code>. The command calls the lint tool against all the JavaScript files you created so far:</p>
+<div class="code-label " title="package.json">package.json</div><pre class="code-pre "><code langs="">. . .
+
+  "scripts": {
+    "test": "jest",
+    "start": "node app.js"<span class="highlight">,</span>
+    <span class="highlight">"lint": "jshint app.js database*.js migrate.js"</span>
+  },
+
+. . .
+</code></pre>
+<p>Now you can run the linter to find any issues:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm run lint
+</li></ul></code></pre>
+<p>There should not be any error messages:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>&gt; jshint app.js database*.js migrate.js
+
+</code></pre>
+<p>If there are any errors, <code>jshint</code> will show the line that has the problem.</p>
+
+<p>You&rsquo;ve completed the project and ensured it works. Add the files to the repository, commit, and push the changes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git add *.js
+</li><li class="line" prefix="$">git add package*.json
+</li><li class="line" prefix="$">git add .jshintrc
+</li><li class="line" prefix="$">git commit -m 'initial commit'
+</li><li class="line" prefix="$">git push origin master
+</li></ul></code></pre>
+<p>Now you can configure Semaphore to test, build, and deploy the application, starting by configuring Semaphore with your DigitalOcean Personal Access Token and database credentials.</p>
+
+<h2 id="step-3-—-creating-secrets-in-semaphore">Step 3 — Creating Secrets in Semaphore</h2>
+
+<p>There is some information that doesn&rsquo;t belong in a GitHub repository. Passwords and API Tokens are good examples of this. You&rsquo;ve stored this sensitive data in a separate file and loaded it into your environment, When using Semaphore, you can use Secrets to store sensitive data.</p>
+
+<p>There are three kinds of secrets in the project:</p>
+
+<ul>
+<li>Docker Hub: the username and password of your Docker Hub account.</li>
+<li>DigitalOcean Personal Access Token: to deploy the application to your Kubernetes cluster.</li>
+<li>Environment Variables: for database username and password connection parameters.</li>
+</ul>
+
+<p>To create the first secret, open your browser and log in to the <a href="https://semaphoreci.com">Semaphore</a> website. On the left navigation menu, click <strong>Secrets</strong> under the <strong>CONFIGURATION</strong> heading. Click the <strong>Create New Secret</strong> button. </p>
+
+<p>For <strong>Name of the Secret</strong>, enter <code>dockerhub</code>. Then under <strong>Environment Variables</strong>, create two environment variables:</p>
+
+<ul>
+<li><code>DOCKER_USERNAME</code>: your DockerHub username.</li>
+<li><code>DOCKER_PASSWORD</code>: your DockerHub password.</li>
+</ul>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/jnOY5HR.png" alt="Docker Hub Secret"></p>
+
+<p>Click <strong>Save Changes</strong>.</p>
+
+<p>Create a second secret for your DigitalOcean Personal Access Token. Once again, click on <strong>Secrets</strong> on the left navigation menu, then on <strong>Create New Secret</strong>. Call this secret <code>do-access-token</code> and create an environment value called <code>DO_ACCESS_TOKEN</code> with the value set to your Personal Access Token:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/VDj90jI.png" alt="DigitalOcean Token Secret"></p>
+
+<p>Save the secret.</p>
+
+<p>For the next secret, instead of setting environment variables directly, you&rsquo;ll upload the <code>.env</code> file from the project&rsquo;s root.</p>
+
+<p>Create a new secret called <code>env-production</code>. Under the <strong>Files</strong> section,  press the <strong>Upload file</strong> link to locate and upload your <code>.env</code> file, and tell Semaphore to place it at <code>/home/semaphore/env-production</code>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/IsIDPD2.png" alt="Environment Secret"></p>
+
+<span class='note'><p>
+<strong>Note:</strong> Because the file is hidden, you may have trouble finding it on your computer. There is usually a menu item or a key combination to view hidden files, such as <code>CTRL+H</code>. If all else fails, you can try copying the file with a non-hidden name:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp .env env
+</li></ul></code></pre>
+<p>Then upload the file and rename it back:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp env .env
+</li></ul></code></pre>
+<p></p></span>
+
+<p>The environment variables are all configured. Now you can begin the Continuous Integration setup.</p>
+
+<h2 id="step-4-—-adding-your-project-to-semaphore">Step 4 — Adding your Project to Semaphore</h2>
+
+<p>In this step you will add your project to Semaphore and start the <a href="https://semaphoreci.com/blog/cicd-pipeline">Continuous Integration (CI) pipeline</a>.</p>
+
+<p>First, link your GitHub repository with Semaphore:</p>
+
+<ol>
+<li>Log in to your <a href="https://semaphoreci.com">Semaphore</a> account.</li>
+<li>Click the <strong>+</strong> icon next to <strong>PROJECTS</strong>.</li>
+<li>Click the <strong>Add Repository</strong> button next to your repository.</li>
+</ol>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/eSZWvM9.png" alt="Add Repository to Semaphore"></p>
+
+<p>Now that Semaphore is connected, it will pick up any changes in the repository automatically.</p>
+
+<p>You are now ready to create the Continuous Integration pipeline for the application. A pipeline defines the path your code must travel to get built, tested, and deployed. The pipeline is automatically run each time there is a change in the GitHub repository.</p>
+
+<p>First, you should ensure that Semaphore uses the same version of Node you’ve been using during development.  You can check which version is running on your machine:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node -v
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>v10.16.0
+</code></pre>
+<p>You can tell Semaphore which version of Node.js to use by creating a file called <code>.nvmrc</code> in your repository. Internally, Semaphore uses <a href="https://github.com/nvm-sh/nvm/blob/master/README.md">node version manager</a> to switch between Node.js versions. Create the <code>.nvmrc</code> file and set the version to <code>10.16.0</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo '10.16.0' &gt; .nvmrc
+</li></ul></code></pre>
+<p>Semaphore pipelines go in the <code>.semaphore</code> directory. Create the directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir .semaphore
+</li></ul></code></pre>
+<p>Create a new pipeline file. The initial pipeline is always called <code>semaphore.yml</code>. In this file, you’ll define all the steps required to build and test the application.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .semaphore/semaphore.yml
+</li></ul></code></pre>
+<p><span class='note'><strong>Note</strong>: You are creating a file in the <a href="https://yaml.org/start.html">YAML format</a>. You must preserve the leading spaces as shown in the tutorial.<br></span></p>
+
+<p>The first line must set the Semaphore file version; the current stable is <code>v1.0</code>. Also, the pipeline needs a name. Add these lines to your file:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">version: <span class="highlight">v1.0</span>
+name: <span class="highlight">Addressbook</span>
+
+. . .
+</code></pre>
+<p>Semaphore automatically provisions virtual machines to run the tasks. There are <a href="https://docs.semaphoreci.com/article/20-machine-types">various machines to choose from</a>. For the integration jobs, use the <code>e1-standard-2</code> (2 CPUs 4 GB RAM) along with an Ubuntu 18.04 OS. Add these lines to the file:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+
+. . .
+</code></pre>
+<p>Semaphore uses <em>blocks</em> to organize the tasks. Each block can have one or more <em>jobs</em>. All jobs in a block run in parallel, each one in an isolated machine. Semaphore waits for all jobs in a block to pass before starting the next one.</p>
+
+<p>Start by defining the first block, which installs all the JavaScript dependencies to test and run the application:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+blocks:
+  - name: Install dependencies
+    task:
+
+. . .
+</code></pre>
+<p>You can define environment variables that are common for all jobs, like setting <code>NODE_ENV</code> to <code>test</code>, so Node.js knows this is a test environment. Add this code after <code>task</code>:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+    task:
+      <span class="highlight">env_vars:</span>
+        <span class="highlight">- name: NODE_ENV</span>
+          <span class="highlight">value: test</span>
+
+. . .
+</code></pre>
+<p>Commands in the <a href="https://docs.semaphoreci.com/article/50-pipeline-yaml#prologue">prologue</a> section are executed before each job in the block. It&rsquo;s a convenient place to define setup tasks. You can use <a href="https://docs.semaphoreci.com/article/54-toolbox-reference#checkout">checkout</a> to clone the GitHub repository. Then, <code>nvm use</code> activates the appropriate Node.js version you specified in <code>.nvmrc</code>. Add the <code>prologue</code> section:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">    task:
+. . .
+
+      prologue:
+        commands:
+          - checkout
+          - nvm use
+
+. . .
+</code></pre>
+<p>Next add this code to install the project’s dependencies. To speed up jobs, Semaphore provides the <a href="https://docs.semaphoreci.com/article/54-toolbox-reference#cache">cache</a> tool. You can run <code>cache store</code> to save <code>node_modules</code> directory in Semaphore’s cache. <code>cache</code> automatically figures out which files and directories should be stored. The second time the job is executed, <code>cache restore</code> restores the directory.</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+      jobs:
+        - name: npm install and cache
+          commands:
+            - cache restore
+            - npm install
+            - cache store 
+
+. . .
+</code></pre>
+<p>Add another block which will run two jobs. One to run the lint test, and another to run the application&rsquo;s test suite. </p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+  - name: Tests
+    task:
+      env_vars:
+        - name: NODE_ENV
+          value: test
+      prologue:
+        commands:
+          - checkout
+          - nvm use
+          - cache restore 
+
+. . .
+</code></pre>
+<p>The <code>prologue</code> repeats the same commands as in the previous block and restores <code>node_module</code> from the cache. Since this block will run tests, you set the <code>NODE_ENV</code> environment variable to <code>test</code>.</p>
+
+<p>Now add the jobs. The first job performs the code quality check with jshint:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+      jobs:
+        - name: Static test
+          commands:
+            - npm run lint
+
+. . .
+</code></pre>
+<p>The next job executes the unit tests. You’ll need a database to run them, as you don&rsquo;t want to use your production database. Semaphore&rsquo;s <a href="https://docs.semaphoreci.com/article/132-sem-service-managing-databases-and-services-on-linux">sem-service</a> can start a local PostgreSQL database in the test environment that is completely isolated. The database is destroyed when the job ends. Start this service and run the tests:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+        - name: Unit test
+          commands:
+            - sem-service start postgres
+            - npm run test
+</code></pre>
+<p>Save the <code>.semaphore/semaphore.yml</code> file.</p>
+
+<p>Now add and commit the changes to the GitHub repository:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git add .nvmrc
+</li><li class="line" prefix="$">git add .semaphore/semaphore.yml
+</li><li class="line" prefix="$">git commit -m "continuous integration pipeline"
+</li><li class="line" prefix="$">git push origin master
+</li></ul></code></pre>
+<p>As soon as the code is pushed to GitHub, Semaphore starts the CI pipeline:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/g7gd8f1.png" alt="Running Workflow"></p>
+
+<p>You can click on the pipeline to show the blocks and jobs, and their output.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/WIFWWIu.png" alt="Integration Pipeline"></p>
+
+<p>Next you will create a new pipeline that builds a Docker image for the application.</p>
+
+<h2 id="step-5-—-building-docker-images-for-the-application">Step 5 — Building Docker Images for the Application</h2>
+
+<p>A Docker image is the basic unit of a Kubernetes deployment. The image should have all the binaries, libraries, and code required to run the application. A Docker container is not a lightweight virtual machine, but it behaves like one. The Docker Hub registry contains hundreds of ready-to-use images, but we&rsquo;re going to build our own.</p>
+
+<p>In this step, you’ll add a new pipeline to build a custom Docker image for your app and push it to Docker Hub. </p>
+
+<p>To build a custom image, create a <code>Dockerfile</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano Dockerfile
+</li></ul></code></pre>
+<p>The <code>Dockerfile</code> is a recipe to create the image. You can use the <a href="https://hub.docker.com/_/node/">official</a> Node.js distribution as a starting point instead of starting from scratch. Add this to your <code>Dockerfile</code>:</p>
+<div class="code-label " title="Dockerfile">Dockerfile</div><pre class="code-pre Dockerfile"><code langs="">FROM node:10.16.0-alpine
+
+. . .
+</code></pre>
+<p>Then add a command which copies <code>package.json</code> and <code>package-lock.json</code>, and then install the node modules inside the image:</p>
+<div class="code-label " title="Dockerfile">Dockerfile</div><pre class="code-pre Dockerfile"><code langs="">. . .
+
+COPY package*.json ./
+RUN npm install
+
+. . .
+</code></pre>
+<p>Installing the dependencies first will speed up subsequent builds, as Docker will cache this step.</p>
+
+<p>Now add this command which copies all the application files in the project root into the image:</p>
+<div class="code-label " title="Dockerfile">Dockerfile</div><pre class="code-pre Dockerfile"><code langs="">. . .
+
+COPY *.js ./
+
+. . .
+</code></pre>
+<p>Finally, <code>EXPOSE</code> specifies that the container listens for connections on port <code>3000</code>, where the application is listening, and <code>CMD</code> sets the command that should run when the container starts. Add these lines to your file:</p>
+<div class="code-label " title="Dockerfile">Dockerfile</div><pre class="code-pre Dockerfile"><code langs="">. . .
+
+EXPOSE 3000
+CMD [ "npm", "run", "start" ]
+</code></pre>
+<p>Save the file.</p>
+
+<p>With the Dockerfile complete, you can create a new pipeline so Semaphore can build the image for you when you push your code to GitHub. Create a new file called <code>docker-build.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .semaphore/docker-build.yml
+</li></ul></code></pre>
+<p>Start the pipeline with the same boilerplate as the the CI pipline, but with the name <code>Docker build</code>:</p>
+<div class="code-label " title=".semaphore/docker-build.yml">.semaphore/docker-build.yml</div><pre class="code-pre yaml"><code langs="">version: v1.0
+name: <span class="highlight">Docker build</span>
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+
+. . .
+</code></pre>
+<p>This pipeline will have only one block and one job. In Step 3, you created a secret named <code>dockerhub</code> with your Docker Hub username and password. Here, you’ll import these values using the <code>secrets</code> keyword. Add this code:</p>
+<div class="code-label " title=".semaphore/docker-build.yml">.semaphore/docker-build.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+blocks:
+  - name: Build
+    task:
+      secrets:
+        - name: dockerhub
+
+. . .
+</code></pre>
+<p>Docker images are stored in repositories. We’ll use the official <a href="https://hub.docker.com/">Docker Hub</a> which allows for an unlimited number of public images. Add these lines to check out the code from GitHub and use the <code>docker login</code> command to authenticate with Docker Hub.</p>
+<div class="code-label " title=".semaphore/docker-build.yml">.semaphore/docker-build.yml</div><pre class="code-pre yaml"><code langs="">    task:
+. . .
+
+      prologue:
+        commands:
+          - checkout
+          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+
+. . .
+</code></pre>
+<p>Each Docker image is fully identified by the combination of name and tag. The name usually corresponds to the product or software, and the tag corresponds to the particular version of the software. For example, <code>node.10.16.0</code>. When no tag is supplied, Docker defaults to the special <code>latest</code> tag. Hence, it’s considered good practice to use the <code>latest</code> tag to refer to the most current image.</p>
+
+<p>Add the following code to build the image and push it to Docker Hub:</p>
+<div class="code-label " title=".semaphore/docker-build.yml">.semaphore/docker-build.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+      jobs:
+      - name: Docker build
+        commands:
+          - docker pull "${DOCKER_USERNAME}/addressbook:latest" || true
+          - docker build --cache-from "${DOCKER_USERNAME}/addressbook:latest" -t "${DOCKER_USERNAME}/addressbook:$SEMAPHORE_WORKFLOW_ID" .
+          - docker push "${DOCKER_USERNAME}/addressbook:$SEMAPHORE_WORKFLOW_ID"
+</code></pre>
+<p>When Docker builds the image, it reuses parts of existing images to speed up the process. The first command tries to pull the <code>latest</code> image from Docker Hub so it may be reused. Semaphore stops the pipeline if any of the commands return a status code different than zero. For example, if the repository doesn’t have any <code>latest</code> image, as it won&rsquo;t on the first try, the pipeline will stop. You can force Semaphore to ignore failed commands by appending <code>|| true</code> to the command.</p>
+
+<p>The second command builds the image. To reference this particular image later, you can tag it with a unique string. Semaphore provides several <a href="https://docs.semaphoreci.com/article/12-environment-variables">environment variables</a> for jobs. One of them, <code>$SEMAPHORE_WORKFLOW_ID</code> is unique and shared among all the pipelines in the workflow. It&rsquo;s handy for referencing this image later in the deployment.</p>
+
+<p>The third command pushes the image to Docker Hub.</p>
+
+<p>The build pipeline is ready, but Semaphore will not start it unless you connect it to the main CI pipeline. You can chain multiple pipelines to create complex, multi-branch workflows using <a href="https://docs.semaphoreci.com/article/67-deploying-with-promotions">promotions</a>.</p>
+
+<p>Edit the main pipeline file <code>.semaphore/semaphore.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .semaphore/semaphore.yml
+</li></ul></code></pre>
+<p>Add the following lines at the end of the file:</p>
+<div class="code-label " title=".semaphore/semaphore.yml">.semaphore/semaphore.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+promotions:
+  - name: Dockerize
+    pipeline_file: docker-build.yml
+    auto_promote_on:
+      - result: passed
+</code></pre>
+<p><code>auto_promote_on</code> defines the condition to start the <code>docker build</code> pipeline. In this case, it runs when all jobs defined in the <code>semaphore.yml</code> file have passed.</p>
+
+<p>To test the new pipeline, you need to add, commit, and push all the modified files to GitHub:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git add Dockerfile
+</li><li class="line" prefix="$">git add .semaphore/docker-build.yml
+</li><li class="line" prefix="$">git add .semaphore/semaphore.yml
+</li><li class="line" prefix="$">git commit -m "docker build pipeline"
+</li><li class="line" prefix="$">git push origin master
+</li></ul></code></pre>
+<p>After the CI pipeline is complete, the Docker build pipeline starts.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/XQfOwvK.png" alt="Build Pipeline"></p>
+
+<p>When it finishes, you&rsquo;ll see your new image in your <a href="https://cloud.docker.com/repository">Docker Hub repository</a>.</p>
+
+<p>You&rsquo;ve got your build process testing and creating the image. Now you&rsquo;ll create the final pipeline to deploy the application to your Kubernetes cluster.</p>
+
+<h2 id="step-6-—-setting-up-continuous-deployment-to-kubernetes">Step 6 — Setting up Continuous Deployment to Kubernetes</h2>
+
+<p>The building block of a Kubernetes deployment is the <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes#pods">pod</a>. A pod is a group of containers that are managed as a single unit. The containers inside a pod start and stop in unison and always run on the same machine, sharing its resources. Each pod has an IP address. In this case, the pods will only have one container.</p>
+
+<p>Pods are ephemeral; they are created and destroyed frequently. You can’t tell which IP address is going to be assigned to each pod until it’s started. To solve this, you&rsquo;ll use <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes#services">services</a>,  which have fixed public IP addresses so incoming connections can be load-balanced and forwarded to the pods.</p>
+
+<p>You could manage pods directly, but it’s better to let Kubernetes handle that by using a <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes#deployments">deployment</a>. In this section, you will create a declarative manifest that describes the final desired state for your cluster. The manifest has two resources:</p>
+
+<ul>
+<li>Deployment: starts the pods in the cluster nodes as required and keeps track of their status. Since in this tutorial we’re using a 3-node cluster, we&rsquo;ll deploy 3 pods.</li>
+<li>Service: acts as an entry point for our users. Listens to traffic on port <code>80</code> (HTTP) and forwards the connection to the pods.</li>
+</ul>
+
+<p>Create a manifest file called <code>deployment.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano deployment.yml
+</li></ul></code></pre>
+<p>Start the manifest with the <code>Deployment</code> resource. Add the following contents to the new file to define the deployment:</p>
+<div class="code-label " title="deployment.yml">deployment.yml</div><pre class="code-pre yaml"><code langs="">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: addressbook
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: addressbook
+  template:
+    metadata:
+      labels:
+        app: addressbook
+    spec:
+      containers:
+        - name: addressbook
+          image: ${DOCKER_USERNAME}/addressbook:${SEMAPHORE_WORKFLOW_ID}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "$PORT"
+            - name: DB_SCHEMA
+              value: "$DB_SCHEMA"
+            - name: DB_USER
+              value: "$DB_USER"
+            - name: DB_PASSWORD
+              value: "$DB_PASSWORD"
+            - name: DB_HOST
+              value: "$DB_HOST"
+            - name: DB_PORT
+              value: "$DB_PORT"
+            - name: DB_SSL
+              value: "$DB_SSL"
+
+
+. . .
+</code></pre>
+<p>For each resource in the manifest, you need to set an <code>apiVersion</code>. For deployments, use <code>apiVersion: apps/v1</code>, a stable version. Then, tell Kubernetes that this resource is a Deployment with <code>kind: Deployment</code>. Each definition should have a name defined in <code>metadata.name</code>.</p>
+
+<p>In the <code>spec</code> section you tell Kubernetes what the desired final state is. This definition requests that Kubernetes should create 3 pods with <code>replicas: 3</code>.</p>
+
+<p><em>Labels</em> are key-value pairs used to organize and cross-reference Kubernetes resources. You define labels with <code>metadata.labels</code>, and you can look for matching labels with <code>selector.matchLabels</code>. This is how you connect elements togther.</p>
+
+<p>The key <code>spec.template</code> defines a model that Kubernetes will use to create each pod. Inside <code>spec.template.metadata.labels</code> you set one label for the pods: <code>app: addressbook</code>.</p>
+
+<p>With <code>spec.selector.matchLabels</code> you make the deployment manage any pods with the label <code>app: addressbook</code>. In this case you are making this deployment responsible for all the pods.</p>
+
+<p>Finally, you define the image that runs in the pods. In <code>spec.template.spec.containers</code> you set the image name. Kubernetes will pull the image from the registry as needed. In this case, it will pull from Docker Hub). You can also set environment variables for the containers, which is fortunate because you need to supply several values for the database connection.</p>
+
+<p>To keep the deployment manifest flexible, you’ll be relying on variables. The YAML format, however, doesn’t allow variables, so the file isn&rsquo;t valid yet. You&rsquo;ll solve that problem when you define the deployment pipeline for Semaphore.</p>
+
+<p>That’s it for the deployment. But this only defines the pods. You still need a service that will allow traffic to flow to your pods. You can add another Kubernetes resource in the same file as long as you use three hyphens (<code>---</code>) as a separator.</p>
+
+<p>Add the following code to define a load balancer service that connects to pods with the <code>addressbook</code> label:</p>
+<div class="code-label " title="deployment.yml">deployment.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: addressbook-lb
+spec:
+  selector:
+    app: addressbook
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 3000
+</code></pre>
+<p>The load balancer will receive connections on port <code>80</code> and forward them to the pods&rsquo; port <code>3000</code> where the application is listening.</p>
+
+<p>Save the file.</p>
+
+<p>Now, create a deployment pipeline for Semaphore that will deploy the app using the manifest. Create a new file in the <code>.semaphore</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .semaphore/deploy-k8s.yml
+</li></ul></code></pre>
+<p>Begin the pipeline as usual, specifying the version, name, and image:</p>
+<div class="code-label " title=".semaphore/deploy-k8s.yml">.semaphore/deploy-k8s.yml</div><pre class="code-pre yaml"><code langs="">version: v1.0
+name: Deploy to Kubernetes
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+
+. . .
+</code></pre>
+<p>This pipeline will have two blocks. The first block deploys the application to the Kubernetes cluster.</p>
+
+<p>Define the block and import all the secrets:</p>
+<div class="code-label " title=".semaphore/deploy-k8s.yml">.semaphore/deploy-k8s.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+blocks:
+  - name: Deploy to Kubernetes
+    task:
+      secrets:
+        - name: dockerhub
+        - name: do-access-token
+        - name: env-production
+
+. . .
+</code></pre>
+<p>Store your DigitalOcean Kubernetes cluster name in an environment variable so you can reference it later:</p>
+<div class="code-label " title=".semaphore/deploy-k8s.yml">.semaphore/deploy-k8s.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+      env_vars:
+        - name: CLUSTER_NAME
+          value: <span class="highlight">addressbook-server</span>
+
+. . .
+</code></pre>
+<p>DigitalOcean Kubernetes clusters are managed with a combination of two programs: <code>kubectl</code> and <code>doctl</code>. The former is already included in Semaphore’s image, but the latter isn’t, so you need to install it. You can use the <code>prologue</code> section to do it.</p>
+
+<p>Add this prologue section:</p>
+<div class="code-label " title=".semaphore/deploy-k8s.yml">.semaphore/deploy-k8s.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+      prologue:
+        commands:
+          - wget https://github.com/digitalocean/doctl/releases/download/v1.20.0/doctl-1.20.0-linux-amd64.tar.gz
+          - tar xf doctl-1.20.0-linux-amd64.tar.gz 
+          - sudo cp doctl /usr/local/bin
+          - doctl auth init --access-token $DO_ACCESS_TOKEN
+          - doctl kubernetes cluster kubeconfig save "${CLUSTER_NAME}"
+          - checkout
+
+. . .
+</code></pre>
+<p>The first command downloads the <code>doctl</code> official <a href="https://github.com/digitalocean/doctl/releases">release</a> with <code>wget</code>. The second command decompresses it with <code>tar</code> and copies it into the local path. Once <code>doctl</code> is installed, it can be used to authenticate with the DigitalOcean API and request the Kubernetes config file for our cluster. After checking out our code, we are done with the <code>prologue</code>:</p>
+
+<p>Next comes the final piece of our pipeline: deploying to the cluster.</p>
+
+<p>Remember that there were some environment variables in <code>deployment.yml</code>, and YAML does not allow that. As a result, <code>deployment.yml</code> in its current state, won’t work. To get around that, <code>source</code> the environment file to load the variables, then use the <code>envsubst</code> command to expand the variables in-place with the actual values. The result, a file called <code>deploy.yml</code>, is entirely valid YAML with the values inserted. With the file in place, you can start the deployment with <code>kubectl apply</code>:</p>
+<div class="code-label " title=".semaphore/deploy-k8s.yml">.semaphore/deploy-k8s.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+      jobs:
+      - name: Deploy
+        commands:
+          - source $HOME/env-production
+          - envsubst &lt; deployment.yml | tee deploy.yml
+          - kubectl apply -f deploy.yml
+
+. . .
+</code></pre>
+<p>The second block adds the <code>latest</code> tag to the image on Docker Hub to denote that this is the most current version deployed. Repeat the Docker login steps, then pull, retag, and push to Docker Hub:</p>
+<div class="code-label " title=".semaphore/deploy-k8s.yml">.semaphore/deploy-k8s.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+  - name: Tag latest release
+    task:
+      secrets:
+        - name: dockerhub
+      prologue:
+        commands:
+          - checkout
+          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+          - checkout
+      jobs:
+      - name: docker tag latest
+        commands:
+          - docker pull "${DOCKER_USERNAME}/addressbook:$SEMAPHORE_WORKFLOW_ID" 
+          - docker tag "${DOCKER_USERNAME}/addressbook:$SEMAPHORE_WORKFLOW_ID" "${DOCKER_USERNAME}/addressbook:latest"
+          - docker push "${DOCKER_USERNAME}/addressbook:latest"
+</code></pre>
+<p>Save the file.</p>
+
+<p>This pipeline performs the deployment, but it can only start if the Docker image was successfully generated and pushed to Docker Hub. As a result, you must connect the build and deployment pipelines with a promotion. Edit the Docker build pipeline to add it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .semaphore/docker-build.yml
+</li></ul></code></pre>
+<p>Add the promotion to the end of the file:</p>
+<div class="code-label " title=".semaphore/docker-build.yml">.semaphore/docker-build.yml</div><pre class="code-pre yaml"><code langs="">. . .
+
+promotions:
+  - name: Deploy to Kubernetes
+    pipeline_file: deploy-k8s.yml
+    auto_promote_on:
+      - result: passed
+</code></pre>
+<p>You are done setting up the CI/CD workflow.</p>
+
+<p>All that remains is pushing the modified files and letting Semaphore do the work. Add, commit, and push your repository&rsquo;s changes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git add .semaphore/deploy-k8s.yml
+</li><li class="line" prefix="$">git add .semaphore/docker-build.yml
+</li><li class="line" prefix="$">git add deployment.yml
+</li><li class="line" prefix="$">git commit -m "kubernetes deploy pipeline"
+</li><li class="line" prefix="$">git push origin master
+</li></ul></code></pre>
+<p>It’ll take a few minutes for the deployment to complete.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/Ee7VRw7.png" alt="Deploy Pipeline"></p>
+
+<p>Let&rsquo;s test the application next.</p>
+
+<h2 id="step-7-—-testing-the-application">Step 7 — Testing the Application</h2>
+
+<p>At this point, the application is up and running. In this step, you’ll use <code>curl</code> to test the API endpoint.</p>
+
+<p>You’ll need to know the public IP that DigitalOcean has given to your cluster. Follow these steps to find it:</p>
+
+<ol>
+<li>Log in to your DigitalOcean account.</li>
+<li>Select the addressbook project</li>
+<li>Go to <strong>Networking</strong>.</li>
+<li>Click on <strong>Load Balancers</strong>.</li>
+<li>The <strong>IP Address</strong> is shown. Copy the IP address.</li>
+</ol>
+
+<p><img src="https://assets.digitalocean.com/articles/semaphore_doks/S6nLLmg.png" alt="Load Balancer IP"></p>
+
+<p>Let’s check the <code>/all</code> route using <code>curl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -w "\n" <span class="highlight">YOUR_CLUSTER_IP</span>/all 
+</li></ul></code></pre>
+<p>You can use the <code>-w "\n"</code> option to ensure <code>curl</code> prints all lines:</p>
+
+<p>Since there are no records in the database yet, you get an empty JSON array as the result:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[]
+</code></pre>
+<p>Create a new person record by making a <code>PUT</code> request to the <code>/person</code> endpoint:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -w "\n" -X PUT \
+</li><li class="line" prefix="$">  -d "firstName=Sammy&amp;lastName=the Shark" <span class="highlight">YOUR_CLUSTER_IP</span>/person
+</li></ul></code></pre>
+<p>The API returns the JSON object for the person:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+    "id": 1,
+    "firstName": "Sammy",
+    "lastName": "the Shark",
+    "updatedAt": "2019-07-04T23:51:00.548Z",
+    "createdAt": "2019-07-04T23:51:00.548Z"
+}
+</code></pre>
+<p>Create a second person:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -w "\n" -X PUT \
+</li><li class="line" prefix="$">  -d "firstName=Tommy&amp;lastName=the Octopus" <span class="highlight">YOUR_CLUSTER_IP</span>/person
+</li></ul></code></pre>
+<p>The output indicates that a second person was created:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+    "id": 2,
+    "firstName": "Tommy",
+    "lastName": "the Octopus",
+    "updatedAt": "2019-07-04T23:52:08.724Z",
+    "createdAt": "2019-07-04T23:52:08.724Z"
+}
+</code></pre>
+<p>Now make a <code>GET</code> request to get the person with the <code>id</code> of <code>2</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -w "\n" <span class="highlight">YOUR_CLUSTER_IP</span>/person/2
+</li></ul></code></pre>
+<p>The server replies with the data you requested:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+    "id": 2,
+    "firstName": "Tommy",
+    "lastName": "the Octopus",
+    "createdAt": "2019-07-04T23:52:08.724Z",
+    "updatedAt": "2019-07-04T23:52:08.724Z"
+}
+</code></pre>
+<p>To delete the person, send a <code>DELETE</code> request:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -w "\n" -X DELETE <span class="highlight">YOUR_CLUSTER_IP</span>/person/2 
+</li></ul></code></pre>
+<p>No output is returned by this command.</p>
+
+<p>You should only have one person in your database, the one with the <code>id</code> of <code>1</code>. Try getting <code>/all</code> again:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -w "\n" <span class="highlight">YOUR_CLUSTER_IP</span>/all 
+</li></ul></code></pre>
+<p>The server replies with an array of persons containing only one record:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[
+    {
+        "id": 1,
+        "firstName": "Sammy",
+        "lastName": "the Shark",
+        "createdAt": "2019-07-04T23:51:00.548Z",
+        "updatedAt": "2019-07-04T23:51:00.548Z"
+    }
+]
+</code></pre>
+<p>At this point, there&rsquo;s only one person left in the database.</p>
+
+<p>This completes the tests for all the endpoints in our application and marks the end of the tutorial.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial, you wrote a complete Node.js application from scratch which used DigitalOcean’s managed PostgreSQL database service. You then used Semaphore&rsquo;s CI/CD pipelines to fully automate a workflow that tested and built a container image, uploaded it to Docker Hub, and deployed it to DigitalOcean Kubernetes.</p>
+
+<p>To learn more about Kubernetes, you can read <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes">An Introduction to Kubernetes</a> and the rest of DigitalOcean&rsquo;s <a href="https://www.digitalocean.com/community/tags/kubernetes">Kubernetes tutorials</a>.</p>
+
+<p>Now that your application is deployed, you may consider <a href="https://www.digitalocean.com/docs/networking/dns/how-to/add-domains">adding a domain name</a>, <a href="https://www.digitalocean.com/docs/databases/how-to/clusters/secure-clusters">securing your database cluster</a>, or setting up <a href="https://www.digitalocean.com/docs/databases/how-to/clusters/set-up-alerts">alerts for your database</a>.</p>

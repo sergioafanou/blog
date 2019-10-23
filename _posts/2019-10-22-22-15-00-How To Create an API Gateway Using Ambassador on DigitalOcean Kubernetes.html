@@ -1,0 +1,599 @@
+---
+layout: post
+title: How To Create an API Gateway Using Ambassador on DigitalOcean Kubernetes
+network: digitalocean
+date: October 22, 2019 at 10:15PM
+url: https://www.digitalocean.com/community/tutorials/how-to-create-an-api-gateway-using-ambassador-on-digitalocean-kubernetes
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/funds/foss-nonprofits">Free and Open Source Fund</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://www.getambassador.io/">Ambassador</a> is an API Gateway for cloud-native applications that routes traffic between heterogeneous services and maintains decentralized workflows. It acts as a single entry point and supports tasks like service discovery, configuration management, routing rules, and rate limiting. It provides great flexibility and ease of configuration for your services.</p>
+
+<p><a href="https://www.envoyproxy.io/">Envoy</a> is an open source service proxy designed for cloud-native applications. In Kubernetes, Ambassador can be used to install and manage Envoy configuration. Ambassador supports zero downtime configuration changes and integration with other features like authentication, service discovery, and <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-service-meshes">services meshes</a>.</p>
+
+<p>In this tutorial, you&rsquo;ll set up an Ambassador API Gateway on a Kubernetes cluster using Helm and configure it for routing incoming traffic to various services based on routing rules. You&rsquo;ll configure these rules to route the traffic based on hostname or path to the relevant services.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide you&rsquo;ll need the following:</p>
+
+<ul>
+<li><p>A DigitalOcean Kubernetes cluster with <a href="https://kubernetes.io/docs/tasks/tools/install-kubectl/">kubectl</a> configured. To create a Kubernetes cluster on DigitalOcean, see our <a href="https://www.digitalocean.com/docs/kubernetes/quickstart/">Kubernetes Quickstart</a>.</p></li>
+<li><p>The Helm package manager installed on your local machine, and Tiller installed on your cluster. Complete Steps 1 and 2 of <a href="https://www.digitalocean.com/community/tutorials/how-to-install-software-on-kubernetes-clusters-with-the-helm-package-manager">How To Install Software on Kubernetes Clusters with the Helm Package Manager</a></p></li>
+<li><p>A fully registered domain name with at least two A records configured. This tutorial will use <code>svc1.<span class="highlight">your-domain</span></code>, <code>svc2.<span class="highlight">your-domain</span></code>, and <code>svc3.<span class="highlight">your-domain</span></code> throughout. You can follow the <a href="https://www.digitalocean.com/docs/networking/dns/">DNS Quickstart</a> to set your records up on DigitalOcean.</p></li>
+</ul>
+
+<h2 id="step-1-—-installing-ambassador">Step 1 — Installing Ambassador</h2>
+
+<p>In this section, you will install Ambassador on your Kubernetes cluster. Ambassador can be installed using a Helm chart or by passing a YAML configuration file to the <code>kubectl</code> command.</p>
+
+<p><span class='note'><strong>Note:</strong> DigitalOcean Kubernetes has <a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/">RBAC</a> enabled by default, so when using a YAML configuration file for installation you need to ensure that you use the RBAC enabled one. You can find further details about deploying Amabassador to Kubernetes via YAML in Ambassador&rsquo;s <a href="https://www.getambassador.io/user-guide/getting-started/">documentation</a>.<br></span></p>
+
+<p>For the purposes of this tutorial, you&rsquo;ll use a <a href="https://helm.sh/">Helm</a> chart to install Ambassador to your cluster. Having followed the prerequisites, you&rsquo;ll have Helm installed to your cluster.</p>
+
+<p>To begin, run the following command to install Ambassador via Helm:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm upgrade --install --wait ambassador stable/ambassador
+</li></ul></code></pre>
+<p>You&rsquo;ll see output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Release "ambassador" does not exist. Installing it now.
+NAME:   ambassador
+LAST DEPLOYED: Tue Jun 18 02:15:00 2019
+NAMESPACE: default
+STATUS: DEPLOYED
+
+RESOURCES:
+==&gt; v1/Deployment
+NAME        READY  UP-TO-DATE  AVAILABLE  AGE
+ambassador  3/3    3           3          2m39s
+
+==&gt; v1/Pod(related)
+NAME                         READY  STATUS   RESTARTS  AGE
+ambassador-7d55c468cb-4gpq9  1/1    Running  0         2m38s
+ambassador-7d55c468cb-jr9zr  1/1    Running  0         2m38s
+ambassador-7d55c468cb-zhm7l  1/1    Running  0         2m38s
+
+==&gt; v1/Service
+NAME               TYPE          CLUSTER-IP      EXTERNAL-IP    PORT(S)                     AGE
+ambassador         LoadBalancer  10.245.183.114  139.59.52.164  80:30001/TCP,443:31557/TCP  2m40s
+ambassador-admins  ClusterIP     10.245.46.43    &lt;none&gt;         8877/TCP                    2m41s
+
+==&gt; v1/ServiceAccount
+NAME        SECRETS  AGE
+ambassador  1        2m43s
+
+==&gt; v1beta1/ClusterRole
+NAME        AGE
+ambassador  2m41s
+
+==&gt; v1beta1/ClusterRoleBinding
+NAME        AGE
+ambassador  2m41s
+
+==&gt; v1beta1/CustomResourceDefinition
+NAME                                          AGE
+authservices.getambassador.io                 2m42s
+consulresolvers.getambassador.io              2m41s
+kubernetesendpointresolvers.getambassador.io  2m42s
+kubernetesserviceresolvers.getambassador.io   2m43s
+mappings.getambassador.io                     2m41s
+modules.getambassador.io                      2m41s
+ratelimitservices.getambassador.io            2m42s
+tcpmappings.getambassador.io                  2m41s
+tlscontexts.getambassador.io                  2m42s
+tracingservices.getambassador.io              2m43s
+
+. . .
+</code></pre>
+<p>This will create an Ambassador deployment, service, and a Load Balancer with your Kubernetes cluster nodes attached. You&rsquo;ll need the Load Balancer&rsquo;s IP to map it to your domain&rsquo;s A records.</p>
+
+<p>To get the IP address of your Ambassador Load Balancer, run the following:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get svc --namespace default ambassador
+</li></ul></code></pre>
+<p>You&rsquo;ll see output similar to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME         TYPE           CLUSTER-IP       EXTERNAL-IP     PORT(S)                      AGE
+ambassador   LoadBalancer   <span class="highlight">your_cluster_IP</span>   <span class="highlight">your-IP-address</span>   80:30001/TCP,443:31557/TCP   8m4s
+</code></pre>
+<p>Note the external IP <code>your-IP-address</code> in this step and map the domains (via your domain provider) <code>svc1.<span class="highlight">your-domain</span></code>, <code>svc2.<span class="highlight">your-domain</span></code>, and <code>svc3.<span class="highlight">your-domain</span></code> to point to this IP address.</p>
+
+<p>You can enable HTTPS with your DigitalOcean Load Balancer using the steps given at <a href="https://www.digitalocean.com/docs/networking/load-balancers/how-to/ssl-termination/">How to Configure SSL Termination</a>. It is recommended to configure TLS termination via the Load Balancer. Another way of configuring TLS termination is using <a href="https://www.getambassador.io/reference/core/tls/">Ambassador&rsquo;s TLS Support</a></p>
+
+<p>You&rsquo;ve installed Ambassador on your Kubernetes cluster using Helm which created an Ambassador deployment with three replicas in the default namespace. This also created a Load Balancer with a public IP to route all traffic toward the API Gateway. Next you&rsquo;ll create Kubernetes deployments for three different services that you&rsquo;ll be using to test this API Gateway.</p>
+
+<h2 id="step-2-—-setting-up-web-server-deployments">Step 2 — Setting Up Web Server Deployments</h2>
+
+<p>In this section, you&rsquo;ll create three deployments to run three different web server containers. You&rsquo;ll create YAML files with definitions of Kubernetes deployments for the three different web server containers and deploy them using <code>kubectl</code>.</p>
+
+<p>Open your preferred text editor to create your first deployment for an Nginx web server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano svc1-deploy.yaml
+</li></ul></code></pre>
+<p>Enter the following yaml configuration in your file:</p>
+<div class="code-label " title="svc1-deploy.yaml">svc1-deploy.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: <span class="highlight">svc1</span>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+      name: svc1
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: nginx
+        name: svc1
+    spec:
+      containers:
+      - name: nginx
+        image: <span class="highlight">nginx:latest</span>
+        ports:
+        - name: http
+          containerPort: 80
+</code></pre>
+<p>Here you have defined a Kubernetes <code>Deployment</code> with the <a href="https://hub.docker.com/_/nginx"><code>nginx:latest</code></a> container image to be deployed with <code>1</code> replica, called <code><span class="highlight">svc1</span></code>. The <code>Deployment</code> is defined to expose in-cluster at port <code>80</code>.</p>
+
+<p>Save and close the file.</p>
+
+<p>Then run the following command to apply this configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc1-deploy.yaml
+</li></ul></code></pre>
+<p>You&rsquo;ll see output confirming creation:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>deployment.extensions/svc1 created
+</code></pre>
+<p>Now, create a second web server deployment. Open a file called <code>svc2-deploy.yaml</code> with:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano svc2-deploy.yaml
+</li></ul></code></pre>
+<p>Enter the following YAML configuration in the file:</p>
+<div class="code-label " title="svc2-deploy.yaml">svc2-deploy.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: <span class="highlight">svc2</span>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpd
+      name: svc2
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: httpd
+        name: svc2
+    spec:
+      containers:
+      - name: httpd
+        image: <span class="highlight">httpd:latest</span>
+        ports:
+        - name: http
+          containerPort: 80
+</code></pre>
+<p>Here you have defined a Kubernetes <code>Deployment</code> with the <a href="https://hub.docker.com/_/httpd"><code>httpd</code></a> container image to be deployed with <code>1</code> replica, called <code><span class="highlight">svc2</span></code>.</p>
+
+<p>Save and close the file.</p>
+
+<p>Run the following command to apply this configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc2-deploy.yaml
+</li></ul></code></pre>
+<p>You&rsquo;ll see this output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>deployment.extensions/svc2 created
+</code></pre>
+<p>Finally for the third deployment, open and create the <code>svc3-deploy.yaml</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano svc3-deploy.yaml
+</li></ul></code></pre>
+<p>Add the following lines to the file:</p>
+<div class="code-label " title="svc3-deploy.yaml">svc3-deploy.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: <span class="highlight">svc3</span>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+      name: svc3
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        name: svc3
+    spec:
+      containers:
+      - name: httpbin
+        image: <span class="highlight">kennethreitz/httpbin:latest</span>
+        ports:
+        - name: http
+          containerPort: 80
+</code></pre>
+<p>Here you have defined a Kubernetes <code>Deployment</code> with the <a href="http://httpbin.org/"><code>httpbin</code></a> container image to be deployed with <code>1</code> replica, called <code><span class="highlight">svc3</span></code>.</p>
+
+<p>Save and close the file.</p>
+
+<p>Finally, run the following command to apply:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc3-deploy.yaml
+</li></ul></code></pre>
+<p>And you&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>deployment.extensions/svc3 created
+</code></pre>
+<p>You&rsquo;ve deployed three web server containers using Kubernetes deployments. In the next step, you will be exposing these deployments to internet traffic.</p>
+
+<h2 id="step-3-—-exposing-apps-using-services-with-ambassador-annotations">Step 3 — Exposing Apps Using Services with Ambassador Annotations</h2>
+
+<p>In this section, you will expose your web apps to the internet creating Kubernetes Services with <a href="https://www.getambassador.io/reference/configuration/">Ambassador annotations</a> to configure rules to route traffic to them. Annotations in Kubernetes are a way to add metadata to objects. Ambassador uses these annotation values from services to configure its routing rules.</p>
+
+<p>As a reminder you need to have your domains (for example: <code><span class="highlight">svc1</span>.your-domain</code>, <code><span class="highlight">svc2</span>.your-domain</code>, and <code><span class="highlight">svc3</span>.your-domain</code>) mapped to the Load Balancer&rsquo;s public IP in your DNS records.</p>
+
+<p>Define a Kubernetes service for the <code>svc1</code> deployment with Ambassador annotations by creating and opening this file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano svc1-service.yaml
+</li></ul></code></pre>
+<p><span class='note'><strong>Note:</strong> The mapping name should be unique for every Ambassador annotation block. The mapping acts as an identifier for every annotation block and if repeated it will overlap the older annotation block.<br></span></p>
+<div class="code-label " title="svc1-service.yaml">svc1-service.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: svc1
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: ambassador/v1
+      kind: Mapping
+      name: svc1-service_mapping
+      host: <span class="highlight">svc1.your-domain</span>
+      prefix: /
+      service: svc1:80
+spec:
+  selector:
+    app: nginx
+    name: svc1
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+</code></pre>
+<p>In this YAML code, you have defined a Kubernetes service <code><span class="highlight">svc1</span></code> with Ambassador annotations to map hostname <code><span class="highlight">svc1.your-domain</span></code> to this service.</p>
+
+<p>Save and exit <code>svc1-service.yaml</code>, and then execute the following to apply this configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc1-service.yaml
+</li></ul></code></pre>
+<p>You&rsquo;ll see this output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/svc1 created
+</code></pre>
+<p>Create your second Kubernetes service for <code>svc2</code> deployment with Ambassador annotations. This is another example of host-based routing with Ambassador:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">svc2-service.yaml
+</li></ul></code></pre>
+<p>Add the following configuration to the file:</p>
+<div class="code-label " title="svc2-service.yaml">svc2-service.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: svc2
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: ambassador/v1
+      kind: Mapping
+      name: svc2-service_mapping
+      host: <span class="highlight">svc2.your-domain</span>
+      prefix: /
+      service: svc2:80
+spec:
+  selector:
+    app: httpd
+    name: svc2
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+</code></pre>
+<p>Save this as <code>svc2-service.yaml</code>. Here, you&rsquo;ve defined another Kubernetes service with Ambassador annotations to route traffic to <code>svc2</code> when any request is received by Ambassador with the <code>host</code> header value as <code>svc2.your-domain</code>. Therefore this host-based routing will allow you to send a request to the subdomain <code>svc2.your-domain</code>, which will route the traffic to the service <code>svc2</code> and serve your request from <code>httpd</code> web server.</p>
+
+<p>To create this service, execute the following:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc2-service.yaml
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/svc2 created
+</code></pre>
+<p>Create a third Kubernetes service for your <code>svc3</code> deployment and serve it via the path <code>svc2.your-domain/bin</code>. This will configure path-based routing for Ambassador:</p>
+<div class="code-label " title="svc3-service.yaml">svc3-service.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: svc3
+spec:
+  selector:
+    app: httpbin
+    name: svc3
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+</code></pre>
+<p>Save this as <code>svc3-service.yaml</code> and run the following to apply the configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc3-service.yaml
+</li></ul></code></pre>
+<p>Your output will be:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/svc3 created
+</code></pre>
+<p>Edit <code>svc2-service.yaml</code> to append the second Ambassador annotation block to route <code>/bin</code> to <code>svc3</code> service:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano svc2-service.yaml
+</li></ul></code></pre><div class="code-label " title="svc2-service.yaml">svc2-service.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: svc2
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: ambassador/v1
+      kind: Mapping
+      name: svc2-service_mapping
+      host: svc2.your-domain
+      prefix: /
+      service: svc2:80
+      <span class="highlight">---</span>
+      <span class="highlight">apiVersion: ambassador/v1</span>
+      <span class="highlight">kind: Mapping</span>
+      <span class="highlight">name: svc3-service_mapping</span>
+      <span class="highlight">host: svc2.your-domain</span>
+      <span class="highlight">prefix: /bin</span>
+      <span class="highlight">service: svc3:80</span>
+spec:
+  selector:
+    app: httpd
+    name: svc2
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+</code></pre>
+<p>You&rsquo;ve added the second Ambassador annotation block to configure paths beginning with <code>/bin</code> to map to your <code>svc3</code> Kubernetes service. In order to route requests for <code>svc2.your-domain/bin</code> to <code>svc3</code>, you have added the second annotation block here as the host value <code>svc2.your-domain</code>, which is the same for both of the blocks. Therefore path-based routing will allow you to send a request to <code>svc2.your-domain/bin</code>, which will be received by service <code>svc3</code> and served by the <code>httpbin</code> application in this tutorial</p>
+
+<p>Now run the following to apply the changes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc2-service.yaml
+</li></ul></code></pre>
+<p>You&rsquo;ll see this output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/svc2 configured
+</code></pre>
+<p>You have created Kubernetes Services for the three deployments and added host-based and path-based routing rules with Ambassador annotations. Next, you&rsquo;ll add advanced configuration to these services to configure routing, redirection, and custom headers.</p>
+
+<h2 id="step-4-—-advanced-ambassador-configurations-for-routing">Step 4 — Advanced Ambassador Configurations for Routing</h2>
+
+<p>In this section, you will configure the services with further Ambassador annotations to <a href="https://www.getambassador.io/reference/headers/">modify headers</a> and <a href="https://www.getambassador.io/reference/redirects">configure redirection</a>.</p>
+
+<p><code>curl</code> the domain <code>svc1.<span class="highlight">your-domain</span></code> and check the response headers:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -I svc1.<span class="highlight">your-domain</span>
+</li></ul></code></pre>
+<p>Your output will be similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>HTTP/1.1 200 OK
+server: envoy
+date: Mon, 17 Jun 2019 21:41:00 GMT
+content-type: text/html
+content-length: 612
+last-modified: Tue, 21 May 2019 14:23:57 GMT
+etag: "5ce409fd-264"
+accept-ranges: bytes
+x-envoy-upstream-service-time: 0
+</code></pre>
+<p>This output shows the headers received from the service routed using Ambassador. You&rsquo;ll add custom headers to your service response using Ambassador annotations and validate the output for new added headers.</p>
+
+<p>To add custom headers to your service response, remove the header <code>x-envoy-upstream-service-time</code> from the response and add a new response header <code>x-geo-location: India</code> for <code>svc1</code>. (You may change this header as per your requirements.)</p>
+
+<p>Edit the file <code>svc1-service.yaml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano svc1-service.yaml
+</li></ul></code></pre>
+<p>Update the annotation with the following highlighted lines:</p>
+<div class="code-label " title="svc1-service.yaml">svc1-service.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: svc1
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: ambassador/v1
+      kind: Mapping
+      name: svc1-service_mapping
+      host: svc1.example.com
+      prefix: /
+      <span class="highlight">remove_response_headers:</span>
+      <span class="highlight">- x-envoy-upstream-service-time</span>
+      <span class="highlight">add_response_headers:</span>
+        <span class="highlight">x-geo-location: India</span>
+      service: svc1:80
+spec:
+  selector:
+    app: nginx
+    name: svc1
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+</code></pre>
+<p>Here you have modified the <code>svc1</code> service to remove <code>x-envoy-upstream-service-time</code> and added the <code><span class="highlight">x-geo-location: India</span></code> header in the HTTP response.</p>
+
+<p>Apply the changes you have made:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc1-service.yaml
+</li></ul></code></pre>
+<p>You will see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/svc1 configured
+</code></pre>
+<p>Now run <code>curl</code> to validate the updated headers in the service response:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -I svc1.<span class="highlight">your-domain</span>
+</li></ul></code></pre>
+<p>The output will be similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>HTTP/1.1 200 OK
+server: envoy
+date: Mon, 17 Jun 2019 21:45:26 GMT
+content-type: text/html
+content-length: 612
+last-modified: Tue, 21 May 2019 14:23:57 GMT
+etag: "5ce409fd-264"
+accept-ranges: bytes
+x-geo-location: India
+</code></pre>
+<p>Now edit <code>svc3-service.yaml</code> to redirect requests for your hostname <code>svc3.<span class="highlight">your-domain</span></code> to path <code>svc2.<span class="highlight">your-domain/bin</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano svc3-service.yaml
+</li></ul></code></pre>
+<p>Append the Ambassador annotation block as shown in the following YAML and save it:</p>
+<div class="code-label " title="svc3-service.yaml">svc3-service.yaml</div><pre class="code-pre yaml"><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: svc3
+  <span class="highlight">annotations:</span>
+    <span class="highlight">getambassador.io/config: |</span>
+      <span class="highlight">---</span>
+      <span class="highlight">apiVersion: ambassador/v1</span>
+      <span class="highlight">kind:  Mapping</span>
+      <span class="highlight">name:  redirect_mapping</span>
+      <span class="highlight">host: svc3.your-domain</span>
+      <span class="highlight">prefix: /</span>
+      <span class="highlight">service: svc2.your-domain</span>
+      <span class="highlight">host_redirect: true</span>
+      <span class="highlight">path_redirect: /bin</span>
+spec:
+  selector:
+    app: httpbin
+    name: svc3
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+</code></pre>
+<p>You&rsquo;ve added <code>host_redirect: true</code> to configure a 301 redirection response for <code>svc3</code> to <code>svc2.<span class="highlight">your-domain/bin</span></code> for hostname <code>svc3.<span class="highlight">your-domain</span></code>. The <code>host_redirect</code> parameter sends a 301 redirection response to the client. If not set, the requests will receive 200 HTTP responses rather than 301 HTTP responses.</p>
+
+<p>Now run the following command to apply these changes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f svc3-service.yaml
+</li></ul></code></pre>
+<p>You will see similar output to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/svc3 configured
+</code></pre>
+<p>You can now check the response for <code>svc3.your-domain</code> using <code>curl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -I svc3.<span class="highlight">your-domain</span>
+</li></ul></code></pre>
+<p>Your output will be similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>HTTP/1.1 301 Moved Permanently
+location: http://svc2.your-domain/bin
+date: Mon, 17 Jun 2019 21:52:05 GMT
+server: envoy
+transfer-encoding: chunked
+</code></pre>
+<p>The output is a HTTP header for the request&rsquo;s response to the service <code>svc3.<span class="highlight">your-domain</span></code>showing that the configuration of <code>host_redirect: true</code> in your service annotation has correctly provided the HTTP status code: <code>301 Moved Permanently</code>.</p>
+
+<p>You&rsquo;ve configured the service with Ambassador annotations to modify HTTP headers and configure redirections. Next you will be adding global configuration to the Ambassador API Gateway service.</p>
+
+<h2 id="step-5-—-setting-up-ambassador-global-configurations">Step 5 — Setting Up Ambassador Global Configurations</h2>
+
+<p>In this section, you will edit the Ambassador service to add global GZIP compression configuration. GZIP compression will compress the HTTP assets size and reduce network bandwidth requirements leading to faster response times for the web clients. This configuration affects all the traffic being routed out through the Ambassador API Gateway. Similarly, you can configure other global modules with Ambassador, which let you enable special behaviors for Ambassador at a global level. These global configurations can be applied using annotations to the Ambassador service. You can refer to <a href="https://www.getambassador.io/reference/modules">Ambassador&rsquo;s Global Configuration</a> documentation for further information.</p>
+
+<p>The following <code>kubectl edit</code> command will open the default editor, which is vim. To use nano, for example, you can set the environment variable <code>KUBE_EDITOR</code> to nano:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">export KUBE_EDITOR="nano"
+</li></ul></code></pre>
+<p>Edit the Ambassador service:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl edit service ambassador
+</li></ul></code></pre>
+<p>Now add the highlighted lines to a new annotation block for GZIP compression:</p>
+<div class="code-label " title="Editing Ambassador Service">Editing Ambassador Service</div><pre class="code-pre yaml"><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  <span class="highlight">annotations:</span>
+    <span class="highlight">getambassador.io/config: |</span>
+      <span class="highlight">---</span>
+      <span class="highlight">apiVersion: ambassador/v1</span>
+      <span class="highlight">kind: Module</span>
+      <span class="highlight">name: ambassador</span>
+      <span class="highlight">config:</span>
+        <span class="highlight">service_port: 8080</span>
+      <span class="highlight">---</span>
+      <span class="highlight">apiVersion: ambassador/v0</span>
+      <span class="highlight">kind:  Module</span>
+      <span class="highlight">name:  ambassador</span>
+      <span class="highlight">config:</span>
+        <span class="highlight">gzip:</span>
+          <span class="highlight">memory_level: 5</span>
+          <span class="highlight">min_content_length: 256</span>
+          <span class="highlight">compression_level: BEST</span>
+          <span class="highlight">compression_strategy: DEFAULT</span>
+          <span class="highlight">content_type:</span>
+          <span class="highlight">- application/javascript</span>
+          <span class="highlight">- application/json</span>
+          <span class="highlight">- text/html</span>
+          <span class="highlight">- text/plain</span>
+          <span class="highlight">disable_on_etag_header: false</span>
+          <span class="highlight">remove_accept_encoding_header: false</span>
+  creationTimestamp: "2019-06-17T20:45:04Z"
+  labels:
+    app.kubernetes.io/instance: ambassador
+    app.kubernetes.io/managed-by: Tiller
+    app.kubernetes.io/name: ambassador
+    helm.sh/chart: ambassador-2.8.2
+  name: ambassador
+  namespace: default
+  resourceVersion: "2153"
+  . . .
+</code></pre>
+<p>You&rsquo;ve added the Ambassador annotation block to your Ambassador service and configured GZIP globally for the API Gateway. Here you have included configuration to control the amount of internal memory used with <code>memory_level</code>, which can be a value from 1 to 9. The <code>compression_level</code> set at <code>BEST</code> ensures a higher compression rate at the cost of higher latency. With <code>min_content_length</code> you have configured the minimum response length to <code>256</code> bytes. For <code>content_type</code> you&rsquo;ve specifically included a set of <a href="https://en.wikipedia.org/wiki/Media_type">media types</a> (formerly MIME-types) that yield compression. Finally you added the final two configurations as <code>false</code> to allow for compression.</p>
+
+<p>You can read more about GZIP compression on <a href="https://www.envoyproxy.io/docs/envoy/v1.11.2/configuration/http_filters/gzip_filter#how-it-works">Envoy&rsquo;s GZIP page</a>.</p>
+
+<p>Any changes in this service apply as global configurations for the API Gateway.</p>
+
+<p>Once you have exited the editor you&rsquo;ll see output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/ambassador edited
+</code></pre>
+<p>Check <code>svc1.<span class="highlight">your-domain</span></code> using <code>curl</code> for the <code>content-encoding</code> header having value <code>gzip</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl --compressed -i http://svc1.example.com
+</li></ul></code></pre>
+<p>The output will be similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>HTTP/1.1 200 OK
+server: envoy
+date: Mon, 17 Jun 2019 22:25:35 GMT
+content-type: text/html
+last-modified: Tue, 21 May 2019 14:23:57 GMT
+accept-ranges: bytes
+x-geo-location: India
+vary: Accept-Encoding
+<span class="highlight">content-encoding: gzip</span>
+transfer-encoding: chunked
+
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;title&gt;Welcome to nginx!&lt;/title&gt;
+&lt;style&gt;
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;h1&gt;Welcome to nginx!&lt;/h1&gt;
+&lt;p&gt;If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.&lt;/p&gt;
+
+&lt;p&gt;For online documentation and support please refer to
+&lt;a href="http://nginx.org/"&gt;nginx.org&lt;/a&gt;.&lt;br/&gt;
+Commercial support is available at
+&lt;a href="http://nginx.com/"&gt;nginx.com&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Thank you for using nginx.&lt;/em&gt;&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Here you can see the default HTML page of Nginx with its response header showing that <code>content-encoding</code> of the received response is <code>gzip</code> compressed.</p>
+
+<p>You&rsquo;ve added global configuration to Ambassador to enable GZIP configuration for selected content type responses across the API Gateway.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>You have successfully set up an API Gateway for your Kubernetes cluster using Ambassador. You are now able to expose your apps using host- and path-based routing, custom headers, and global GZIP compression.</p>
+
+<p>For further information about the Ambassador annotations and configuration parameters, read <a href="https://www.getambassador.io/reference/configuration">Ambassador&rsquo;s official documentation</a>.</p>

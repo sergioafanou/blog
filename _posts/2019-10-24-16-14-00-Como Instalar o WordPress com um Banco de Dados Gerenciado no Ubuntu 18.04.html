@@ -1,0 +1,373 @@
+---
+layout: post
+title: Como Instalar o WordPress com um Banco de Dados Gerenciado no Ubuntu 18.04
+network: digitalocean
+date: October 24, 2019 at 04:14PM
+url: https://www.digitalocean.com/community/tutorials/como-instalar-o-wordpress-com-um-banco-de-dados-gerenciado-no-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/pma_managed_db/dpkg_mysql_apt_config_alt2.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Uma versão anterior deste tutorial foi escrita por <a href="https://www.digitalocean.com/community/users/jellingwood">Justin Ellingwood</a></em></p>
+
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://wordpress.org/">WordPress</a> é o CMS (sistema de gerenciamento de conteúdo) mais popular da Internet. É uma ótima opção para colocar um site em funcionamento rapidamente e, após a configuração inicial, quase toda a administração pode ser feita pela interface web.</p>
+
+<p>O WordPress foi projetado para buscar conteúdo – incluindo postagens, comentários, perfis de usuário e outros dados – de um banco de dados de back-end. À medida que um site cresce e deve satisfazer a cada vez mais tráfego, ele pode eventualmente crescer excessivamente o seu banco de dados inicial. Para resolver isso, pode-se ampliar o banco de dados migrando seus dados para uma máquina com mais RAM ou CPU, mas esse é um processo tedioso que corre o risco de perda ou corrupção de dados. É por isso que alguns desenvolvedores do WordPress optam por criar seus sites em <a href="https://www.digitalocean.com/community/tutorials/understanding-managed-databases">bancos de dados gerenciados</a>, que permitem aos usuários dimensionar seu banco de dados automaticamente com um risco muito menor de perda de dados.</p>
+
+<p>Neste guia, vamos focar na configuração de uma instância do WordPress com um banco de dados <a href="https://www.mysql.com/">MySQL</a> gerenciado e um servidor Ubuntu 18.04. Isso exigirá que você instale o <a href="https://www.php.net/">PHP</a> e o <a href="https://httpd.apache.org/">Apache</a> para servir o conteúdo via web.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para concluir este tutorial, você precisará de:</p>
+
+<ul>
+<li><strong>Acesso a um servidor Ubuntu 18.04</strong>: Este servidor deve ter um usuário não-root com sudo habilitado e um firewall configurado. Você pode configurar isso seguindo nosso <a href="https://www.digitalocean.com/community/tutorials/configuracao-inicial-de-servidor-com-ubuntu-18-04-pt">guia de Configuração Inicial de servidor com Ubuntu 18.04</a>.</li>
+<li><strong>Um banco de dados MySQL gerenciado</strong>: Para provisionar um Banco de Dados MySQL Gerenciado na DigitalOcean, consulte nossa <a href="https://www.digitalocean.com/docs/databases/mysql/quickstart/#create-mysql-database-clusters">documentação de produto do Managed Databases</a>. Observe que este guia se refere aos bancos de dados gerenciados da DigitalOcean nos exemplos, mas as instruções fornecidas aqui também devem geralmente funcionar para bancos de dados MySQL gerenciados de outros provedores de nuvem.</li>
+<li><strong>Uma pilha LAMP instalada em seu servidor</strong>: Além de um banco de dados, o WordPress requer um servidor web e o PHP para funcionar corretamente. A configuração de uma pilha LAMP completa (Linux, Apache, MySQL e PHP) atende a todos esses requisitos. Siga <a href="https://www.digitalocean.com/community/tutorials/como-instalar-a-pilha-linux-apache-mysql-php-lamp-no-ubuntu-18-04-pt">este guia</a> para instalar e configurar estes softwares. Ao seguir este guia, certifique-se de <a href="https://www.digitalocean.com/community/tutorials/como-instalar-a-pilha-linux-apache-mysql-php-lamp-no-ubuntu-18-04-pt">configurar um virtual host</a> para apontar para um nome de domínio que você possui. Além disso, certifique-se de <strong>pular o Passo 2</strong>, pois a instalação do <code>mysql-server</code> em sua máquina tornará sua instância de banco de dados gerenciada redundante.</li>
+<li><strong>Segurança TLS/SSL implementada para o seu site</strong>: Se você possui um nome de domínio, a maneira mais fácil de proteger seu site é com o Let&rsquo;s Encrypt, que fornece certificados confiáveis e gratuitos. Siga nosso tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-ubuntu-18-04">Let&rsquo;s Encrypt guide for Apache</a> para configurar isso. Observe que isso também exigirá que você obtenha um nome de domínio e configure registros DNS no seu servidor. Siga <a href="https://www.digitalocean.com/docs/networking/dns/">esta introdução ao DNS na DigitalOcean</a> para detalhes sobre como configurar isso. Alternativamente, se você não tiver um nome de domínio, use <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-apache-in-ubuntu-18-04">um certificado autoassinado</a> para o seu site.</li>
+</ul>
+
+<p>Quando terminar as etapas de configuração, efetue login no servidor como usuário não-<strong>root</strong> e continue logo abaixo.</p>
+
+<h2 id="passo-1-adicionando-o-repositório-de-software-mysql-e-instalando-o-mysql-client">Passo 1 - Adicionando o Repositório de Software MySQL e Instalando o <code>mysql-client</code></h2>
+
+<p>Para configurar sua instância gerenciada do MySQL, você precisará instalar um cliente que permita acessar o banco de dados a partir do seu servidor. Este passo o guiará pelo processo de instalação do pacote <code>mysql-client</code>.</p>
+
+<p>Em muitos casos, você pode simplesmente instalar o <code>mysql-client</code> com o comando <code>apt</code>, mas se você estiver usando os repositórios padrão do Ubuntu, isso instalará a versão 5.7 do programa. Para acessar um banco de dados MySQL Gerenciado na DigitalOcean, você precisará instalar a versão 8.0 ou superior. Para fazer isso, você deve primeiro adicionar o repositório de software MySQL antes de instalar o pacote.</p>
+
+<p>Comece visitando <a href="https://dev.mysql.com/downloads/repo/apt/">a página <strong>MySQL APT Repository</strong></a> em seu navegador. Localize o botão <strong>Download</strong> no canto inferior direito e clique para avançcar para próxima página. Esta página solicitará que você efetue login ou inscreva-se em uma conta web da Oracle. Você pode pular isso e procurar o link que diz <strong>No thanks, just start my download</strong>. Clique com o botão direito do mouse no link e selecione <strong>Copy Link Address</strong> (esta opção pode aparecer de forma diferente, dependendo do seu navegador).</p>
+
+<p>Agora você está pronto para baixar o arquivo. No seu servidor, vá para um diretório no qual você pode gravar:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li></ul></code></pre>
+<p>Faça o download do arquivo usando <code>curl</code>, lembrando-se de colar o endereço que você acabou de copiar no lugar da parte destacada do comando a seguir. Você também precisa passar duas flags de linha de comando para o <code>curl</code>. <code>-O</code> instrui o <code>curl</code> para dar saída em um arquivo em vez da saída padrão. A flag <code>L</code> faz com que o <code>curl</code> siga redirecionamentos HTTP, o que é necessário neste caso, porque o endereço que você copiou realmente redireciona para outro local antes do download do arquivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -OL <span class="highlight">https://dev.mysql.com/get/mysql-apt-config_0.8.13-1_all.deb</span>
+</li></ul></code></pre>
+<p>O arquivo agora deve ser baixado em seu diretório atual. Liste os arquivos para garantir:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls
+</li></ul></code></pre>
+<p>Você verá o nome do arquivo listado na saída:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>mysql-apt-config_<span class="highlight">0.8.13-1</span>_all.deb
+. . .
+</code></pre>
+<p>Agora você pode adicionar o repositório MySQL APT à lista de repositórios do seu sistema. O comando <code>dpkg</code> é usado para instalar, remover e inspecionar pacotes de software <code>.deb</code>. O comando a seguir inclui a flag <code>-i</code>, indicando que você deseja instalar a partir do arquivo especificado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo dpkg -i mysql-apt-config*
+</li></ul></code></pre>
+<p>Durante a instalação, você verá uma tela de configuração onde poderá especificar qual versão do MySQL você prefere, além de uma opção para instalar repositórios para outras ferramentas relacionadas ao MySQL. Os padrões adicionarão as informações do repositório para a versão estável mais recente do MySQL e nada mais. É isso que queremos, então use a seta para baixo para navegar até a opção de menu <code>Ok</code> e pressione <code>ENTER</code>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/pma_managed_db/dpkg_mysql_apt_config_alt2.png" alt="Selecting mysql-apt-config configuration options"></p>
+
+<p>Depois disso, o pacote terminará de adicionar o repositório. Atualize o cache de pacotes do <code>apt</code> para disponibilizar os novos pacotes de software:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Em seguida, você pode limpar um pouco o sistema e excluir o arquivo baixado, pois não será necessário no futuro:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rm mysql-apt-config*
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Note:</strong> Se você precisar atualizar a configuração desses repositórios, basta executar o seguinte comando para selecionar suas novas opções:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo dpkg-reconfigure mysql-apt-config
+</li></ul></code></pre>
+<p>Após selecionar suas novas opções, execute o seguinte comando para atualizar o cache de pacotes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Agora que você adicionou os repositórios do MySQL, está pronto para instalar o software cliente do MySQL. Faça isso com o seguinte comando <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install mysql-client
+</li></ul></code></pre>
+<p>Quando esse comando terminar, verifique o número da versão do software para garantir que você tenha a versão mais recente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql --version
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>mysql  Ver <span class="highlight">8.0.17</span>-cluster for Linux on x86_64 (MySQL Community Server - GPL)
+</code></pre>
+<p>Agora você pode se conectar ao seu banco de dados gerenciado e começar a prepará-lo para funcionar com o WordPress.</p>
+
+<h2 id="passo-2-–-criando-um-banco-de-dados-mysql-e-um-usuário-para-o-wordpress">Passo 2 – Criando um Banco de Dados MySQL e um Usuário para o WordPress</h2>
+
+<p>O WordPress usa o MySQL para gerenciar e armazenar informações do site e de usuário. Supondo que você tenha concluído todos os <a href="https://www.digitalocean.com/community/tutorials/how-to-install-wordpress-managed-database-ubuntu-18-04#prerequisites">tutoriais de pré-requisito</a>, você já terá provisionado uma instância gerenciada do MySQL. Aqui, daremos o passo preparatório da criação de um banco de dados e um usuário para o WordPress usar.</p>
+
+<p>A maioria dos provedores de bancos de dados gerenciados fornece um <a href="https://en.wikipedia.org/wiki/Uniform_Resource_Identifier"><em>uniform resource identifier</em></a> (URI) usado para a conexão com a instância do banco de dados. Se você estiver usando um Banco de Dados Gerenciado na DigitalOcean, poderá encontrar as informações de conexão relevantes no seu Painel de Controle de Nuvem.</p>
+
+<p>Primeiro, clique em <strong>Databases</strong> no menu da barra lateral esquerda e selecione o banco de dados MySQL que você deseja usar para a instalação do WordPress. Role para baixo até a seção <strong>Connection Details</strong> e copie o link no campo <strong>host</strong>. Em seguida, cole este link no seguinte comando, substituindo <code><span class="highlight">uri_do_host</span></code> pelas informações que você acabou de copiar. Da mesma forma, copie o número da porta no campo <strong>port</strong> – que será <code>25060</code> em um banco de dados gerenciado DigitalOcean – e substitua <code><span class="highlight">porta</span></code> por esse número. Além disso, se esta é a primeira vez que você se conecta ao seu banco de dados gerenciado e você não criou seu próprio usuário administrativo do MySQL, copie o valor no campo <strong>username</strong> e cole-o no comando, substituindo <code><span class="highlight">usuário</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -u <span class="highlight">usuário</span> -p -h <span class="highlight">uri_do_host</span> -P <span class="highlight">porta</span>
+</li></ul></code></pre>
+<p>Este comando inclui a flag <code>-p</code>, que irá solicitar a senha do usuário do MySQL que você especificou. Para o usuário <strong>doadmin</strong> padrão do Banco de Dados Gerenciado da DigitalOcean, você pode encontrar isso clicando no link <strong>show</strong> na seção <strong>Connection Details</strong> para revelar a senha. Copie e cole-a no seu terminal quando solicitado.</p>
+
+<p><span class='note'><strong>Nota:</strong> Se você não estiver usando um banco de dados gerenciado da DigitalOcean, suas opções de conexão podem ser diferentes. Se for esse o caso, consulte a documentação do seu provedor para obter instruções sobre como conectar aplicações de terceiros ao seu banco de dados.<br></span></p>
+
+<p>No prompt do MySQL, crie um novo banco de dados que o WordPress irá controlar. Você pode chama-lo como quiser, mas usaremos o nome <strong>wordpress</strong> neste guia para simplificar. Crie o banco de dados para o  WordPress digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">CREATE DATABASE <span class="highlight">wordpress</span> DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Todo comando do MySQL deve terminar em ponto e vírgula (<code>;</code>). Verifique se isso está presente se você estiver enfrentando algum problema.<br></span></p>
+
+<p>Em seguida, crie uma nova conta de usuário MySQL que você usará exclusivamente para operar no novo banco de dados. Criar bancos de dados e contas de propósito único é uma boa ideia do ponto de vista de gerenciamento e segurança. Usaremos o nome <strong>wordpressuser</strong> neste guia, mas fique à vontade para alterá-lo, se desejar.</p>
+
+<p>Execute o seguinte comando, mas substitua <code><span class="highlight">ip_do_seu_servidor</span></code> pelo endereço IP do seu servidor Ubuntu. Esteja ciente, no entanto, de que isso limitará o <strong>wordpressuser</strong> a poder se conectar somente a partir do seu servidor LAMP; se você planeja gerenciar o WordPress a partir do seu computador local, insira o endereço IP dessa máquina. Além disso, escolha uma senha forte para o usuário do banco de dados.</p>
+
+<p>Observe que este comando especifica que o <strong>wordpressuser</strong> usará o plugin <code>mysql_native_password</code> para se autenticar. No MySQL 8.0 e posterior, o plug-in de autenticação padrão é o <code>caching_sha2_password</code>, que geralmente é considerado mais seguro que o <code>mysql_native_password</code>. No momento da redação deste artigo, o PHP não suporta o <code>caching_sha2_password</code>, e é por isso que especificamos o <code>mysql_native_password</code> neste comando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">CREATE USER '<span class="highlight">wordpressuser</span>'@<span class="highlight">ip_do_seu_servidor</span> IDENTIFIED WITH mysql_native_password BY '<span class="highlight">senha</span>';
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Nota</strong>: Se você não souber qual é o endereço IP público do seu servidor, existem várias maneiras de encontrá-lo. Geralmente, esse é o endereço que você usa para se conectar ao seu servidor através do SSH.</p>
+
+<p>Um método é utilizar o utilitário <code>curl</code> para entrar em contato com algo que está externo e perguntar como ele vê seu servidor. Por exemplo, você pode usar o <code>curl</code> para entrar em contato com uma ferramenta de verificação de IP como o ICanHazIP:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl http://icanhazip.com
+</li></ul></code></pre>
+<p>Este comando retornará o endereço IP público do seu servidor em sua saída.<br></p></span>
+
+<p>Em seguida, conceda a esse usuário acesso ao banco de dados que você acabou de criar. Faça isso executando o seguinte comando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">GRANT ALL ON <span class="highlight">wordpress</span>.* TO '<span class="highlight">wordpressuser</span>'@<span class="highlight">ip_do_seu_servidor</span>;
+</li></ul></code></pre>
+<p>Agora você tem um banco de dados e uma conta de usuário, cada uma feita especificamente para o WordPress. Vá em frente e saia do MySQL digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">exit;
+</li></ul></code></pre>
+<p>Isso cuida da configuração do seu banco de dados MySQL gerenciado para funcionar com o WordPress. No próximo passo, você instalará algumas extensões PHP para obter mais funcionalidade do CMS.</p>
+
+<h2 id="passo-3-–-instalando-extensões-php-adicionais">Passo 3 – Instalando Extensões PHP Adicionais</h2>
+
+<p>Supondo que você seguiu o <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">tutorial de pré-requisito da pilha LAMP</a>, você terá instalado algumas extensões destinadas a fazer com que o PHP se comunique adequadamente com o MySQL. O WordPress e muitos de seus plugins utilizam extensões PHP adicionais para acrescentar funcionalidades adicionais.</p>
+
+<p>Para baixar e instalar algumas das extensões PHP mais populares para uso com o WordPress, execute o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install php-curl php-gd php-mbstring php-xml php-xmlrpc php-soap php-intl php-zip
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Cada plugin do WordPress tem seu próprio conjunto de requisitos. Alguns podem exigir a instalação de pacotes PHP adicionais. Verifique a documentação do seu plug-in para ver quais extensões ele requer. Se estiverem disponíveis, elas podem ser instaladas com o <code>apt</code> como demonstrado acima.<br></span></p>
+
+<p>Você reiniciará o Apache para carregar essas novas extensões na próxima seção. No entanto, se você estiver retornando aqui para instalar plug-ins adicionais, poderá reiniciar o Apache agora, digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>Caso contrário, continue no Passo 4.</p>
+
+<h2 id="passo-4-–-ajustando-a-configuração-do-apache-para-permitir-substituições-e-reescritas-via-htaccess">Passo 4 – Ajustando a Configuração do Apache para Permitir Substituições e Reescritas via .htaccess</h2>
+
+<p>Para que o Apache possa servir adequadamente sua instalação do WordPress, você deve fazer alguns pequenos ajustes na configuração dele.</p>
+
+<p>Se você seguiu os tutoriais de pré-requisito, já deve ter um arquivo de configuração para o seu site no diretório <code>/etc/apache2/sites-available/</code>. Usaremos <code>/etc/apache2/sites-available/<span class="highlight">seu_domínio</span>.conf</code> como um exemplo aqui, <strong>mas você deve substituir o caminho para seu arquivo de configuração, onde apropriado</strong>. </p>
+
+<p>Além disso, usaremos <code>/var/www/<span class="highlight">seu_domínio</span></code> como o diretório raiz ou web root nessa instalação de exemplo do WordPress. <strong>Você deve usar o web root especificado em sua própria configuração</strong>.</p>
+
+<p><span class='note'><strong>Nota:</strong> É possível que você esteja usando a configuração padrão <code>000-default.conf</code> (com <code>/var/www/html</code> como seu web root). Isso é bom de usar se você estiver hospedando apenas um site neste servidor. Caso contrário, é melhor dividir a configuração necessária em partes lógicas, um arquivo por site.<br></span></p>
+
+<p>Atualmente, o uso de arquivos <code>.htaccess</code> está desativado. O WordPress e muitos plugins do WordPress usam esses arquivos extensivamente para ajustes do comportamento do servidor web no diretório .</p>
+
+<p>Abra o arquivo de configuração do Apache para o seu site:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/<span class="highlight">seu_dominio.conf</span>
+</li></ul></code></pre>
+<p>Para permitir arquivos <code>.htaccess</code>, você precisa definir a diretiva <code>AllowOverride</code> dentro de um bloco <code>Directory</code> apontando para seu document root. Adicione o seguinte bloco de texto dentro do bloco <code>VirtualHost</code> no seu arquivo de configuração, certificando-se de usar o diretório web root correto:</p>
+<div class="code-label " title="/etc/apache2/sites-available/seu_domínio.conf">/etc/apache2/sites-available/seu_domínio.conf</div><pre class="code-pre "><code langs="">&lt;Directory /var/www/<span class="highlight">seu_dominio</span>&gt;
+    AllowOverride All
+&lt;/Directory&gt;
+</code></pre>
+<p>Quando terminar, salve e feche o arquivo.</p>
+
+<p>Em seguida, ative o <code>mod_rewrite</code> para que você possa empregar o recurso de link permanente do WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod rewrite
+</li></ul></code></pre>
+<p>Antes de implementar as alterações que você acabou de fazer, verifique se não há erros de sintaxe no seu arquivo de configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>A saída deve ter uma mensagem parecida com esta:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>AH00558: apache2: Could not reliably determine the server's fully qualified domain name, using 127.0.1.1. Set the 'ServerName' directive globally to suppress this message
+Syntax OK
+</code></pre>
+<p>Se você deseja suprimir a linha superior, basta adicionar uma diretiva <code>ServerName</code> ao seu arquivo de configuração Apache principal (global) em <code>/etc/apache2/apache2.conf</code>. O <code>ServerName</code> pode ser o domínio ou endereço IP do seu servidor. No entanto, isso é apenas uma mensagem; isso não afeta a funcionalidade do seu site e, desde que a saída contenha <code>Syntax OK</code>, você estará pronto para continuar.</p>
+
+<p>Reinicie o Apache para efetivar as alterações:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>Com isso, você está pronto para baixar e configurar o próprio WordPress.</p>
+
+<h2 id="passo-5-–-fazendo-o-download-do-wordpress">Passo 5 – Fazendo o Download do WordPress</h2>
+
+<p>Agora que o software do seu servidor está configurado, você pode instalar e configurar o WordPress. Por motivos de segurança, é sempre recomendável obter a versão mais recente do WordPress no site dele.</p>
+
+<p>Primeiro, navegue para um diretório gravável. O <code>/tmp</code> funcionará para os propósitos deste passo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li></ul></code></pre>
+<p>Em seguida, baixe a versão compactada digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -O https://wordpress.org/latest.tar.gz
+</li></ul></code></pre>
+<p>Extraia o arquivo compactado para criar a estrutura de diretórios do WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tar xzvf latest.tar.gz
+</li></ul></code></pre>
+<p>Você moverá esses arquivos para o seu document root momentaneamente. Antes de fazer isso, adicione um arquivo fictício <code>.htaccess</code> para que este fique disponível para uso posterior pelo WordPress.</p>
+
+<p>Crie o arquivo digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">touch /tmp/wordpress/.htaccess
+</li></ul></code></pre>
+<p>Além disso, copie o arquivo de configuração de exemplo para o nome do arquivo que o WordPress realmente lê:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp /tmp/wordpress/wp-config-sample.php /tmp/wordpress/wp-config.php
+</li></ul></code></pre>
+<p>Crie um diretório <code>upgrade</code>, para que o WordPress não tenha problemas de permissão ao tentar fazer isso sozinho após uma atualização do software:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir /tmp/wordpress/wp-content/upgrade
+</li></ul></code></pre>
+<p>Em seguida, copie todo o conteúdo do diretório para o document root. O comando a seguir usa um ponto no final do diretório de origem para indicar que tudo dentro do diretório deve ser copiado, incluindo arquivos ocultos (como o arquivo <code>.htaccess</code> que você acabou de criar):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp -a /tmp/wordpress/. /var/www/<span class="highlight">seu_domínio</span>
+</li></ul></code></pre>
+<p>Isso cuida do download do WordPress em seu servidor. Neste ponto, no entanto, você ainda não poderá acessar a interface de configuração do WordPress no seu navegador. Para corrigir isso, você precisará fazer algumas alterações na configuração do WordPress do seu servidor.</p>
+
+<h2 id="passo-6-–-configurando-o-diretório-do-wordpress">Passo 6 – Configurando o Diretório do WordPress</h2>
+
+<p>Antes de passar pela configuração do WordPress usando a interface web, você precisa ajustar alguns itens no diretório do WordPress. Uma mudança importante na configuração envolve a configuração de permissões razoáveis e propriedade do arquivo.</p>
+
+<p>Comece dando a propriedade de todos os arquivos ao usuário e grupo <strong>www-data</strong>. Este é o usuário que o servidor web Apache executa como nos sistemas Debian e Ubuntu, e o Apache precisará ler e gravar arquivos do WordPress para servir o site e realizar atualizações automáticas.</p>
+
+<p>Atualize a propriedade do seu diretório web root com <code>chown</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R www-data:www-data /var/www/<span class="highlight">seu_dominio</span>
+</li></ul></code></pre>
+<p>Em seguida, execute os dois comandos <code>find</code> a seguir para definir as permissões corretas nos diretórios e arquivos do WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo find /var/www/<span class="highlight">seu_dominio</span>/ -type d -exec chmod 750 {} \;
+</li><li class="line" prefix="$">sudo find /var/www/<span class="highlight">seu_dominio</span>/ -type f -exec chmod 640 {} \;
+</li></ul></code></pre>
+<p>Essas devem ser permissões razoáveis definidas para começar. Esteja ciente, no entanto, de que alguns plug-ins e procedimentos podem exigir atualizações adicionais.</p>
+
+<p>Agora, você precisa fazer algumas alterações no arquivo de configuração principal do WordPress.</p>
+
+<p>Quando você abre o arquivo, a primeira ordem do dia será substituir algumas chaves secretas para fornecer segurança à sua instalação. O WordPress fornece um gerador seguro para esses valores, para que você não precise criar bons valores por conta própria. Eles são usados apenas internamente, portanto, não prejudicará a usabilidade ter valores complexos e seguros aqui.</p>
+
+<p>Para obter valores seguros do gerador de chave secreta do WordPress, execute o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -s https://api.wordpress.org/secret-key/1.1/salt/
+</li></ul></code></pre>
+<p>Você receberá de volta valores únicos parecidos com este:</p>
+
+<p><span class='warning'><strong>Atenção!</strong> É importante que você solicite valores exclusivos a cada vez. <strong>NÃO</strong> copie os valores mostrados aqui!<br></span></p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>define('AUTH_KEY',         '1jl/vqfs&lt;XhdXoAPz9 <span class="highlight">DO NOT COPY THESE VALUES</span> c_j{iwqD^&lt;+c9.k&lt;J@4H');
+define('SECURE_AUTH_KEY',  'E2N-h2]Dcvp+aS/p7X <span class="highlight">DO NOT COPY THESE VALUES</span> {Ka(f;rv?Pxf})CgLi-3');
+define('LOGGED_IN_KEY',    'W(50,{W^,OPB%PB&lt;JF <span class="highlight">DO NOT COPY THESE VALUES</span> 2;y&amp;,2m%3]R6DUth[;88');
+define('NONCE_KEY',        'll,4UC)7ua+8&lt;!4VM+ <span class="highlight">DO NOT COPY THESE VALUES</span> #`DXF+[$atzM7 o^-C7g');
+define('AUTH_SALT',        'koMrurzOA+|L_lG}kf <span class="highlight">DO NOT COPY THESE VALUES</span>  07VC*Lj*lD&amp;?3w!BT#-');
+define('SECURE_AUTH_SALT', 'p32*p,]z%LZ+pAu:VY <span class="highlight">DO NOT COPY THESE VALUES</span> C-?y+K0DK_+F|0h{!_xY');
+define('LOGGED_IN_SALT',   'i^/G2W7!-1H2OQ+t$3 <span class="highlight">DO NOT COPY THESE VALUES</span> t6**bRVFSD[Hi])-qS`|');
+define('NONCE_SALT',       'Q6]U:K?j4L%Z]}h^q7 <span class="highlight">DO NOT COPY THESE VALUES</span> 1% ^qUswWgn+6&amp;xqHN&amp;%');
+</code></pre>
+<p>Estas são linhas de configuração que você pode colar diretamente no seu arquivo de configuração para definir chaves seguras. Copie a saída que você recebeu agora.</p>
+
+<p>Em seguida, abra o arquivo de configuração do WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/<span class="highlight">seu_domínio</span>/wp-config.php
+</li></ul></code></pre>
+<p>Encontre a seção que contém os valores fictícios para essas configurações. Vai parecer com algo assim:</p>
+<div class="code-label " title="/var/www/your_domain/wp-config.php">/var/www/your_domain/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('AUTH_KEY',         'put your unique phrase here');
+define('SECURE_AUTH_KEY',  'put your unique phrase here');
+define('LOGGED_IN_KEY',    'put your unique phrase here');
+define('NONCE_KEY',        'put your unique phrase here');
+define('AUTH_SALT',        'put your unique phrase here');
+define('SECURE_AUTH_SALT', 'put your unique phrase here');
+define('LOGGED_IN_SALT',   'put your unique phrase here');
+define('NONCE_SALT',       'put your unique phrase here');
+
+. . .
+</code></pre>
+<p>Exclua essas linhas e cole os valores que você copiou da linha de comando:</p>
+<div class="code-label " title="/var/www/your_domain/wp-config.php">/var/www/your_domain/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('AUTH_KEY',         '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('SECURE_AUTH_KEY',  '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('LOGGED_IN_KEY',    '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('NONCE_KEY',        '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('AUTH_SALT',        '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('SECURE_AUTH_SALT', '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('LOGGED_IN_SALT',   '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('NONCE_SALT',       '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+
+. . .
+</code></pre>
+<p>Em seguida, você precisa modificar algumas das configurações de conexão com o banco de dados no início do arquivo. Primeiro, atualize os campos <code>'DB_NAME'</code>, <code>'DB_USER'</code>, e <code>'DB_PASSWORD'</code> para apontar para o nome do banco de dados, o usuário do banco de dados e a senha associada que você configurou no MySQL:</p>
+<div class="code-label " title="/var/www/your_domain/wp-config.php">/var/www/your_domain/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+/** The name of the database for WordPress */
+define('DB_NAME', '<span class="highlight">wordpress</span>');
+
+/** MySQL database username */
+define('DB_USER', '<span class="highlight">wordpressuser</span>');
+
+/** MySQL database password */
+define('DB_PASSWORD', '<span class="highlight">password</span>');
+
+. . .
+</code></pre>
+<p>Você também precisará substituir o <code>localhost</code> no campo <code>'DB_HOST'</code> pelo host do seu banco de dados gerenciado. Além disso, anexe dois pontos (<code>:</code>) e o número da porta do seu banco de dados ao host:</p>
+<div class="code-label " title="/var/www/wordpress/wp-config.php">/var/www/wordpress/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+/** MySQL hostname */
+define( 'DB_HOST', '<span class="highlight">managed_database_host</span>:<span class="highlight">managed_database_port</span>' );
+
+. . .
+</code></pre>
+<p>A última alteração que você precisa fazer é definir o método que o WordPress usará para gravar no sistema de arquivos. Como você já deu permissão ao servidor web para gravar onde ele precisa, você pode definir explicitamente o método do sistema de arquivos para <code>direct</code> port. Se você não definir isso com as configurações atuais, o WordPress poderá solicitar credenciais de FTP quando você executar determinadas ações.</p>
+
+<p>Essa configuração pode ser adicionada abaixo das configurações de conexão com o banco de dados ou em qualquer outro local do arquivo:</p>
+<div class="code-label " title="/var/www/your_domain/wp-config.php">/var/www/your_domain/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+<span class="highlight">define('FS_METHOD', 'direct');</span>
+. . .
+</code></pre>
+<p>Salve e feche o arquivo ao terminar.</p>
+
+<p>Depois de fazer essas alterações, você está pronto para concluir o processo de instalação do WordPress em seu navegador. No entanto, há mais uma etapa que recomendamos que você complete para adicionar uma camada extra de segurança à sua configuração.</p>
+
+<h2 id="passo-7-–-recomendado-configurando-o-wordpress-para-se-comunicar-com-o-mysql-via-tls-ssl">Passo 7 – (Recomendado) Configurando o WordPress para se Comunicar com o MySQL Via TLS/SSL</h2>
+
+<p>Neste ponto, sua instalação do WordPress está se comunicando com o banco de dados MySQL gerenciado. No entanto, não há garantia de que as transferências de dados entre as duas máquinas sejam seguras. Neste passo, configuraremos o WordPress para se comunicar com sua instância do MySQL por meio de uma conexão TLS/SSL para garantir comunicações seguras entre as duas máquinas.</p>
+
+<p>Para fazer isso, você precisará do certificado da CA do seu banco de dados gerenciado. Para um banco de dados gerenciado na DigitalOcean, você pode encontrá-lo navegando novamente até a guia <strong>Databases</strong> no <strong>Control Panel</strong>. Clique no seu banco de dados e encontre a seção <strong>Connection Details</strong>. Haverá um botão que diz <strong>Download the CA certificate</strong>. Clique neste botão para baixar o certificado na sua máquina local.</p>
+
+<p>Em seguida, transfira esse arquivo para o seu servidor WordPress. Se sua máquina local estiver executando Linux ou macOS, você pode usar uma ferramenta como o <code>scp</code>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp <span class="highlight">/caminho/para/o/arquivo/</span>ca-certificate.crt <span class="highlight">sammy</span>@<span class="highlight">ip_do_seu_servidor</span>:/tmp
+</li></ul></code></pre>
+<p>Se sua máquina local estiver executando o Windows, você poderá usar uma ferramenta alternativa como o <a href="https://winscp.net/eng/index.php">WinSCP</a>.</p>
+
+<p>Quando o certificado da CA estiver no seu servidor, mova-o para o diretório <code>/user/local/share/ca-certificates/</code>, o repositório de certificados confiáveis do Ubuntu:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv /tmp/ca-certificate.crt /usr/local/share/ca-certificates/
+</li></ul></code></pre>
+<p>Depois disso, execute o comando <code>update-ca-certificates</code>. Este programa procura certificados dentro de <code>/usr/local/share/ca-certificates</code>, adiciona novos no diretório <code>/etc/ssl/certs/</code> e gera uma lista de certificados SSL confiáveis com base em seu conteúdo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo update-ca-certificates
+</li></ul></code></pre>
+<p>Em seguida, reabra seu arquivo <code>wp-config.php</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/<span class="highlight">seu_domínio</span>/wp-config.php
+</li></ul></code></pre>
+<p>Em algum lugar do arquivo, adicione a seguinte linha:</p>
+<div class="code-label " title="/var/www/seu_domínio/wp-config.php">/var/www/seu_domínio/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+<span class="highlight">define('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL);</span>
+. . .
+</code></pre>
+<p>Salve e feche o arquivo.</p>
+
+<p>Depois disso, o WordPress se comunicará com segurança com seu banco de dados MySQL gerenciado.</p>
+
+<h2 id="passo-8-–-concluindo-a-instalação-pela-interface-web">Passo 8 – Concluindo a Instalação pela Interface Web</h2>
+
+<p>Agora que a configuração do servidor está concluída, você pode concluir a instalação através da interface web do WordPress.</p>
+
+<p>No seu navegador, navegue até o nome de domínio ou endereço IP público do seu servidor:</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">domínio_ou_ip_do_servidor</span>
+</code></pre>
+<p>Supondo que não haja erros nas configurações do seu WordPress ou do Apache, você verá a página inicial da seleção de idiomas do WordPress. Selecione o idioma que você gostaria de usar:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/language_selection.png" alt="WordPress language selection"></p>
+
+<p>Depois de selecionar seu idioma, você verá a página principal de configuração.</p>
+
+<p>Escolha um nome para o seu site WordPress e escolha um nome de usuário (é recomendável não escolher algo como &ldquo;admin&rdquo; por motivos de segurança). Uma senha forte é gerada automaticamente. Salve esta senha ou insira uma senha alternativa forte.</p>
+
+<p>Digite seu endereço de email e selecione se deseja desencorajar os mecanismos de pesquisa de fazer indexação do seu site:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/setup_installation.png" alt="WordPress setup installation"></p>
+
+<p>Ao clicar adiante, você será direcionado para uma página que solicita que você faça login:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/login_prompt.png" alt="WordPress login prompt"></p>
+
+<p>Após o login, você será direcionado para o painel de administração do WordPress:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/admin_screen.png" alt="WordPress login prompt"></p>
+
+<p>A partir daqui, você pode começar a personalizar seu novo site WordPress e começar a publicar conteúdo. Se for a primeira vez que você usa o WordPress, recomendamos que você explore um pouco a interface para se familiarizar com o seu novo CMS.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Ao concluir este guia, você terá o WordPress instalado e pronto para uso em seu servidor. Além disso, sua instalação do WordPress busca dinamicamente postagens, páginas e outros conteúdos do seu banco de dados MySQL gerenciado.</p>
+
+<p>Algumas das próximas etapas comuns são escolher a configuração de links permanentes ou permalinks para suas postagens. Essa configuração pode ser encontrada em <strong>Configurações</strong> &gt; <strong>Permalinks</strong>. Você também pode selecionar um novo tema em <strong>Aparência</strong> &gt; <strong>Temas</strong>. Depois de começar a carregar algum conteúdo no seu site, você também pode <a href="https://www.digitalocean.com/community/tutorials/how-to-speed-up-wordpress-asset-delivery-using-digitalocean-spaces-cdn">configurar uma CDN para acelerar a entrega de elementos do seu site</a>.</p>

@@ -1,0 +1,609 @@
+---
+layout: post
+title: How To Set Up a PageKite Front-End Server on Debian 9
+network: digitalocean
+date: October 24, 2019 at 08:24PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-a-pagekite-front-end-server-on-debian-9
+image: https://assets.digitalocean.com/articles/cart-64916/DigitalOcean_Control_Panel.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/funds/open-internet-free-speech">Open Internet/Free Speech Fund</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h2 id="introduction">Introduction</h2>
+
+<p>Private networks generally provide internet access to the hosts using <a href="https://en.wikipedia.org/wiki/Network_address_translation">NAT</a> (network address translation), sharing a single public IP address with all hosts inside the private network. In NAT systems, the hosts inside the private network are not visible from outside the network. To expose services running on these hosts to the public internet, you would usually create NAT rules in the gateway, commonly called <em>port forwarding</em> rules. In several situations, though, you wouldn&rsquo;t have access to the gateway to configure these rules. For situations such as this, tunneling solutions like PageKite come in handy. </p>
+
+<p><a href="http://pagekite.net">PageKite</a> is a fast and secure tunneling solution that can expose a service inside a private network to the public internet without the need for port forwarding. To do this, it relies on an external server, called the <em>front-end server</em>, to which the server behind NAT and the clients connect to allow communication between them. By default, PageKite uses its own commercial <a href="http://pagekite.net">pagekite.net</a> service, but as it is a completely open-source project, it allows you to set up a private frontend on a publicly accessible host, such as a <a href="https://www.digitalocean.com/products/droplets/">DigitalOcean Droplet</a>. With this setup, you can create a vendor-independent solution for remote access to hosts behind NAT. By configuring the remote hosts with the PageKite client to connect to the frontend and exposing the SSH port, it is possible to access them via the command line interface shell using SSH. It&rsquo;s also possible to access a graphical user interface using a desktop sharing system such as <a href="https://en.wikipedia.org/wiki/Virtual_Network_Computing">VNC</a> or <a href="https://en.wikipedia.org/wiki/Remote_Desktop_Protocol">RDP</a> running over an SSH connection.</p>
+
+<p>In this tutorial, you will install and set up a PageKite front-end service on a server running Debian 9. You will also set up two more Debian 9 servers to simulate a local and a remote environment. When you&rsquo;re finished, you will have set up a server for multiple clients, and tested it with a practical solution for remote access using SSH and VNC.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before following this guide you&rsquo;ll need the following:</p>
+
+<ul>
+<li>A <a href="https://cloud.digitalocean.com/registrations/new">DigitalOcean account</a> to set up the Droplets that will be used in the tutorial.</li>
+<li>A server running Debian 9 with a public IP address to act as the front-end server, set up according to the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">Initial Server Setup with Debian 9</a> guide. A standard DigitalOcean Droplet with 1GB of memory is enough for testing purposes or for applications with a few connections. We&rsquo;ll refer to this server by the host name <code>front-end-server</code> and its public IP address by <code><span class="highlight">Front_End_Public_IP</span></code>.</li>
+<li>Two hosts running Debian 9, which will play the role of a remote and local host that will connect using the PageKite service, set up according to the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">Initial Server Setup with Debian 9</a> guide. The remote host, with internet access through NAT, will be accessed by the local host using a PageKite tunnel. Remote and local hosts will be referred to by the host names <code>remote-host</code> and <code>local-host</code> and their public IP addresses by <code><span class="highlight">Remote_Host_Public_IP</span></code> and <code><span class="highlight">Local_Host_Public_IP</span></code> respectively. This tutorial will use two standard DigitalOcean Droplets with 1GB of memory to represent them. Alternatively, two local or virtual machines could be used to represent these hosts.</li>
+<li>A fully registered domain name. This tutorial will use <code><span class="highlight">your_domain</span></code> as an example throughout. You can purchase a domain name on <a href="https://namecheap.com">Namecheap</a>, get one for free on <a href="http://www.freenom.com/en/index.html">Freenom</a>, or use the domain registrar of your choice.</li>
+<li>Both of the following DNS records set up for your server. You can follow <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">this introduction to DigitalOcean DNS</a> for details on how to add them.
+
+<ul>
+<li>An A record with <code>pagekite.<span class="highlight">your_domain</span></code> pointing to the IP address of the <code>front-end-server</code>.</li>
+<li>We also need to set up DNS so that every domain ending with <code>pagekite.<span class="highlight">your_domain</span></code> also points out to our <code>front-end-server</code>. This can be set up using wildcard DNS entries. In this case, create an A record for the wildcard DNS entry <code>*.pagekite.<span class="highlight">your_domain</span></code> to point out to the same IP address, <code><span class="highlight">Front_End_Public_IP</span></code>. This will be used to distinguish the clients that connect to our server by domain name (<code>client-1.pagekite.<span class="highlight">your_domain</span></code> and <code>client-2.pagekite.<span class="highlight">your_domain</span></code>, for example) and tunnel the requisitions appropriately.</li>
+</ul></li>
+<li>A local computer with a VNC client installed that supports VNC connections over SSH tunnels. 
+
+<ul>
+<li>On Windows, you can use <a href="https://www.tightvnc.com/">TightVNC</a>, <a href="https://www.realvnc.com/">RealVNC</a>, or <a href="https://www.uvnc.com/">UltraVNC</a>. </li>
+<li>On macOS, you can use the built-in <a href="https://support.apple.com/guide/mac-help/screen-sharing-overview-mh14066/mac">Screen Sharing</a> program, or can use a cross-platform app like <a href="https://www.realvnc.com/">RealVNC</a>. </li>
+<li>On Linux, you can choose from many options, including  <a href="https://wiki.gnome.org/Apps/Vinagre"><code>vinagre</code></a>, <a href="https://kde.org/applications/internet/org.kde.krdc"><code>krdc</code></a>, <a href="https://www.realvnc.com/">RealVNC</a>, or <a href="https://www.tightvnc.com/">TightVNC</a>.</li>
+</ul></li>
+</ul>
+
+<h2 id="step-1-—-setting-up-the-servers">Step 1 — Setting Up the Servers</h2>
+
+<p>In this tutorial, we are going to use three DigitalOcean Droplets to play the role of <code>front-end-server</code>, <code>local-host</code>, and <code>remote-host</code>. To do this, we will first set the <code>local-host</code> and <code>remote-host</code> up to have access to the graphical environment and to mimic the behavior of a <code>remote-host</code> under NAT, so that PageKite can be used as a solution to access its services. Besides that, we also need to configure the <code>front-end-server</code> Droplet firewall rules to allow it to work with PageKite and intermediate the connection between <code>local-host</code> and <code>remote-host</code>.</p>
+
+<p>As we are going to work with multiple servers, we&rsquo;re going to use different colors in the command listings to identify which server we are using, as follows:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$"># Commands and outputs in the front-end-server Droplet
+</li></ul></code></pre><pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$"># Commands and outputs in the remote-host Droplet
+</li></ul></code></pre><pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$"># Commands and outputs in the local-host Droplet
+</li></ul></code></pre><pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$"># Commands and outputs in both the remote-host and local-host Droplets
+</li></ul></code></pre>
+<p>Let&rsquo;s first go through the steps for both <code>remote-host</code> and <code>local-host</code> Droplets, to install the dependencies and set up access to the graphical environment using VNC. After that, we will cover the firewall configuration in each of the three Droplets to allow the <code>front-end-server</code> to run PageKite and mimic a connection using NAT on <code>remote-host</code>.</p>
+
+<h3 id="installing-dependencies">Installing Dependencies</h3>
+
+<p>We will need access to the graphical interface on both <code>local-host</code> and <code>remote-host</code> hosts to run through this demonstration. On <code>local-host</code>, we will use a VNC session to access its graphical interface and test our setup using the browser. On <code>remote-host</code>, we will set up a VNC session that we will access from <code>local-host</code>.</p>
+
+<p>To set up VNC, first we need to install some dependencies on <code>local-host</code> and <code>remote-host</code>. But before installing any package, we need to update the package list of the repositories, by running the following on both servers:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get update
+</li></ul></code></pre>
+<p>Next, we install the VNC server and a graphical user environment, which is needed to start a VNC session. We will use the <a href="https://www.tightvnc.com/">Tight VNC</a> server and the <a href="https://www.xfce.org/">Xfce</a> desktop environment, which can be installed by running:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install xfce4 xfce4-goodies tightvncserver
+</li></ul></code></pre>
+<p>In the middle of the graphical environment installation, we&rsquo;ll be asked about the keyboard layout we wish to use. For a QWERTY US keyboard, select <code>English (US)</code>.</p>
+
+<p>In addition to these, on <code>local-host</code> we&rsquo;re going to need a VNC viewer and an internet browser to be able to perform the connection to <code>remote-host</code>. This tutorial will install the <a href="https://packages.debian.org/stretch/firefox-esr">Firefox web browser</a> and the <a href="https://packages.debian.org/sid/x11/xtightvncviewer">xtightvncviewer</a>. To install them, run:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install firefox-esr xtightvncviewer
+</li></ul></code></pre>
+<p>When a graphical environment is installed, the system initializes in graphical mode by default. By using the DigitalOcean console, it is possible to visualize the graphical login manager, but it is not possible to log in or to use the command line interface. In our setup, we are mimicking the network behavior as if we were using NAT. To do this, we will need to use the DigitalOcean console, since we won&rsquo;t be able to connect using SSH. Therefore, we need to disable the graphical user interface from automatically starting on boot. This can be done by disabling the login manager on both servers:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl disable lightdm.service
+</li></ul></code></pre>
+<p>After disabling the login manager, we can restart the Droplets and test if we can log in using the DigitalOcean console. To do that, run the following:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo shutdown -r now
+</li></ul></code></pre>
+<p>Next, access the DigitalOcean console by navigating to the Droplet page in the DigitalOcean Control Panel, selecting your <code>local-host</code> Droplet, and clicking on the word <strong>Console</strong> in the top right corner, near the switch to turn the Droplet on and off: </p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart-64916/DigitalOcean_Control_Panel.png" alt="DigitalOcean Control Panel"></p>
+
+<p>Once you press enter in the console, you will be prompted for your username and password. Enter these credentials to bring up the command line prompt:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart-64916/DigitalOcean_Droplet_Console.jpg" alt="DigitalOcean Droplet Console"></p>
+
+<p>Once you have done this for the <code>local-host</code>, repeat for the <code>remote-host</code>.</p>
+
+<p>With the console up for both Droplets, we can now set up the VNC.</p>
+
+<h3 id="setting-up-vnc">Setting Up VNC</h3>
+
+<p>Here, we will put together a basic VNC setup. If you would like a more in-depth guide on how to set this up, check out our <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-vnc-on-debian-9">How to Install and Configure VNC on Debian 9</a> tutorial.</p>
+
+<p>To start a VNC session, run the following on both <code>local-host</code> and <code>remote-host</code> Droplets:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver
+</li></ul></code></pre>
+<p>On the first run, the system will create the configuration files and ask for the main password. Input your desired password, then verify it. The VNC server will also ask for a view-only password, used for viewing another user&rsquo;s VNC session. As we won&rsquo;t need a view-only VNC session, type <code>n</code> for this prompt.</p>
+
+<p>The ouput will look similar to this:</p>
+<pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">sammy</span>@<span class="highlight">remote-host</span>:/home/<span class="highlight">sammy</span>$ vncserver
+
+You will require a password to access your desktops.
+
+Password: 
+Verify:   
+Would you like to enter a view-only password (y/n)? n
+xauth:  file /home/<span class="highlight">sammy</span>/.Xauthority does not exist
+
+New 'X' desktop is remote-host:1
+
+Creating default startup script /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Starting applications specified in /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Log file is /home/<span class="highlight">sammy</span>/.vnc/<span class="highlight">remote-host</span>:1.log
+</code></pre>
+<p>The <code>:1</code> after the host name represents the number of the VNC session. By default, the session number <code>1</code> is run on port <code>5901</code>, session number <code>2</code> on port <code>5902</code>, and so on. Following the previous output, we can access <code>remote-host</code> by using a VNC client to connect to <code><span class="highlight">Remote_Host_Public_IP</span></code> on port <code>5901</code>.</p>
+
+<p>One problem of the previous configuration is that it is not persistent, which means it won&rsquo;t be started by default when the Droplet is restarted. To make it persistent, we can create a <a href="https://www.digitalocean.com/community/tutorials/understanding-systemd-units-and-unit-files">Systemd service</a> and enable it. To do that, we will create the <code>vncserver@.service</code> file under <code>/etc/systemd/system</code>, which can be done using <code>nano</code>:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/vncserver@.service 
+</li></ul></code></pre>
+<p>Place the following contents in the file, replacing <code><span class="highlight">sammy</span></code> with your username:</p>
+<div class="code-label " title="/etc/systemd/system/vncserver@.service ">/etc/systemd/system/vncserver@.service </div><pre class="code-pre  fourth-environment"><code langs="">[Unit]
+Description=Start TightVNC server at startup
+After=syslog.target network.target
+
+[Service]
+Type=forking
+User=<span class="highlight">sammy</span>
+PAMName=login
+PIDFile=/home/<span class="highlight">sammy</span>/.vnc/%H:%i.pid
+ExecStartPre=-/usr/bin/vncserver -kill :%i &gt; /dev/null 2&gt;&amp;1
+ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :%i
+ExecStop=/usr/bin/vncserver -kill :%i
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>This file creates a <code>vncserver</code> Systemd unit, which can be configured as a system service using the <code>systemctl</code> tool. In this case, when the service is started, it kills the VNC session if it is already running (line <code>ExecStartPre</code>) and starts a new session using the resolution set to <code>1280x800</code> (line <code>ExecStart</code>). When the service is stopped, it kills the VNC session (line <code>ExecStop</code>).</p>
+
+<p>Save the file and quit <code>nano</code>. Next, we&rsquo;ll make the system aware of the new unit file by running:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl daemon-reload
+</li></ul></code></pre>
+<p>Then, enable the service to be automatically started when the server is initialized by running:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable vncserver@1.service
+</li></ul></code></pre>
+<p>When we use the <code>enable</code> command with <code>systemctl</code>, symlinks are created so that the service is started automatically when the system is initialized, as informed by the output of the previous command:</p>
+<pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Created symlink /etc/systemd/system/multi-user.target.wants/vncserver@1.service → /etc/systemd/system/vncserver@.service.
+</code></pre>
+<p>With the VNC server properly configured, we may restart the Droplets to test if the service is automatically started:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo shutdown -r now
+</li></ul></code></pre>
+<p>After the system initializes, log in using SSH and check if VNC is running with:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status vncserver@1.service
+</li></ul></code></pre>
+<p>The output will indicate the service is running:</p>
+<pre class="code-pre  fourth-environment"><code langs="">● vncserver@1.service - Start TightVNC server at startup
+   Loaded: loaded (/etc/systemd/system/vncserver@.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Thu 2019-08-29 19:21:12 UTC; 1h 22min ago
+  Process: 848 ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :1 (code=exited, status=0/SUCCESS)
+  Process: 760 ExecStartPre=/usr/bin/vncserver -kill :1 &gt; /dev/null 2&gt;&amp;1 (code=exited, status=2)
+ Main PID: 874 (Xtightvnc)
+    Tasks: 0 (limit: 4915)
+   CGroup: /system.slice/system-vncserver.slice/vncserver@1.service
+           ‣ 874 Xtightvnc :1 -desktop X -auth /home/sammy/.Xauthority -geometry 1280x800 -depth 24 -rfbwait
+
+Aug 29 19:21:10 remote-host systemd[1]: Starting Start TightVNC server at startup...
+Aug 29 19:21:10 remote-host systemd[760]: pam_unix(login:session): session opened for user sammy by (uid=0)
+Aug 29 19:21:11 remote-host systemd[848]: pam_unix(login:session): session opened for user sammy by (uid=0)
+Aug 29 19:21:12 remote-host systemd[1]: Started Start TightVNC server at startup.
+~
+</code></pre>
+<p>This finishes the VNC configuration. Remember to follow the previous steps on both <code>remote-host</code> and <code>local-host</code>. Now let&rsquo;s cover the firewall configurations for each host.</p>
+
+<h3 id="configuring-the-firewall">Configuring the Firewall</h3>
+
+<p>Starting with the <code>remote-host</code>, we will configure the firewall to deny external connections to the Droplets&rsquo; services to mimic the behavior from behind NAT. In this tutorial, we are going to use port <code>8000</code> for HTTP connections, <code>22</code> for SSH, and <code>5901</code> for VNC, so we will configure the firewall to deny external connections to these ports.</p>
+
+<p>By following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">initial setup for Debian 9</a>, <code>remote-host</code> will have a firewall rule to allow connections to SSH. We can review this rule by running:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status verbose
+</li></ul></code></pre>
+<p>The output will be the following:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp (OpenSSH)           ALLOW IN    Anywhere                  
+22/tcp (OpenSSH (v6))      ALLOW IN    Anywhere (v6)    
+</code></pre>
+<p>Remove these SSH rules to mimic the behavior behind NAT.</p>
+
+<p><span class='warning'><strong>Warning:</strong> Closing port <code>22</code> means you will no longer be able to use SSH to remotely log in to your server. For Droplets, this is not a problem because you can access the server&rsquo;s console via the <a href="https://cloud.digitalocean.com/">DigitalOcean Control Panel</a>, as we did at the end of the <strong>Installing Dependencies</strong> section of this step. However, if you are not using a Droplet, be careful: closing off port <code>22</code> could lock you out of your server if you have no other means of accessing it.<br></span></p>
+
+<p>To deny SSH access, use <code>ufw</code> and run:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete allow OpenSSH
+</li></ul></code></pre>
+<p>We can verify the SSH rules were removed by checking the status of the firewall again:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status verbose
+</li></ul></code></pre>
+<p>The output will show no firewall rules, as in the following:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+</code></pre>
+<p>Although the firewall is configured, the new configuration is not running until we enable it with:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>After enabling it, note that we won&rsquo;t be able to access <code>remote-host</code> via SSH anymore, as mentioned in the output of the command:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Command may disrupt existing ssh connections. Proceed with operation (y|n)? y
+Firewall is active and enabled on system startup
+</code></pre>
+<p>Log out of the <code>remote-host</code>, then test the configuration by trying to establish an SSH or a VNC connection. It will not be possible. From now on, we may access <code>remote-host</code> exclusively by the DigitalOcean console.</p>
+
+<p>On <code>local-host</code>, we will leave the SSH ports open. We only need one firewall rule to allow access to the VNC session:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 5901
+</li></ul></code></pre>
+<p>After modifying the firewall rules, enable it by running:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>Now we may test the VNC connection using the <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-pagekite-front-end-server-on-a-debian-9#prerequisites">prerequisite VNC client on your local machine</a> to connect to <code>local-host</code> on port <code>5901</code> using the VNC password you&rsquo;ve set up. </p>
+
+<p>To do this, open up your VNC client and connect to <code><span class="highlight">Local_Host_Public_IP</span>:5901</code>. Once you enter the password, you will connect to the VNC session.</p>
+
+<p><span class='note'><strong>Note:</strong> If you have trouble connecting to the VNC session, restart the VNC service on <code>local-host</code> with <code>sudo systemctl restart vncserver@1</code> and try to connect again.<br></span></p>
+
+<p>On its first start, Xfce will ask about the initial setup of the environment:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart-64916/Initial_Xfce_Configuration.png" alt="Initial Xfce Configuration"></p>
+
+<p>For this tutorial, select the <strong>Use default config</strong> option.</p>
+
+<p>Finally, we need to allow connections to port <code>80</code> on the <code>front-end-server</code>, which will be used by PageKite. Open up a terminal on <code>front-end-server</code> and use the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 80
+</li></ul></code></pre>
+<p>Additionally, allow traffic on port <code>443</code> for HTTPS:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 443
+</li></ul></code></pre>
+<p>To enable the new firewall configuration, run the following:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>Now that we&rsquo;ve set up the Droplets, let&rsquo;s configure the PageKite front-end server.</p>
+
+<h2 id="step-2-—-installing-pagekite-on-the-front-end-server">Step 2 — Installing PageKite on the Front-End Server</h2>
+
+<p>Although it is possible to run PageKite using a Python script to set up the front-end server, it is more reliable to run it using a system service. To do so, we will need to install PageKite on the server.</p>
+
+<p>The recommended way to install a service on a Debian server is to use a <a href="https://www.digitalocean.com/community/tutorials/package-management-basics-apt-yum-dnf-pkg">distribution package</a>. This way, it is possible to obtain automated updates and configure the service to start up on boot.</p>
+
+<p>First, we will configure the repository to install PageKite. To do that, update the package list of the repositories:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get update
+</li></ul></code></pre>
+<p>Once the update is done, install the package <a href="https://packages.debian.org/stretch/dirmngr"><code>dirmngr</code></a>, which is necessary to support the key-ring import from the PageKite repository to ensure a secure installation:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install dirmngr
+</li></ul></code></pre>
+<p>Next, add the repository to the <code>/etc/apt/sources.list</code> file, by running:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo deb http://pagekite.net/pk/deb/ pagekite main | sudo tee -a /etc/apt/sources.list
+</li></ul></code></pre>
+<p>After setting up the repository, import the PageKite packaging key to our trusted set of keys, so that we can install packages from this repository. Packaging key management is done with the <code>apt-key</code> utility. In this case, we have to import the key <code>AED248B1C7B2CAC3</code> from the key server <code>keys.gnupg.net</code>, which can be done by running:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-key adv --recv-keys --keyserver keys.gnupg.net AED248B1C7B2CAC3
+</li></ul></code></pre>
+<p>Next, update the package lists of the repositories again, so that the <code>pagekite</code> package gets indexed:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get update
+</li></ul></code></pre>
+<p>Finally, install it with:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install pagekite
+</li></ul></code></pre>
+<p>Now that we have PageKite installed, let&rsquo;s set up the front-end server and configure the service to run on boot.</p>
+
+<h2 id="step-3-—-configuring-the-front-end-server">Step 3 — Configuring the Front-End Server</h2>
+
+<p>The PageKite package we have just installed can be used to configure a connection to a PageKite front-end server. It can also be used to set up a front-end service to receive PageKite connections, which is what we want to do here. In order to do so, we have to edit PageKite&rsquo;s configuration files.</p>
+
+<p>PageKite stores its configuration files in the directory <code>/etc/pagekite.d</code>. The first change we have to do is disable all lines in the <code>/etc/pagekite.d/10_account.rc</code> file, since this file is only used when PageKite is set up as a client to connect to a front-end server. We can edit the file using <code>nano</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/pagekite.d/10_account.rc
+</li></ul></code></pre>
+<p>To disable the lines, add a <code>#</code> to disable the active lines of the file:</p>
+<div class="code-label " title="/etc/pagekite.d/10_account.rc">/etc/pagekite.d/10_account.rc</div><pre class="code-pre "><code langs="">#################################[ This file is placed in the Public Domain. ]#
+# Replace the following with your account details.
+
+<span class="highlight">#</span> kitename   = NAME.pagekite.me
+<span class="highlight">#</span> kitesecret = YOURSECRET
+
+# Delete this line!
+<span class="highlight">#</span> abort_not_configured
+</code></pre>
+<p>After making the changes, save them and quit <code>nano</code>. Next, edit the file <code>/etc/pagekite.d/20_frontends.rc</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/pagekite.d/20_frontends.rc
+</li></ul></code></pre>
+<p>Add the following highlighted lines to the file and comment out the <code>defaults</code> line, making sure to replace <code><span class="highlight">your_domain</span></code> with the domain name you are using and <code><span class="highlight">examplepassword</span></code> with a password of your choice: </p>
+<div class="code-label " title="/etc/pagekite.d/20_frontends.rc">/etc/pagekite.d/20_frontends.rc</div><pre class="code-pre "><code langs="">
+#################################[ This file is placed in the Public Domain. ]#
+# Front-end selection
+#
+# Front-ends accept incoming requests on your behalf and forward them to
+# your PageKite, which in turn forwards them to the actual server.  You
+# probably need at least one, the service defaults will choose one for you.
+
+# Use the pagekite.net service defaults.
+<span class="highlight">#</span> defaults
+
+# If you want to use your own, use something like:
+#     frontend = hostname:port
+# or:
+#     frontends = COUNT:dnsname:port
+
+<span class="highlight">isfrontend</span>
+<span class="highlight">ports=80,443</span>
+
+<span class="highlight">protos=http,https,raw</span>
+<span class="highlight">domain=http,https,raw:*.pagekite.your_domain:examplepassword</span>
+
+<span class="highlight">rawports=virtual</span>
+</code></pre>
+<p>Let&rsquo;s explain these lines one by one. First, to configure PageKite as a front-end server, we added the line <code>isfrontend</code>. To configure the ports on which the server will be listening, we added <code>ports=80,443</code>. We also configured the protocols PageKite is going to proxy. To use HTTP, HTTPS, and RAW (which is used by SSH connections), we add the line <code>protos=http,https,raw</code>. We also disable the <code>defaults</code> settings so that there are no conflicting configurations for the server.</p>
+
+<p>Besides that, we configured the domain we are going to use for the <code>front-end-server</code>. For each client, a subdomain will be used, which is why we needed the <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-pagekite-front-end-server-on-a-debian-9#prerequisites">DNS configurations in the Prerequisites section</a>. We also set up a password that will be used to authenticate the clients. Using the placeholder password <code><span class="highlight">examplepassword</span></code>, these configurations were done by adding the line <code>domain=http,https,raw:*.pagekite.<span class="highlight">your_domain</span>:<span class="highlight">examplepassword</span></code>. Finally, we added an extra line in order to connect using SSH (which is not documented, as discussed <a href="https://stackoverflow.com/questions/25974680/setting-up-pagekite-with-my-own-frontend-to-access-ssh">here</a>): <code>rawports=virtual</code>.</p>
+
+<p>Save the file and quit <code>nano</code>. Restart the PageKite service, by running:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart pagekite.service
+</li></ul></code></pre>
+<p>Then enable it to start on boot with:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable pagekite.service
+</li></ul></code></pre>
+<p>Now that we have <code>front-end-server</code> running, let&rsquo;s test it by exposing an HTTP port on <code>remote-host</code> and connecting to it from <code>local-host</code>.</p>
+
+<h2 id="step-4-—-connecting-to-the-host-behind-nat">Step 4 — Connecting to the Host Behind NAT</h2>
+
+<p>To test the <code>front-end-server</code>, let&rsquo;s start an HTTP service on <code>remote-host</code> and expose it to the internet using PageKite, so that we can connect to it from <code>local-host</code>. Remember, we have to connect to <code>remote-host</code> using the DigitalOcean console, since we have configured the firewall to deny incoming SSH connections.</p>
+
+<p>To start up an HTTP server for testing, we can use the Python 3 <code>http.server</code> module. Since Python is already installed even on the minimal Debian installation and <code>http.server</code> is part of the standard Python library, to start the HTTP server using port <code>8000</code> on <code>remote-host</code> we&rsquo;ll run:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3 -m http.server 8000 &amp;
+</li></ul></code></pre>
+<p>As Debian 9 still uses Python 2 by default, it is necessary to invoke Python by running <code>python3</code> to start the server. The ending <code>&amp;</code> character indicates for the command to run in the background, so that we can still use the shell terminal. The output will indicate that the server is running:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">sammy</span>@remote-host:~$ python3 -m http.server 8000 &amp;
+[1] <span class="highlight">1782</span>
+<span class="highlight">sammy</span>@remote-host:~$ Serving HTTP on 0.0.0.0 port 8000 ...
+</code></pre>
+<p><span class='note'><strong>Note:</strong> The number <code>1782</code> that appears in this output refers to the ID that was assigned to the process started with this command and may be different depending on the run. Since it is running in the background, we can use this ID to terminate (kill) the process by issuing <code>kill -9 1782</code>.<br></span></p>
+
+<p>With the HTTP server running, we may establish the PageKite tunnel. A quick way to do this is by using the <code>pagekite.py</code> script. We can download it to <code>remote-host</code> running:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://pagekite.net/pk/pagekite.py
+</li></ul></code></pre>
+<p>After downloading it, mark it as executable by running:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod a+x pagekite.py
+</li></ul></code></pre>
+<p><span class='note'><strong>Note:</strong> Since PageKite is written in Python 2 and this is the current default version of Python in Debian 9, the proceeding command works without errors. However, since default Python is being progressively migrated to Python 3 in several Linux distributions, it may be necessary to alter the first line of the <code>pagekite.py</code> script to set it to run with Python 2 (setting it to <code>#!/usr/bin/python2</code>).<br></span></p>
+
+<p>With <code>pagekite.py</code> available in the current directory, we can connect to <code>front-end-server</code> and expose the HTTP server on the domain <code>remote-host.pagekite.<span class="highlight">your_domain</span></code> by running the following, substituting <code><span class="highlight">your_domain</span></code> and <code><span class="highlight">examplepassword</span></code> with your own credentials:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./pagekite.py --clean --frontend=pagekite.<span class="highlight">your_domain</span>:80 --service_on=http:remote-host.pagekite.<span class="highlight">your_domain</span>:localhost:8000:<span class="highlight">examplepassword</span>
+</li></ul></code></pre>
+<p>Let&rsquo;s take a look at the arguments in this command:</p>
+
+<ul>
+<li><code>--clean</code> is used to ignore the default configuration.</li>
+<li><code>--frontend=pagekite.<span class="highlight">your_domain</span>:80</code> specifies the address of our frontend. Note we are using port <code>80</code>, since we have set the front end to run on this port in Step 3.</li>
+<li>In the last argument, <code>--service_on=http:remote-host.pagekite.<span class="highlight">your_domain</span>:localhost:8000:<span class="highlight">examplepassword</span></code>, we set up the service we are going to expose (<code>http</code>), the domain we are going to use (<code>remote-host.pagekite.<span class="highlight">your_domain</span></code>), the local address and port where the service is running (<code>localhost:8000</code> since we are exposing a service on the same host we are using to connect to PageKite), and the password to connect to the frontend (<code><span class="highlight">examplepassword</span></code>).</li>
+</ul>
+
+<p>Once this command is run, we will see the message <code>Kites are flying and all is well</code> displayed in the console. After that, we may open a browser window in the <code>local-host</code> VNC session and use it to access the HTTP server on <code>remote-host</code> by accessing the address <code>http://remote-host.pagekite.<span class="highlight">your_domain</span></code>. This will display the file system for <code>remote-host</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart-64916/local-host_accessing_remote-host_web_page.png" alt="local-host Accessing remote-host Web Page"></p>
+
+<p>To stop PageKite&rsquo;s connection on <code>remote-host</code>, hit <code>CTRL+C</code> in the <code>remote-host</code> console.</p>
+
+<p>Now that we have tested <code>front-end-server</code>, let&rsquo;s configure <code>remote-host</code> to make the connection with PageKite persistent and to start on boot.</p>
+
+<h2 id="step-5-—-making-the-host-configuration-persistent">Step 5 — Making the Host Configuration Persistent</h2>
+
+<p>The connection between the <code>remote-host</code> and the <code>front-end-server</code> we set up in Step 4 is not persistent, which means that the connection will not be re-established when the server is restarted. This will be a problem if you would like to use this solution long-term, so let&rsquo;s make this setup persistent.</p>
+
+<p>It is possible to set up PageKite to run as a service on <code>remote-host</code>, so that it is started on boot. To do this, we can use the same distribution packages we used for the <code>front-end-server</code> in Step 3. In the <code>remote-host</code> console accessed through the DigitalOcean control panel, run the following command to install <code>dirmngr</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install dirmngr
+</li></ul></code></pre>
+<p>Then to add the PageKite repository and import the GPG key, run:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo deb http://pagekite.net/pk/deb/ pagekite main | sudo tee -a /etc/apt/sources.list
+</li><li class="line" prefix="$">sudo apt-key adv --recv-keys --keyserver keys.gnupg.net AED248B1C7B2CAC3
+</li></ul></code></pre>
+<p>To update the package list and install PageKite, run:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get update
+</li><li class="line" prefix="$">sudo apt-get install pagekite
+</li></ul></code></pre>
+<p>To set up PageKite as a client, we will configure the <code>front-end-server</code> address and port in the file <code>/etc/pagekite.d/20_frontends.rc</code>. We can edit it using <code>nano</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/pagekite.d/20_frontends.rc
+</li></ul></code></pre>
+<p>In this file, comment the line with <code>defaults</code> to avoid using <code>pagekite.net</code> service defaults. Also, configure the <code>front-end-server</code> address and port by using the parameter <code>frontend</code>, adding the line <code>frontend = pagekite.<span class="highlight">your_domain</span>:80</code> to the end of the file. Be sure to replace <code><span class="highlight">your_domain</span></code> with the domain you are using.</p>
+
+<p>Here is the full file with the edited lines highlighted:</p>
+<div class="code-label " title="/etc/pagekite.d/20_frontends.rc">/etc/pagekite.d/20_frontends.rc</div><pre class="code-pre  second-environment"><code langs="">#################################[ This file is placed in the Public Domain. ]#
+# Front-end selection
+#
+# Front-ends accept incoming requests on your behalf and forward them to
+# your PageKite, which in turn forwards them to the actual server.  You
+# probably need at least one, the service defaults will choose one for you.
+
+# Use the pagekite.net service defaults.
+<span class="highlight">#</span> defaults
+
+# If you want to use your own, use something like:
+<span class="highlight">     frontend = pagekite.your_domain:80</span>
+# or:
+#     frontends = COUNT:dnsname:port
+</code></pre>
+<p>After saving the modifications and quitting <code>nano</code>, continue the configuration by editing the file <code>/etc/pagekite.d/10_account.rc</code> and setting the credentials to connect to <code>front-end-server</code>. First, open up the file by running:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/pagekite.d/10_account.rc
+</li></ul></code></pre>
+<p>To set up the domain we are going to use the domain name and the password to connect to our <code>front-end-server</code>, editing the parameters <code>kitename</code> and <code>kitesecret</code> respectively. We also have to comment out the last line of the file to enable the configuration, as highlighted next:</p>
+<div class="code-label " title="/etc/pagekite.d/10_account.rc">/etc/pagekite.d/10_account.rc</div><pre class="code-pre  second-environment"><code langs="">#################################[ This file is placed in the Public Domain. ]#
+# Replace the following with your account details.
+
+<span class="highlight">kitename   = remote-host.pagekite.your_domain</span>
+<span class="highlight">kitesecret = examplepassword</span>
+
+# Delete this line!
+<span class="highlight"># abort_not_configured</span>
+</code></pre>
+<p>Save and quit from the text editor.</p>
+
+<p>We will now configure our services that will be exposed to the internet. For HTTP and SSH services, PageKite includes sample configuration files with extensions ending in <code>.sample</code> in its configuration directory <code>/etc/pagekite.d</code>. Let&rsquo;s start by copying the sample configuration file into a valid one for HTTP:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /etc/pagekite.d
+</li><li class="line" prefix="$">sudo cp 80_httpd.rc.sample 80_httpd.rc
+</li></ul></code></pre>
+<p>The HTTP configuration file is almost set up. We only have to adjust the HTTP port, which we can do by editing the file we just copied:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/pagekite.d/80_httpd.rc
+</li></ul></code></pre>
+<p>The parameter <code>service_on</code> defines the address and port of the service we wish to expose. By default, it exposes <code>localhost:80</code>. As our HTTP server will be running on port <code>8000</code>, we just have to change the port number, as highlighted next:</p>
+<div class="code-label " title="/etc/pagekite.d/80_httpd.rc">/etc/pagekite.d/80_httpd.rc</div><pre class="code-pre  second-environment"><code langs="">#################################[ This file is placed in the Public Domain. ]#
+# Expose the local HTTPD
+
+service_on = http:@kitename : localhost:<span class="highlight">8000</span> : @kitesecret
+
+# If you have TLS/SSL configured locally, uncomment this to enable end-to-end
+# TLS encryption instead of relying on the wild-card certificate at the relay.
+
+#service_on = https:@kitename : localhost:443 : @kitesecret
+
+#
+# Uncomment the following to globally DISABLE the request firewall.  Do this
+# if you are sure you know what you are doing, for more details please see
+#                &lt;http://pagekite.net/support/security/&gt;
+#
+#insecure
+#
+# To disable the firewall for one kite at a time, use lines like this::
+#
+#service_cfg = KITENAME.pagekite.me/80 : insecure : True
+</code></pre>
+<p><span class='note'><strong>Note:</strong> The <code>service_on</code> parameter syntax is similar to the one used with the <code>pagekite.py</code> script. However, the domain name we are going to use and the password are obtained from the <code>/etc/pagekite.d/10_account.rc</code> file and inserted by the markers <code>@kitename</code> and <code>@kitesecret</code> respectively.<br></span></p>
+
+<p>After saving the modifications to this configuration file, we have to restart the service so that the changes take effect:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart pagekite.service
+</li></ul></code></pre>
+<p>To start the service on boot, enable the service with:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable pagekite.service
+</li></ul></code></pre>
+<p>Just as we have done before, use the <code>http.server</code> Python module to emulate our HTTP server. It will be already running since we started it to run in the background in Step 4. However, if for some reason it is not running, we may start it again with:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3 -m http.server 8000 &amp;
+</li></ul></code></pre>
+<p>Now that we have the HTTP server and the PageKite service running, open a browser window in the <code>local-host</code> VNC session and use it to access <code>remote-host</code> by using the address <code>http://remote-host.pagekite.<span class="highlight">your_domain</span></code>. This will display the file system of <code>remote-host</code> in the browser.</p>
+
+<p>We have seen how to configure a PageKite front-end server and a client to expose a local HTTP server. Next, we&rsquo;ll set up <code>remote-host</code> to expose SSH and allow remote connections.</p>
+
+<h2 id="step-6-—-exposing-ssh-with-pagekite">Step 6 — Exposing SSH with PageKite</h2>
+
+<p>Besides HTTP, PageKite can be used to proxy other services, such as SSH, which is useful to access hosts remotely behind NAT in environments where it is not possible to modify networking and a router&rsquo;s configurations.</p>
+
+<p>In this section, we are going to configure <code>remote-host</code> to expose its SSH service using PageKite, then open an SSH session from <code>local-host</code>.</p>
+
+<p>Just like we have done to configure HTTP with PageKite, for SSH we will copy the sample configuration file into a valid one to expose the SSH service on <code>remote-host</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /etc/pagekite.d
+</li><li class="line" prefix="$">sudo cp 80_sshd.rc.sample 80_sshd.rc
+</li></ul></code></pre>
+<p>This file is pre-configured to expose the SSH service running on port <code>22</code>, which is the default configuration. Let&rsquo;s take a look at its contents:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano 80_sshd.rc
+</li></ul></code></pre>
+<p>This will show you the file:</p>
+<div class="code-label " title="/etc/pagekite.d/80_sshd.rc">/etc/pagekite.d/80_sshd.rc</div><pre class="code-pre  second-environment"><code langs="">#################################[ This file is placed in the Public Domain. ]#
+# Expose the local SSH daemon
+
+service_on = raw/22:@kitename : localhost:22 : @kitesecret
+</code></pre>
+<p>This file is very similar to the one used to expose HTTP. The only differences are the port number, which is <code>22</code> for SSH, and the protocol, which must be set to <code>raw</code> when exposing SSH.</p>
+
+<p>Since we do not need to make any changes here, exit from the file.</p>
+
+<p>Restart the PageKite service:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart pagekite.service
+</li></ul></code></pre>
+<p><span class='note'><strong>Note:</strong> We could also expose SSH using the <code>pagekite.py</code> script if the PageKite service wasn&rsquo;t installed. We would just have to use the <code>--service-on</code> argument, setting the protocol to <code>raw</code> with the proper domain name and password. For example, to expose it using the same parameters we have configured in the PageKite service, we would use the command <code>./pagekite.py --clean --frontend=pagekite.<span class="highlight">your_domain</span>:80 --service_on=raw:remote-host.pagekite.<span class="highlight">your_domain</span>:localhost:22:<span class="highlight">examplepassword</span></code>.<br></span></p>
+
+<p>On <code>local-host</code>, we will use the SSH client to connect to <code>remote-host</code>. PageKite tunnels the connections using HTTP, so that to use SSH over PageKite, we will need an HTTP proxy. There are several options of HTTP proxies we could use from the Debian repositories, such as <a href="http://nc110.sourceforge.net/">Netcat</a>(<code>nc</code>) and <a href="https://github.com/bryanpkc/corkscrew"><code>corkscrew</code></a>. For this tutorial, we will use <code>corkscrew</code>, since it requires fewer arguments than <code>nc</code>. </p>
+
+<p>To install <code>corkscrew</code> on <code>local-host</code>, use <code>apt-get install</code> with the package of the same name:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install corkscrew
+</li></ul></code></pre>
+<p>Next, generate an SSH key on <code>local-host</code> and append the public key to the <code>.ssh/authorized_keys</code> file of <code>remote-host</code>. To do this, follow the <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-debian-9">How to Set Up SSH Keys on Debian 9</a> guide, including the <strong>Copying Public Key Manually</strong> section in Step 2.</p>
+
+<p>To connect to an SSH server using a proxy, we will use <code>ssh</code> with the <code>-o</code> argument to pass in <code>ProxyCommand</code> and specify <code>corkscrew</code> as the HTTP proxy. This way, on <code>local-host</code>, we will run the following command to connect to <code>remote-host</code> through the PageKite tunnel:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">sammy</span>@remote-host.pagekite.<span class="highlight">your_domain</span> -i ~/id_rsa -o "ProxyCommand corkscrew %h 80 %h %p"
+</li></ul></code></pre>
+<p>Notice we provided some arguments to <code>corkscrew</code>. The <code>%h</code> and <code>%p</code> are tokens that the SSH client replaces by the remote host name (<code>remote-host.pagekite.<span class="highlight">your_domain</span></code>) and remote port (<code>22</code>, implicitly used by <code>ssh</code>) when it runs <code>corkscrew</code>. The <code>80</code> refers to the port on which PageKite is running. This port refers to the communication between the PageKite client and the front-end server.</p>
+
+<p>Once you run this command on <code>local-host</code>, the command line prompt for <code>remote-host</code> will appear.</p>
+
+<p>With our SSH connection working via PageKite, let&rsquo;s next set a VNC session on <code>remote_server</code> and access it from <code>local-host</code> using VNC over SSH.</p>
+
+<h2 id="step-7-—-using-vnc-over-ssh">Step 7 — Using VNC Over SSH</h2>
+
+<p>Now we can access a remote host using a shell, which solves a lot of the problems that arise from servers hidden behind NAT. However, in some situations, we require access to the graphical user interface. SSH provides a way of tunneling any service in its connection, such as VNC, which can be used for graphical remote access.</p>
+
+<p>With <code>remote-host</code> configured to expose SSH using our front-end server, let&rsquo;s use an SSH connection to tunnel VNC and have access to the <code>remote-host</code> graphical interface.</p>
+
+<p>Since we have already configured a VNC session to start automatically on <code>remote-host</code>, we will use <code>local-host</code> to connect to <code>remote-host</code> using <code>ssh</code> with the <code>-L</code> argument:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">sammy</span>@remote-host.pagekite.<span class="highlight">your_domain</span> -i ~/id_rsa -o "ProxyCommand corkscrew %h 80 %h %p" -L5902:localhost:5901
+</li></ul></code></pre>
+<p>The <code>-L</code> argument specifies that connections to a given local port should be forwarded to a remote host and port. Together with this argument, we provided a port number followed by a colon, then an IP address, domain, or host name, followed by another colon and a port number. Let&rsquo;s take a look at this information in detail:</p>
+
+<ul>
+<li>The first port number refers to the one we are going to use on the host that is starting the SSH connection (in this case <code>local-host</code>), to receive the tunneled connection from the remote host. In this case, from the point of view of <code>local-host</code>, the VNC Session from <code>remote-host</code> will be available locally, on port <code>5902</code>. We could not use the port <code>5901</code> since it is already being used on <code>local-host</code> for its own VNC session. </li>
+<li>After the first colon, we provide the host name (or IP address) of the device that is serving the VNC session we wish to tunnel. If we provide a host name, it will be resolved into an IP address by the host that is serving SSH. In this case, since <code>remote-host</code> is serving the SSH connection and the VNC session is also served by this same host, we can use <code>localhost</code>.</li>
+<li>After the second colon, we provide the port in which the service to be tunneled is served. We use port <code>5901</code>, since VNC is running on this port on the <code>remote-host</code>.</li>
+</ul>
+
+<p>After the connection is established, we will be presented with a remote shell on <code>remote-host</code>. </p>
+
+<p>Now we can reach the <code>remote-host</code> VNC session from <code>local-host</code> by connecting to port <code>5902</code> itself. To do so, open a shell from the <code>local-host</code> GUI in your VNC client, then run:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncviewer localhost:5902
+</li></ul></code></pre>
+<p>Upon providing the <code>remote-host</code> VNC password, we will be able to access its graphical environment.</p>
+
+<p><span class='note'><strong>Note:</strong> If the VNC session has been running for too long, you may encounter an error in which the GUI on <code>remote-host</code> is replaced by a gray screen with an <code>X</code> for a cursor. If this happens, try restarting the VNC session on <code>remote-host</code> with <code>sudo systemctl restart vncserver@1</code>. Once the service is running, try connecting again.<br></span></p>
+
+<p>This setup can be useful for support teams using remote access. It is possible to use SSH to tunnel any service that can be reached by <code>remote-host</code>. This way, we could set up <code>remote-host</code> as a gateway to a local attached network with many hosts, including some running Windows or another OS. As long as the hosts have a VNC server with a VNC session set up, it would be possible to access them with a graphical user interface through SSH tunneled by our PageKite <code>front-end-server</code>.</p>
+
+<p>In the final step, we will configure the PageKite frontend to support more clients with different passwords.</p>
+
+<h2 id="step-8-—-configuring-the-front-end-server-for-many-clients-optional">Step 8 — Configuring the Front-End Server for Many Clients (Optional)</h2>
+
+<p>Suppose we are going to use our <code>front-end-server</code> to offer remote access to many clients. In this multi-user setup, it would be a best practice to isolate them, using a different domain name and password for each one to connect to our server. One way of doing this is by running several PageKite services on our server on different ports, each one configured with its own subdomain and password, but this can be difficult to keep organized.</p>
+
+<p>Fortunately, the PageKite frontend supports the configuration of multiple clients itself, so that we can use the same service on a single port. To do this, we would configure the front end with the domain names and passwords. </p>
+
+<p>As we have configured the wildcard DNS entry <code>*.pagekite.<span class="highlight">your_domain</span></code> pointing out to our <code>front-end-server</code>, DNS entries in subdomains like <code>remote-host.client-1.pagekite.<span class="highlight">your_domain</span></code> can also point out to our server, so that we could use domains ending in <code>client1.pagekite.<span class="highlight">your_domain</span></code> and <code>client2.pagekite.<span class="highlight">your_domain</span></code> to identify hosts of different clients with different passwords.</p>
+
+<p>To do this on the <code>front-end-server</code>, open the <code>/etc/pagekite.d/20_frontends.rc</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/pagekite.d/20_frontends.rc
+</li></ul></code></pre>
+<p>Add the domains using the <code>domain</code> keyword and set different passwords for each one. To set up the domains we&rsquo;ve mentioned, add:</p>
+<div class="code-label " title="/etc/pagekite.d/20_frontends.rc">/etc/pagekite.d/20_frontends.rc</div><pre class="code-pre "><code langs="">#################################[ This file is placed in the Public Domain. ]#
+# Front-end selection
+#
+# Front-ends accept incoming requests on your behalf and forward them to
+# your PageKite, which in turn forwards them to the actual server.  You
+# probably need at least one, the service defaults will choose one for you.
+
+# Use the pagekite.net service defaults.
+# defaults
+
+# If you want to use your own, use something like:
+#     frontend = hostname:port
+# or:
+#     frontends = COUNT:dnsname:port
+
+isfrontend
+ports=80,443
+
+protos=http,https,raw
+domain=http,https,raw:*.pagekite.<span class="highlight">your_domain</span>:<span class="highlight">examplepassword</span>
+<span class="highlight">domain=http,https,raw:*.client-1.pagekite.your_domain:examplepassword2</span>
+<span class="highlight">domain=http,https,raw:*.client-2.pagekite.your_domain:examplepassword3</span>
+
+rawports=virtual
+</code></pre>
+<p>Save and exit the file.</p>
+
+<p>After modifying the configuration files, restart PageKite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart pagekite.service
+</li></ul></code></pre>
+<p>On the remote hosts, let&rsquo;s configure the PageKite client to connect according to the new domains and passwords. For example, in <code>remote-host</code>, to connect using <code>client-1.pagekite.<span class="highlight">your_domain</span></code>, modify the file <code>/etc/pagekite.d/10_account.rc</code>, where the credentials to connect to <code>front-end-server</code> are stored:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/pagekite.d/10_account.rc
+</li></ul></code></pre>
+<p>Change <code>kitename</code> and <code>kitesecret</code> to the appropriate credentials. For the domain <code>remote-host.client-1.pagekite.<span class="highlight">your_domain</span></code>, the configuration would be:</p>
+<div class="code-label " title="/etc/pagekite.d/10_account.rc">/etc/pagekite.d/10_account.rc</div><pre class="code-pre  second-environment"><code langs="">#################################[ This file is placed in the Public Domain. ]#
+# Replace the following with your account details.
+
+<span class="highlight">kitename   = remote-host.client-1.pagekite.your_domain</span>
+<span class="highlight">kitesecret = examplepassword2</span>
+
+# Delete this line!
+
+</code></pre>
+<p>Save and exit the file.</p>
+
+<p>After modifying the file, restart the PageKite service:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart pagekite.service
+</li></ul></code></pre>
+<p>Now, on <code>local-host</code>, we can connect to <code>remote-host</code> via SSH with:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">sammy</span>@remote-host.client-1.pagekite.<span class="highlight">your_domain</span> -i ~/id_rsa -o "ProxyCommand corkscrew %h 80 %h %p"
+</li></ul></code></pre>
+<p>We could use the domain <code>client-2.pagekite.<span class="highlight">your-domain</span></code> for another client. This way, we could administrate the services in an isolated way, with the possibility to change the password of one client or even disable one of them without affecting the other.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this article, we set up a private PageKite front-end server on a Debian 9 Droplet and used it to expose HTTP and SSH services on a remote host behind NAT. We then connected to these services from a <code>local-host</code> server and verified the PageKite functionality. As we have mentioned, this could be an effective setup for remote access applications, since we can tunnel other services in the SSH connection, such as VNC.</p>
+
+<p>If you&rsquo;d like to learn more about PageKite, check out the <a href="https://pagekite.net/support/intro/">PageKite Support Info</a>. If you would like to dive deeper into networking with Droplets, take a look through <a href="https://www.digitalocean.com/docs/networking/">DigitalOcean&rsquo;s Networking Documentation</a>.</p>

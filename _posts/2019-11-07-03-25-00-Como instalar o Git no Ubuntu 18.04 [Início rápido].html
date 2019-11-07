@@ -1,0 +1,54 @@
+---
+layout: post
+title: Como instalar o Git no Ubuntu 18.04 [Início rápido]
+network: digitalocean
+date: November 07, 2019 at 03:25AM
+url: https://www.digitalocean.com/community/tutorials/como-instalar-o-git-no-ubuntu-18-04-inicio-rapido-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Os sistemas de controle de versão ajudam a compartilhar e colaborar em projetos de desenvolvimento de software. O Git é um dos sistemas de controle de versão mais populares disponíveis atualmente.</p>
+
+<p>Este tutorial irá mostrar como instalar e configurar o Git em um servidor Ubuntu 18.04. Para uma versão mais detalhada deste tutorial, contendo explicações mais completas para cada etapa, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-install-git-on-ubuntu-18-04">Como instalar o Git no Ubuntu 18.04</a>.</p>
+
+<h2 id="passo-1-—-como-atualizar-os-pacotes-padrão">Passo 1 — Como atualizar os pacotes padrão</h2>
+
+<p>Estando logado no servidor Ubuntu 18.04, como um usuário sudo não-root, atualize primeiro seus pacotes padrão.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<h2 id="passo-2-—-instale-o-git">Passo 2 — Instale o Git</h2>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install git
+</li></ul></code></pre>
+<h2 id="passo-3-—-como-confirmar-a-instalação-bem-sucedida">Passo 3 — Como confirmar a instalação bem sucedida</h2>
+
+<p>É possível confirmar que sua instalação está funcionando corretamente ao executar este comando e receber a saída similar ao seguinte:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git --version
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>git version <span class="highlight">2.17.1</span>
+</code></pre>
+<h2 id="passo-4-—-como-configurar-o-git">Passo 4 — Como configurar o Git</h2>
+
+<p>Agora que você tem o Git instalado, para prevenir avisos, você deve configurá-lo com as suas informações.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git config --global user.name "<span class="highlight">Your Name</span>"
+</li><li class="line" prefix="$">git config --global user.email "<span class="highlight">youremail@domain.com</span>"
+</li></ul></code></pre>
+<p>Se for necessário editar este arquivo, será possível usar um editor de texto como o nano:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/.gitconfig
+</li></ul></code></pre><div class="code-label " title="~/.gitconfig contents">~/.gitconfig contents</div><pre class="code-pre "><code langs="">[user]
+  name = <span class="highlight">Your Name</span>
+  email = <span class="highlight">youremail@domain.com</span>
+</code></pre>
+<h2 id="tutoriais-relacionados">Tutoriais relacionados</h2>
+
+<p>Alguns links para tutoriais mais detalhados relacionados a este guia:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-git-on-ubuntu-18-04">Como instalar o Git no 18.04</a></li>
+<li><a href="https://www.digitalocean.com/community/articles/how-to-use-git-effectively">Como usar o Git de maneira eficaz</a></li>
+<li><a href="https://www.digitalocean.com/community/articles/how-to-use-git-branches">Como usar o Git Branches</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorial_series/an-introduction-to-open-source">Uma introdução para o código fonte aberto</a></li>
+</ul>

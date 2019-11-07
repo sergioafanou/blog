@@ -1,0 +1,196 @@
+---
+layout: post
+title: Cómo instalar y configurar Ansible en Ubuntu 18.04
+network: digitalocean
+date: November 07, 2019 at 03:21AM
+url: https://www.digitalocean.com/community/tutorials/como-instalar-y-configurar-ansible-en-ubuntu-18-04-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Los sistemas de gestión de la configuración están diseñados para hacer que el control de un gran número de servidores sea fácil para los administradores y los equipos de operaciones. Le permiten controlar muchos sistemas diferentes de forma automatizada desde una ubicación central.</p>
+
+<p>Aunque existen muchos sistemas populares de gestión de la configuración disponibles para los sistemas Linux, como Chef y Puppet, estos suelen ser más complejos de lo que muchas personas desean o necesitan. <a href="https://www.ansible.com/">Ansible</a> es una gran alternativa a estas opciones, porque requiere un gasto inicial mucho menor.</p>
+
+<p>En esta guía, explicaremos cómo instalar Ansible en un servidor Ubuntu 18.04 y repasaremos algunos puntos básicos sobre cómo utilizar el software.</p>
+
+<h2 id="¿cómo-funciona-ansible">¿Cómo funciona Ansible?</h2>
+
+<p>Ansible funciona configurando máquinas cliente desde un equipo que tiene los componentes de Ansible instalados y configurados.</p>
+
+<p>Se comunica por medio de canales SSH habituales para recuperar información de las máquinas remotas, emitir comandos y copiar archivos. Gracias a esto, los sistemas Ansible no requieren la instalación de ningún software adicional en los equipos cliente.</p>
+
+<p>Esta es una de las formas en las que Ansible simplifica la administración de los servidores. Cualquier servidor que tenga un puerto SSH expuesto puede llevarse al marco de configuración de Ansible, independientemente de la etapa de su ciclo de vida en la que se encuentre. Esto significa que cualquier equipo que pueda administrar mediante SSH, también podrá administrarlo a través de Ansible.</p>
+
+<p>Ansible adopta un enfoque modular, lo que facilita su ampliación para usar las funcionalidades del sistema principal para abordar escenarios específicos. Los módulos pueden escribirse en cualquier lenguaje y comunicarse en JSON estándar.</p>
+
+<p>Los archivos de configuración están redactados, principalmente, en formato de serialización de datos YAML, debido a su naturaleza expresiva y su similitud con los lenguajes de marcado populares. Ansible puede interactuar con hosts a través de herramientas de línea de comandos o de sus secuencias de comandos de configuración, que se conocen como Playbooks.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para seguir este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li><p>Dos o más servidores Ubuntu 18.04. Uno de ellos se utilizará como su <em>servidor de Ansible</em> y el otro, como su <em>host de Ansible</em>. Cada uno deberá tener un usuario no <strong>root</strong> con privilegios <code>sudo</code> y un firewall básico configurado. Puede establecerlos siguiendo nuestra <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Guía inicial de configuración del servidor para Ubuntu 18.04</a>. Tenga en cuenta que los ejemplos de esta guía especifican tres hosts de Ansible, pero los comandos y las configuraciones que se indican pueden ajustarse para cualquier número de clientes.</p></li>
+<li><p>Claves SSH generadas para el  usuario no <strong>root</strong> en su servidor de Ansible. Para hacerlo, siga el Paso 1 de nuestra guía sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-1804">Cómo configurar claves SSH en Ubuntu 18.04</a>. Para los fines de este tutorial, puede guardar el par de claves en la ubicación predeterminada (<code>~/.ssh/id_rsa</code>), y no necesita una contraseña para protegerlas.</p></li>
+</ul>
+
+<h2 id="paso-1-instalación-de-ansible">Paso 1: instalación de Ansible</h2>
+
+<p>Para comenzar a usar Ansible como medio para administrar sus diferentes servidores, deberá instalar el software de Ansible en, al menos, una máquina.</p>
+
+<p>Para obtener la versión más reciente de Ansible para Ubuntu puede añadir el PPA (archivo personal de paquete) del proyecto a su sistema. Antes de hacerlo, sin embargo, primero, debería asegurarse de tener el paquete <code>software-properties-common</code> instalado. Este software facilitará la gestión de este y otros repositorios de software independientes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install software-properties-common
+</li></ul></code></pre>
+<p>Luego, añada el PPA de Ansible escribiendo el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-add-repository ppa:ansible/ansible
+</li></ul></code></pre>
+<p>Pulse <code>ENTER</code>para aceptar la adición del PPA.</p>
+
+<p>A continuación, vuelva a actualizar el índice de paquetes del sistema para que tenga conocimiento de los paquetes disponibles en el PPA:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Tras esta actualización, podrá instalar el software Ansible:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install ansible
+</li></ul></code></pre>
+<p>Su servidor de Ansible, ahora, tiene todo el software necesario para administrar sus hosts.</p>
+
+<h2 id="paso-2-configuración-del-acceso-de-ssh-a-los-hosts-de-ansible">Paso 2: configuración del acceso de SSH a los hosts de Ansible</h2>
+
+<p>Como se mencionó anteriormente, Ansible se comunica, principalmente, con equipos cliente a través de SSH. Aunque, ciertamente, tiene la capacidad de gestionar autenticación SSH basada en contraseña, usar claves SSH puede ayudar a hacer que todo sea más sencillo.</p>
+
+<p>En su servidor de Ansible, utilice el comando <code>cat</code> para imprimir los contenidos del archivo de clave pública SSH de su usuario no root en la salida de la terminal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat ~/.ssh/id_rsa.pub
+</li></ul></code></pre>
+<p>Copie el resultado en su portapapeles, luego, abra una nueva terminal y establezca la conexión con uno de sus hosts de Ansible usando SSH:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">sammy</span>@<span class="highlight">ansible_host_ip</span>
+</li></ul></code></pre>
+<p>Cambie al usuario <strong>root</strong> de la máquina cliente:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">su -
+</li></ul></code></pre>
+<p>Como usuario <strong>root</strong>, abra <code>authorized_keys</code> en el directorio <code>~/.ssh</code>:</p>
+<pre class="code-pre super_user second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">nano ~/.ssh/authorized_keys
+</li></ul></code></pre>
+<p>En el archivo, pegue su servidor de Ansible usando la clave SSH del usuario, luego, guarde el archivo y cierre el editor (pulse <code>CTRL + X</code>, <code>Y</code> y, luego, <code>ENTER</code>). A continuación, ejecute el comando <code>exit</code> para volver a usar el usuario no <strong>root</strong> del host:</p>
+<pre class="code-pre super_user second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">exit 
+</li></ul></code></pre>
+<p>Por último, debido a que Ansible utiliza un intérprete de python ubicado en <code>/usr/bin/python</code> para ejecutar sus módulos, deberá instalar Python 2 en el host para que Ansible se pueda comunicar con él. Ejecute los siguientes comandos para actualizar el índice de paquete del host e instalar el paquete <code>python</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install python
+</li></ul></code></pre>
+<p>Tras esto, puede volver a ejecutar el comando <code>exit</code> para cerrar la conexión con el cliente:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">exit
+</li></ul></code></pre>
+<p>Repita este proceso para cada servidor que desee controlar con su servidor de Ansible. A continuación, configuraremos el servidor de Ansible para conectar con estos hosts usando el archivo <code>hosts</code>de Ansible.</p>
+
+<h2 id="paso-3-configuración-de-hosts-de-ansible">Paso 3: configuración de hosts de Ansible</h2>
+
+<p>Ansible mantiene un seguimiento de todos los servidores que conoce a través de un archivo de <code>hosts</code>. Deberá configurar este archivo para poder comenzar a comunicarse con los otros equipos.</p>
+
+<p>Abra el archivo con privilegios <code>sudo</code>, de la siguiente manera:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ansible/hosts
+</li></ul></code></pre>
+<p>Dentro del archivo, verá varias configuraciones de ejemplo comentadas (con un <code>#</code>antes de cada línea). En realidad, estos ejemplos no nos funcionarán, ya que los hosts enumerados en cada una de ellas son inventados. Sin embargo, los conservaremos en el archivo para ayudarnos con la configuración si deseamos implementar escenarios más complejos en el futuro.</p>
+
+<p>El archivo de <code>hosts</code> es bastante flexible y puede configurarse de varias formas diferentes. La sintaxis que vamos a usar, sin embargo, tiene el siguiente aspecto:</p>
+<pre class="code-pre "><code langs="">[<span class="highlight">group_name</span>]
+<span class="highlight">alias</span> ansible_host=<span class="highlight">your_server_ip</span>
+</code></pre>
+<p><span class='note'><strong>Nota:</strong> con el lanzamiento de Ansible versión 2.0, la variable de configuración <code>ansible_host</code>sustituyó a la variable original, <code>ansible_ssh_host</code>. Si está usando una versión anterior de Ansible, deberá usar la variable más antigua de mayor longitud.<br></span></p>
+
+<p>En este ejemplo, <code>group_name</code>es una etiqueta de organización que le permite dirigirse a cualquiera de los servidores enumerados en ella con una palabra, mientras que <code>alias</code>es solo un nombre para referirse a un servidor específico.</p>
+
+<p>Por lo tanto, en nuestro escenario, estamos imaginando que tenemos tres servidores que vamos a controlar con Ansible. En este momento, es posible acceder a estos servidores desde el servidor de Ansible escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh root@<span class="highlight">ansible_host_ip</span>
+</li></ul></code></pre>
+<p>No se le debería pedir una contraseña si configuró esto correctamente. Con fines demostrativos, asumiremos que las direcciones IP de nuestros hosts son <code>203.0.113.1</code>, <code>203.0.113.2</code>, y <code>203.0.113.3</code>. Configuraremos esto para que podamos referirnos a ellas individualmente como <code>host1</code>, <code>host2</code>, y <code>host3</code>, o como un grupo con el nombre <code>servers</code>.</p>
+
+<p>Este es el bloque que deberíamos añadir a nuestro archivo de <code>hosts</code> para obtener lo siguiente:</p>
+<div class="code-label " title="/etc/ansible/hosts">/etc/ansible/hosts</div><pre class="code-pre "><code langs="">[servers]
+host1 ansible_host=<span class="highlight">203.0.113.1</span>
+host2 ansible_host=<span class="highlight">203.0.113.2</span>
+host3 ansible_host=<span class="highlight">203.0.113.3</span>
+</code></pre>
+<p>Los hosts pueden estar en múltiples grupos, y los grupos pueden configurar parámetros para todos sus miembros. Vamos a probar esto ahora.</p>
+
+<p>Con nuestra configuración actual, si intentásemos conectar con cualquiera de estos hosts con Ansible, el comando fallaría (asumiendo que no está operando como usuario root). Esto se debe a que su clave SSH está integrada para el usua<strong>rio r</strong>oot en los sistemas remotos y Ansible, por defecto, intentará conectar como su usuario actual. Un intento de conexión provocará este error:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>host1 | UNREACHABLE! =&gt; {
+    "changed": false,
+    "msg": "Failed to connect to the host via ssh.",
+    "unreachable": true
+}
+</code></pre>
+<p>En el servidor de Ansible, estamos usando un usuario llamado <strong>sammy</strong>. Ansible intentará conectarse a cada host con <code>ssh sammy@server</code>. Esto no funcionará si el usuario <strong>sammy</strong> no se encuentra también en el sistema remoto.</p>
+
+<p>Podemos crear un archivo que le indique a todos los servidores del grupo &ldquo;servers&rdquo; que se conecten como usuario <strong>root</strong>.</p>
+
+<p>Para hacerlo, crearemos un directorio en la estructura de configuración de Ansible llamado <code>group_vars</code>. En esta carpeta, podemos crear archivos con formato YAML para cada grupo que queramos configurar:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /etc/ansible/group_vars
+</li><li class="line" prefix="$">sudo nano /etc/ansible/group_vars/servers
+</li></ul></code></pre>
+<p>Los archivos YAML comienzan con &ldquo;&mdash;&rdquo;, por lo tanto, asegúrese de no olvidar esa parte.</p>
+<div class="code-label " title="/etc/ansible/group_vars/servers">/etc/ansible/group_vars/servers</div><pre class="code-pre "><code langs="">---
+ansible_user: root
+</code></pre>
+<p><span class='note'><strong>Nota:</strong> de forma similar a la variable <code>ansible_host</code>, <code>ansible_user</code>reemplazó a la variable <code>ansible_ssh_user</code>en la versión 2.0. Si está usando una versión de Ansible anterior a 2.0, asegúrese de usar la variable más antigua de mayor longitud.<br></span></p>
+
+<p>Guarde y cierre este archivo cuando haya terminado.</p>
+
+<p>Si desea especificar los detalles de la configuración para cada servidor, independientemente de la asociación de grupo, puede incluir estos detalles en un archivo en <code>/etc/ansible/group_vars/all</code>. Los hosts individuales pueden configurarse creando archivos que lleven el nombre de sus alias en un directorio en <code>/etc/ansible/host_vars</code>.</p>
+
+<h2 id="paso-4-uso-de-comandos-de-ansible-sencillos">Paso 4: uso de comandos de Ansible sencillos</h2>
+
+<p>Ahora que tenemos nuestros hosts configurados y contamos con suficientes detalles de configuración para poder conectar correctamente con nuestros hosts, podemos probar nuestro primer comando.</p>
+
+<p>Haga ping a todos los servidores que configuró escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible -m ping all
+</li></ul></code></pre><div class="code-label " title="Ping output">Ping output</div><pre class="code-pre "><code langs="">host1 | SUCCESS =&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+
+host3 | SUCCESS =&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+
+host2 | SUCCESS =&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+</code></pre>
+<p>Esta es una prueba básica para garantizar que Ansible pueda conectarse con todos sus hosts.</p>
+
+<p>Aquí, <code>all</code> significa todos los hosts. Podríamos especificar un grupo con la misma facilidad:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible -m ping servers
+</li></ul></code></pre>
+<p>También podríamos especificar un host individual:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible -m ping host1
+</li></ul></code></pre>
+<p>Podemos especificar múltiples hosts separándolos con comas:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible -m ping host1:host2
+</li></ul></code></pre>
+<p>La parte de <code>-m ping</code> del comando es una instrucción que le indica a Ansible que utilice el módulo &ldquo;ping&rdquo;. Estos son, básicamente, comandos que puede ejecutar en sus hosts remotos. El módulo ping funciona, en muchos aspectos, como una herramienta de <code>ping</code>normal en Linux, pero, en su lugar, comprueba la conectividad de Ansible.</p>
+
+<p>El módulo ping, en realidad, no toma ningún argumento, pero podemos probar otro comando para ver cómo funciona. Pasamos los argumentos a una secuencia de comandos  escribiendo <code>-a.</code></p>
+
+<p>El módulo &ldquo;shell&rdquo; nos permite enviar un comando de terminal al host remoto y obtener los resultados. Por ejemplo, para conocer el uso de memoria de nuestra máquina host1, podríamos usar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible -m shell -a 'free -m' host1
+</li></ul></code></pre><div class="code-label " title="Shell output">Shell output</div><pre class="code-pre "><code langs="">host1 | SUCCESS | rc=0 &gt;&gt;
+             total       used       free     shared    buffers     cached
+Mem:          3954        227       3726          0         14         93
+-/+ buffers/cache:        119       3834
+Swap:            0          0          0
+</code></pre>
+<p>Con esto, su servidor de Ansible queda configurado, y podrá comunicarse con sus hosts y controlarlos correctamente.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>En este tutorial, hemos configurado Ansible y verificado que puede comunicarse con cada host. También hemos usado el comando <code>ansible</code>para ejecutar tareas sencillas de forma remota.</p>
+
+<p>Aunque esto es útil, no hemos cubierto la función más potente de Ansible en este artículo: Playbooks. Los playbooks de Ansible son una forma sencilla y potente de administrar configuraciones de servidores e implementaciones con múltiples máquinas. Para ver una introducción a Playbooks, consulte <a href="https://www.digitalocean.com/community/tutorials/configuration-management-101-writing-ansible-playbooks">esta guía</a>. Además, lo animamos a consultar la <a href="https://docs.ansible.com/ansible/latest/index.html">documentación oficial de Ansible</a> para obtener más información sobre la herramienta.</p>

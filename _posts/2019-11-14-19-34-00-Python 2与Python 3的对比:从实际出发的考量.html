@@ -1,0 +1,125 @@
+---
+layout: post
+title: Python 2与Python 3的对比:从实际出发的考量
+network: digitalocean
+date: November 14, 2019 at 07:34PM
+url: https://www.digitalocean.com/community/tutorials/python-2-python-3-zh
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="简介">简介</h3>
+
+<p>Python是可读性很强，并且用途极其多样的编程语言。它的名字是从英国的喜剧团体“Monty Python”受到启发，因此“让Python语言用起来很有趣”对于Python开发团队来说是非常重要的核心目标。易于安装配置、代码风格相对简单直接、有即时的反馈和报错，这些特性让Python成为编程初学者的一个很好选择。</p>
+
+<p>由于Python是一种“多范式”语言-也就是说它支持多种编程样式，包括“脚本”和“面向对象”，因此非常适用于通用编程，用途广泛。在工业界，Python被诸如United Space Alliance（“美国航天局”主要的航天飞机技术支持承包商）和Industrial Light &amp; Magic（Lucasfilm的特效和动画工作室）这类组织越来越多地使用。拥有Python的基础，将会为学习其他编程语言的人们提供巨大的发展潜力。</p>
+
+<p>Python最初作者是Guido van Rossum（荷兰籍），他现在仍活跃在社区中。Python语言的开发始于20世纪80年代末，并于1991年首次发行。作为ABC编程语言的继任，Python的第一迭代版本中已经包含了异常处理、<a href="https://www.digitalocean.com/community/tutorials/how-to-define-functions-in-python-3">函数</a>、以及<a href="https://www.digitalocean.com/community/tutorials/understanding-inheritance-in-python-3">类与继承</a>。 1994年一个重要的、名为comp.lang.python的“用户网络咨询论坛”成立，此后Python的用户群体蓬勃发展，为Python成为“最受欢迎的开源开发语言”铺平了道路。</p>
+
+<h2 id="概述">概述</h2>
+
+<p>在研究与Python2和Python3相关的潜在用途、以及它们之间的主要编程句法差异之前，让我们先来了解关于Python近年主要发行版的背景知识。</p>
+
+<h3 id="python-2">Python 2</h3>
+
+<p>Python 2于2000年底发布，它实现了PEP（Python Enhancement Proposal，“Python改进提议”），这表明Python 2比早期版本Python有更加透明、包容的语言开发过程。PEP是一个技术规范，可以向Python社区成员提供信息，也可以描述该语言的新特性。</p>
+
+<p>此外，Python 2包含了更多的编程功能，其中包括：周期检测垃圾收集器（用于自动化内存管理）、增加Unicode支持（使字符标准化）、以及“列表解析”（基于现有列表创建列表）。随着Python 2的不断发展，更多的功能加入其中，例如python 2.2版，将Python的类型（types）和类（classes）统一到一个层级结构中。</p>
+
+<h3 id="python-3">Python 3</h3>
+
+<p>Python 3被认为是Python的未来，也是当前正在开发的版本。作为一项重大改革，Python 3发布于2008年末，旨在解决和修正Python语言之前版本中存在的固有设计缺陷。Python 3的开发重点是清理代码库和消除冗余，使一种既定的任务只有一种方法去实现，让语言更加清晰明了。</p>
+
+<p>Python 3.0版中的重大修改包括：把<code>print</code>语句改成一个内置函数、改进整数除法、增加更多的Unicode支持。</p>
+
+<p>起先，Python 3的采纳使用非常缓慢，因为它不向后兼容Python 2，需要人们去决定使用哪个版本。此外，许多第三方库一开始仅支持Python 2。但由于Python 3的开发团队重申强调了对于Python 2的支持即将结束，之后更多的库已移植到了Python 3。通过提供Python 3支持的第三方包的数量，我们可以了解“Python 3被越来越多采用”的这个事实。在这份教程的英文版定稿时，360个最流行的Python包中，有339个已支持Python 3。</p>
+
+<h3 id="python-2-7">Python 2.7</h3>
+
+<p>继2008年Python 3.0发布之后，Python 2.7于2010年7月3日发布，并计划作为2.x版本中的最后一版。Python 2.7存在，是为了让Python 2.x用户更容易将特性移植到Python 3上，因此2.7提供了某种程度的兼容性。这种兼容性支持包括2.7版的增强模块，如支持自动化测试的<code>unittest</code>、用于命令行中句法分析的<code>argparse</code>，以及<code>collections</code>中更方便的类。</p>
+
+<p>由于Python 2.7有着“介于Python 2和Python 3.0早期迭代版之间”的独特地位，它与许多健全的库兼容。因此Python 2.7在程序员中一直是非常流行的选择。当我们今天谈到Python 2时，我们通常指的是Python 2.7（因为它是最常用的版本）。</p>
+
+<p>然而Python2.7被认为是一种将会停止支持的遗留语言，它的持续开发（目前主要是修改bug）将于2020完全停止。</p>
+
+<h2 id="关键区别">关键区别</h2>
+
+<p>尽管Python 2.7和Python 3具有许多类似功能，但它们不应该被认为是可以完全互换的。虽然你可以在任一版本中写出“好代码”和“有用的程序”，但需要了解的是，它们在代码语法和处理上会有相当大的区别。</p>
+
+<p>下面是一些例子，但请记住随着继续学习Python，你可能会遇到更多的语法差异。</p>
+
+<h3 id="打印（print）">打印（Print）</h3>
+
+<p>在Python 2中，<code>print</code>被视为语句而不是函数，这是一个典型的易引起混淆的地方，因为Python中的许多其他操作都需要括号内的参数来执行。如果你想在命令行中用Python 2打印<code>Sammy the Shark is my favorite sea creature</code>，可以使用以下<code>print</code>语句：</p>
+<pre class="code-pre "><code class="code-highlight language-python">print "Sammy the Shark is my favorite sea creature"
+</code></pre>
+<p>现在，在Python 3中<code>print()</code>被明确地定义为一个函数，因此想打印上面相同的字符串，可以使用函数的语法简单容易地执行此操作:</p>
+<pre class="code-pre "><code class="code-highlight language-python">print("Sammy the Shark is my favorite sea creature")
+</code></pre>
+<p>这一变化使得Python的语法更加一致，也更易于在不同的打印函数之间进行更改。<code>print()</code>句法同样向后支持Python 2.7，因此 Python 3的<code>print()</code> 函数可以方便地在任一版本中运行。</p>
+
+<h3 id="整数除法">整数除法</h3>
+
+<p>在Python2中，任何不带小数的数字都被视为<strong>整数</strong>（<strong>integer</strong>）。乍一看这似乎是处理编程类型的一种简单方法，但当整数相除时，有时你希望得到一个带有小数位的答案，被称为<strong>浮点数</strong>(<strong>float</strong>)，比如：</p>
+<pre class="code-pre "><code langs="">5 / 2 = 2.5
+</code></pre>
+<p>然而，在Python 2中整数是强类型，即使在凭直觉应当转换为带小数点的“浮点数”（float）的情况下，也不会转换。</p>
+
+<p>当除法<code>/</code>符号两边的两个数字是整数时，Python 2执行<strong>向下取整</strong>（<strong>floor division</strong>）。因此对于商<code>x</code>，返回的数字是小于或等于<code>x</code>的最大整数。这意味着使用<code>5/2</code>进行这两个数字的除法时，Python 2.7将返回小于或等于2.5的最大整数，在这个例子中为<code>2</code>：</p>
+<pre class="code-pre "><code class="code-highlight language-python">a = 5 / 2
+print a
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>2
+</code></pre>
+<p>若想强制覆盖这种行为，你可以添加小数位<code>5.0/2.0</code>，以获得预期的答案<code>2.5</code>。</p>
+
+<p>在Python 3中, <a href="https://www.digitalocean.com/community/tutorials/how-to-do-math-in-python-3-with-operators#multiplication-and-division">整数除法</a> 变得直观，比如：</p>
+<pre class="code-pre "><code class="code-highlight language-python">a = 5 / 2
+print(a)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>2.5
+</code></pre>
+<p>你依然可以使用<code>5.0 / 2.0</code>去得到<code>2.5</code>，但是如果想向下取整运算，应该使用Python 3的语法<code>//</code>，如下所示：</p>
+<pre class="code-pre "><code class="code-highlight language-python">b = 5 // 2
+print(b)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>2
+</code></pre>
+<p>Python 3中的这个修改使得整数除法更加直观，这个句法<strong>不</strong>向后兼容Python 2.7。</p>
+
+<h3 id="unicode支持">Unicode支持</h3>
+
+<p>当编程语言处理字符串类型 <strong><a href="https://www.digitalocean.com/community/tutorial_series/working-with-strings-in-python-3">字符串</a></strong> （也就是一串字符）时，他们可以用几种不同的方法来实现，这样计算机可以把数字转换成字母和其他符号。</p>
+
+<p>Python 2默认使用ASCII字母表， 因此当你输入 <code>"Hello, Sammy!"</code>时Python 2会将字符串作为ASCII进行处理。ASCII在各种扩展形式中，也最多只有几百个字符。因此ASCII不是一种非常灵活的字符编码方式，尤其是非英语字符。</p>
+
+<p>若是想使用更加通用和健全的Unicode字符编码（它支持超过128000个字符，跨越当代和历史上的各类脚本和符号集），你必须键入<code>u"Hello, Sammy!"</code>，其中<code>u</code>前缀表示Unicode。</p>
+
+<p>Python 3默认使用Unicode，这为程序员节省了额外的开发时间。而且你可以轻松地在程序中直接输入和显示更多字符。Unicode支持更大的语言字符多样性，以及emojis（表情符号）的显示。因此使用它作为默认字符编码，可以确保你的开发项目能无缝支持世界各地的移动设备。</p>
+
+<p>不过若希望你的Python 3代码向后兼容Python 2，你可你以在字符串之前保留<code>u</code>。</p>
+
+<h3 id="持续发展">持续发展</h3>
+
+<p>Python 3和Python 2之间最大的区别不是语法，而是Python 2.7将在2020年失去后续支持，但Python 3将持续发展更多的功能特性，以及持续修复Bug。</p>
+
+<p>Python 3最近的发展包括<a href="https://www.digitalocean.com/community/tutorials/how-to-use-string-formatters-in-python-3">格式化字符串文本</a>，更简单地定制<a href="https://www.digitalocean.com/community/tutorials/how-to-construct-classes-and-define-objects-in-python-3">类的创建</a>，以及更简洁的处理矩阵乘法的语法。</p>
+
+<p>Python 3的持续发展意味着程序员可以确信：Python 3语言中的问题会及时得到修复，并且功能会随着时间的推移而增加，程序的效率会变得更高。</p>
+
+<h2 id="需要考虑的其他要点">需要考虑的其他要点</h2>
+
+<p>作为一个用Python入门的新手程序员，或者不熟悉Python的有经验程序员，你需要考虑：想在Python学习中实现什么。</p>
+
+<p>如果只是想在“不考虑既定项目”的情况下学习，那么你应该优先考量：Python 3将继续得到支持和开发，而Python 2.7不会。</p>
+
+<p>但如果你正计划加入现有项目，你应当看看:团队使用的Python版本、不同的版本如何与老代码库进行交互、项目使用的包是否被不同的版本支持、以及项目的实现细节。 </p>
+
+<p>如果你打算开始一个新的项目，那么应该研究哪些包可以使用，这些包与哪个版本的Python兼容。如上所述，尽管早期版本的Python 3与那些“为Python 2构建的库”兼容性较低，但许多版本已经移植到、或是承诺在未来四年内移植到Python 3。</p>
+
+<h2 id="总结">总结</h2>
+
+<p>Python是一种用途广泛、文档齐全的编程语言，无论选择使用Python 2还是Python 3，你都可以写令人兴奋的软件项目。</p>
+
+<p>尽管有几处重要不同，但是只要稍加调整，从Python 3迁移到Python 2并不太难。并且你常会发现python 2.7可以轻松运行python 3的代码，特别是在你刚开始学习时。你可以通过阅读这个教程，去了解更多信息<a href="https://www.digitalocean.com/community/tutorials/how-to-port-python-2-code-to-python-3">如何将Python 2代码移植到Python 3</a>.</p>
+
+<p>需要记住，随着更多的开发人员和社区关注于Python 3，它将变得更加精炼，并符合程序员不断发展的需求。而对于Python 2.7的支持将会逐渐减少。</p>

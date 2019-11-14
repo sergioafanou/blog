@@ -1,0 +1,255 @@
+---
+layout: post
+title: Como Transferir Spaces da DigitalOcean Entre Regiões Usando o Rclone
+network: digitalocean
+date: November 14, 2019 at 06:55PM
+url: https://www.digitalocean.com/community/tutorials/como-transferir-spaces-da-digitalocean-entre-regioes-usando-o-rclone-pt
+image: https://assets.digitalocean.com/articles/spaces-sync/endpoint.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://www.digitalocean.com/products/spaces/">DigitalOcean Spaces</a> é um serviço de armazenamento de objetos projetado para facilitar e reduzir o custo de armazenar e servir grandes quantidades de dados.</p>
+
+<p>Neste guia, abordaremos como migrar dados entre regiões do Spaces, usando o <a href="https://rclone.org/">Rclone</a> para transferir dados entre dois Spaces. Demonstraremos como instalar o Rclone, as definições de configuração necessárias para acessar várias regiões e os comandos que você pode usar para sincronizar seus arquivos entre regiões e verificar sua integridade.</p>
+
+<h2 id="criando-chaves-de-api-e-localizando-informações-de-endpoint-do-spaces">Criando Chaves de API e Localizando Informações de Endpoint do Spaces</h2>
+
+<p>Antes de começarmos a instalar e configurar o Rclone para copiar nossos objetos entre os Spaces, precisaremos de algumas informações sobre nossa conta no DigitalOcean Spaces. Vamos precisar de uma chave da API do Spaces e precisamos conhecer as regiões e os nomes dos nossos Spaces de origem e destino.</p>
+
+<h3 id="gerando-uma-chave-de-api-do-digitalocean-spaces">Gerando uma Chave de API do DigitalOcean Spaces</h3>
+
+<p>Para criar uma chave de API do DigitalOcean Spaces, siga a seção &ldquo;Creating an Access Key&rdquo; de nossa documentação em <a href="https://www.digitalocean.com/docs/spaces/how-to/administrative-access/#access-keys">How To Create a DigitalOcean Space API Key</a>.</p>
+
+<p>Salve o ID da chave de acesso e a chave secreta. Nós os usaremos posteriormente para configurar o Rclone para acessar nossa conta.</p>
+
+<h3 id="localizando-o-endpoint-compatível-com-s3-do-spaces">Localizando o Endpoint Compatível com S3 do Spaces</h3>
+
+<p>Em seguida, precisamos encontrar o endpoint para cada Space. Você pode visualizar o endpoint do Space no Painel de controle da DigitalOcean, selecionando o Space e visualizando a guia <strong>Settings</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/spaces-sync/endpoint.png" alt="DigitalOcean Spaces endpoint"></p>
+
+<p>O endpoint sempre estará na região em que você criou o Space, seguido por <code>.digitaloceanspaces.com</code>. Anote o endpoint para ambos os seus Spaces. Usaremos essas informações ao criar nossa configuração <code>rclone</code>.</p>
+
+<h2 id="instalando-o-rclone">Instalando o Rclone</h2>
+
+<p>Agora você está pronto para instalar o <a href="https://rclone.org/">Rclone</a>. Você pode fazer isso na sua máquina local ou – se a largura de banda estiver limitada – você poderá instalar o Rclone em um Droplet localizado na região do Spaces de origem ou de destino.</p>
+
+<p>Visite a seção de <a href="https://rclone.org/downloads/">Downloads</a> do site do projeto para encontrar binários do utilitário compilado para diferentes plataformas. Para começar, baixe o binário compactado que corresponde ao sistema operacional do seu computador.</p>
+
+<p>Depois de baixar o arquivo zip do Rclone para o seu computador, siga a seção abaixo que corresponda à sua plataforma.</p>
+
+<h3 id="linux">Linux</h3>
+
+<p>Antes de podermos extrair o arquivo, precisamos garantir que o utilitário <code>unzip</code> esteja disponível.</p>
+
+<p>Se você estiver executando o <strong>Ubuntu</strong> ou o <strong>Debian</strong>, você pode atualizar o índice local de pacotes e instalar o <code>unzip</code> digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install unzip
+</li></ul></code></pre>
+<p>Se você estiver usando <strong>CentOS</strong> ou <strong>Fedora</strong>, você pode instalar o <code>unzip</code> digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install unzip
+</li></ul></code></pre>
+<p>Com o <code>unzip</code> instalado, navegue até o diretório onde você baixou o arquivo zip do <code>rclone</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">~/Downloads</span>
+</li></ul></code></pre>
+<p>Em seguida, descompacte o arquivo e vá para o diretório recém-criado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">unzip rclone*
+</li><li class="line" prefix="$">cd rclone-v*
+</li></ul></code></pre>
+<p>A partir daqui, podemos copiar o binário no diretório <code>/usr/local/bin</code> para que ele esteja disponível em todo o sistema:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp rclone /usr/local/bin
+</li></ul></code></pre>
+<p>Em seguida, adicionamos a página de manual ao nosso sistema, para que possamos obter facilmente ajuda na sintaxe de comando e nas opções disponíveis. Verifique se o diretório local de manual está disponível e copie o arquivo <code>rclone.1</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -p /usr/local/share/man/man1
+</li><li class="line" prefix="$">sudo cp rclone.1 /usr/local/share/man/man1
+</li></ul></code></pre>
+<p>Atualize o banco de dados <code>man</code> para adicionar a nova página de manual ao sistema:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mandb
+</li></ul></code></pre>
+<p>Por fim, podemos criar o diretório .config do Rclone e abrir um arquivo de configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/.config/rclone
+</li><li class="line" prefix="$">nano ~/.config/rclone/rclone.conf
+</li></ul></code></pre>
+<p>Isso abrirá seu editor de texto com um novo arquivo em branco. Avance para a seção <a href="#configuring-rclone">Configurando o Rclone</a> para prosseguir.</p>
+
+<h3 id="macos">macOS</h3>
+
+<p>Se você estiver executando o macOS, comece navegando no terminal até o diretório em que você baixou o arquivo zip <code>rclone</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">~/Downloads</span>
+</li></ul></code></pre>
+<p>Em seguida, descompacte o arquivo e vá para o diretório recém-criado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">unzip -a rclone*
+</li><li class="line" prefix="$">cd rclone-v*
+</li></ul></code></pre>
+<p>Depois, certifique-se de que o diretório <code>/usr/local/bin</code> está disponível e então copie o binário <code>rclone</code> para ele: </p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -p /usr/local/bin
+</li><li class="line" prefix="$">sudo cp rclone /usr/local/bin
+</li></ul></code></pre>
+<p>Por fim, podemos criar o diretório .config e abrir um arquivo de configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/.config/rclone
+</li><li class="line" prefix="$">nano ~/.config/rclone/rclone.conf
+</li></ul></code></pre>
+<p>Isso abrirá seu editor de texto com um novo arquivo em branco. Avance para a seção <a href="#configuring-rclone">Configurando o Rclone</a> para prosseguir.</p>
+
+<h3 id="windows">Windows</h3>
+
+<p>Se você estiver executando o Windows, comece navegando até o diretório Downloads no Gerenciador de Arquivos do Windows. Selecione o arquivo zip <code>rclone</code> e clique com o botão direito do mouse. No menu de contexto que aparece, clique em <strong>Extrair tudo&hellip;</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/s3_migration/extract_archive.png" alt="Windows extract rclone zip file"></p>
+
+<p>Siga as instruções para extrair os arquivos do arquivo zip.</p>
+
+<p>O utilitário <code>rclone.exe</code> deve ser executado a partir da linha de comando. Abra uma nova janela <strong>Prompt de Comando</strong> (o programa <code>cmd.exe</code>) clicando no botão Windows no canto inferior esquerdo, digitando <strong>cmd</strong> e selecionando <strong>Prompt de Comando</strong>.</p>
+
+<p>Dentro do prompt, navegue até o caminho do <code>rclone</code> que você extraiu digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="C:\&gt;">cd "%HOMEPATH%\Downloads\rclone*\rclone*"
+</li></ul></code></pre>
+<p>Liste o conteúdo do diretório para verificar se você está no local correto:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="C:\&gt;">dir
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>10/23/2017  01:02 PM    &lt;DIR&gt;          .
+10/23/2017  01:02 PM    &lt;DIR&gt;          ..
+10/23/2017  01:02 PM                17 git-log.txt
+10/23/2017  01:02 PM           296,086 rclone.1
+10/23/2017  01:02 PM        16,840,192 rclone.exe
+10/23/2017  01:02 PM           315,539 README.html
+10/23/2017  01:02 PM           261,497 README.txt
+               5 File(s)     17,713,331 bytes
+               2 Dir(s)  183,296,266,240 bytes free
+</code></pre>
+<p>Você precisará estar neste diretório sempre que quiser usar o comando <code>rclone.exe</code>.</p>
+
+<p><span class='note'><strong>Nota:</strong> No macOS e no Linux, executamos a ferramenta digitando <code>rclone</code>, mas no Windows, o comando é chamado <code>rclone.exe</code>. No restante deste guia, forneceremos comandos como <code>rclone</code>, portanto, certifique-se de substituir o <code>rclone.exe</code> sempre que executar no Windows.<br></span></p>
+
+<p>Em seguida, podemos criar o diretório .config e abrir um arquivo de configuração para definir nossas credenciais do S3 e do Spaces:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="C:\&gt;">mkdir "%HOMEPATH%\.config\rclone"
+</li><li class="line" prefix="C:\&gt;">notepad "%HOMEPATH%\.config\rclone\rclone.conf"
+</li></ul></code></pre>
+<p>Isso abrirá seu editor de texto com um novo arquivo em branco. Continue em frente para aprender como definir suas regiões do Spaces no arquivo de configuração.</p>
+
+<h2 id="configurando-o-rclone">Configurando o Rclone</h2>
+
+<p>Vamos configurar nossas duas regiões do DigitalOcean Spaces como Rclone &ldquo;remotas&rdquo; no arquivo de configuração do Rclone. Cole a seção a seguir no arquivo de configuração para definir a primeira região:</p>
+<div class="code-label " title="~/.config/rclone/rclone.conf">~/.config/rclone/rclone.conf</div><pre class="code-pre "><code class="code-highlight language-ini">[spaces-<span class="highlight">sfo2</span>]
+type = s3
+env_auth = false
+access_key_id = <span class="highlight">access_key_do_seu_spaces</span>
+secret_access_key = <span class="highlight">secret_key_do_seu_spaces</span>
+endpoint = <span class="highlight">sfo2</span>.digitaloceanspaces.com
+acl = private
+</code></pre>
+<p>Aqui, definimos um novo <code>rclone</code> &ldquo;remoto&rdquo; chamado <code>spaces-sfo2</code>. Altere o nome da região para corresponder à região do Spaces que você está configurando.</p>
+
+<p>Definimos o <code>type</code> como <code>s3</code> para que o <code>rclone</code> saiba a maneira apropriada de interagir e gerenciar o recurso de armazenamento remoto. Definiremos as credenciais de acesso do Spaces neste arquivo de configuração, de forma que possamos definir <code>env_auth</code> como <code>false</code>.</p>
+
+<p>A seguir, definimos as variáveis <code>access_key_id</code> e <code>secret_access_key</code> como  access key e secret key do nosso Spaces, respectivamente. Certifique-se de alterar os valores para as credenciais associadas à sua conta.</p>
+
+<p>Definimos o <code>endpoint</code> como o endpoint do Spaces que vimos anteriormente.</p>
+
+<p>Finalmente, definimos o <code>acl</code> como <code>private</code> para proteger nossos ativos até que desejemos compartilhá-los.</p>
+
+<p>Em seguida, faça uma duplicata do bloco de configuração que você acabou de criar, então atualize o nome e a região do endpoint para refletir sua segunda região:</p>
+<div class="code-label " title="~/.config/rclone/rclone.conf">~/.config/rclone/rclone.conf</div><pre class="code-pre "><code class="code-highlight language-ini">. . .
+
+[spaces-<span class="highlight">nyc3</span>]
+type = s3
+env_auth = false
+access_key_id = <span class="highlight">access_key_do_seu_spaces</span>
+secret_access_key = <span class="highlight">secret_key_do_seu_spaces</span>
+endpoint = <span class="highlight">nyc3</span>.digitaloceanspaces.com
+acl = private
+</code></pre>
+<p>O restante da configuração deve permanecer o mesmo que para a primeira região. Salve e feche o arquivo quando terminar.</p>
+
+<p>No macOS e no Linux, certifique-se de bloquear as permissões do arquivo de configuração, pois nossas credenciais estão dentro dele:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod 600 ~/.config/rclone/rclone.conf
+</li></ul></code></pre>
+<p>No Windows, as permissões são negadas a usuários não administrativos, a menos que sejam concedidas explicitamente, portanto, não precisamos ajustar o acesso manualmente.</p>
+
+<p>Em seguida, usaremos o <code>rclone</code> para explorar nossos Spaces e sincronizar dados entre eles.</p>
+
+<h2 id="copiando-objetos-do-s3-para-o-spaces">Copiando Objetos do S3 para o Spaces</h2>
+
+<p>Agora que nossa configuração está completa, estamos prontos para transferir nossos arquivos.</p>
+
+<p>Comece verificando os remotos configurados no <code>rclone</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone listremotes
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>spaces-nyc3:
+spaces-sfo2:
+</code></pre>
+<p>As duas regiões que definimos são exibidas.</p>
+
+<p>Podemos ver os Spaces disponíveis, pedindo ao <code>rclone</code> para listar os &ldquo;diretórios&rdquo; associados aos remotos (certifique-se de adicionar dois pontos ao final do nome do remoto):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone lsd spaces-<span class="highlight">sfo2</span>:
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>          -1 2019-09-23 13:07:54        -1 source-space
+</code></pre>
+<p>A saída acima indica que um Space, chamado <code>source-space</code> foi encontrado na região <code>sfo2</code>.</p>
+
+<p>Você pode repetir o procedimento para visualizar a outra região:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone lsd spaces-<span class="highlight">nyc3</span>:
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>          -1 2019-09-23 13:08:28        -1 destination-space
+</code></pre>
+<p>Para visualizar o conteúdo de um Space, você pode usar o comando <code>tree</code>. Passe o nome remoto, seguido por dois pontos e o nome do &ldquo;diretório&rdquo; que você deseja listar (o nome do Space):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone tree spaces-<span class="highlight">sfo2</span>:<span class="highlight">source-space</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/
+├── Photos
+│   ├── 2019.01.24-23.10.27.png
+│   ├── 2019.01.24-23.11.39.png
+│   ├── 2019.01.24-23.18.00.png
+│   ├── 2019.01.24-23.18.18.png
+│   ├── 2019.01.24-23.18.30.png
+│   ├── 2019.01.24-23.19.32.png
+│   ├── 2019.01.24-23.23.06.png
+│   ├── 2019.01.24-23.23.53.png
+│   ├── 2019.01.24-23.25.14.png
+│   ├── 2019.01.24-23.26.22.png
+│   ├── 2019.01.25-12.43.35.png
+│   ├── 2019.03.13-14.35.34.png
+│   └── 2019.03.13-14.40.52.png
+└── Photos.zip
+
+1 directories, 14 files
+</code></pre>
+<p>Quando estiver pronto, você poderá copiar os arquivos entre os Spaces, digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone sync spaces-<span class="highlight">sfo2</span>:<span class="highlight">source-space</span> spaces-<span class="highlight">nyc3</span>:<span class="highlight">destination-space</span>
+</li></ul></code></pre>
+<p>Assumindo que tudo correu bem, o <code>rclone</code> começará a copiar objetos entre os dois Spaces.</p>
+
+<p><span class='note'><strong>Nota:</strong> Se você não criou anteriormente o Space de destino na região especificada, o <code>rclone</code> tentará criar um para você com o nome dado. Isso vai falhar se o nome fornecido já estiver sendo usado por outra conta ou se o nome não atender aos requisitos de nomenclatura para o DigitalOcean Spaces (somente letras minúsculas, números e traços).<br></span></p>
+
+<p>Quando a transferência estiver concluída, você pode verificar se os objetos foram transferidos visualizando-os com o subcomando <code>tree</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone tree spaces-<span class="highlight">nyc3</span>:<span class="highlight">destination-space</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/
+├── Photos
+│   ├── 2019.01.24-23.10.27.png
+│   ├── 2019.01.24-23.11.39.png
+│   ├── 2019.01.24-23.18.00.png
+│   ├── 2019.01.24-23.18.18.png
+│   ├── 2019.01.24-23.18.30.png
+│   ├── 2019.01.24-23.19.32.png
+│   ├── 2019.01.24-23.23.06.png
+│   ├── 2019.01.24-23.23.53.png
+│   ├── 2019.01.24-23.25.14.png
+│   ├── 2019.01.24-23.26.22.png
+│   ├── 2019.01.25-12.43.35.png
+│   ├── 2019.03.13-14.35.34.png
+│   └── 2019.03.13-14.40.52.png
+└── Photos.zip
+
+1 directories, 14 files
+</code></pre>
+<p>Para uma verificação mais robusta, use o subcomando <code>check</code> para comparar os objetos nas duas regiões:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rclone check spaces-<span class="highlight">sfo2</span>:<span class="highlight">source-space</span> spaces-<span class="highlight">nyc3</span>:<span class="highlight">destination-space</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>2019/09/23 14:29:11 NOTICE: S3 bucket destination-space: 0 differences found
+2019/09/23 14:29:11 NOTICE: S3 bucket destination-space: 14 matching files
+</code></pre>
+<p>Isso irá comparar os valores de hash de cada objeto nos dois remotos. Você pode receber uma mensagem indicando que alguns hashes não podem ser comparados. Nesse caso, você pode executar novamente o comando com a flag <code>--size-only</code> (que compara com base apenas no tamanho do arquivo) ou a flag <code>--download</code> (que baixa cada objeto de ambos os remotos para comparar localmente) para verificar a integridade da transferência.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste guia, abordamos como transferir objetos entre duas regiões do DigitalOcean Spaces. Reunimos credenciais de API e informações de endpoint do serviço Spaces, instalamos e configuramos o utilitário <code>rclone</code> em nosso computador local e, em seguida, copiamos todos os objetos de um Space de origem para um Space de destino.</p>
+
+<p>O cliente <code>rclone</code> pode ser usado para muitas outras tarefas de gerenciamento de armazenamento de objetos, incluindo upload ou download de arquivos, montagem de Spaces no sistema de arquivos local e criação ou exclusão de Spaces adicionais. Confira a página de <code>man</code> para aprender mais sobre as funcionalidades que a ferramenta fornece.</p>

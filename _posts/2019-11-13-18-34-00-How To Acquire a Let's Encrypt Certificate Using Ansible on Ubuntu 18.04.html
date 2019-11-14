@@ -1,0 +1,398 @@
+---
+layout: post
+title: How To Acquire a Let's Encrypt Certificate Using Ansible on Ubuntu 18.04
+network: digitalocean
+date: November 13, 2019 at 06:34PM
+url: https://www.digitalocean.com/community/tutorials/how-to-acquire-a-let-s-encrypt-certificate-using-ansible-on-ubuntu-18-04
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/organizations/electronic-frontier-foundation-inc">Electronic Frontier Foundation</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p>Modern infrastructure management is best done using automated processes and tools. Acquiring a <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a> certificate using the standard <a href="https://certbot.eff.org/about/">Certbot</a> client is quick and easy, but is generally a task that has to be done manually when commissioning servers. This is manageable for an individual server setup, but can become tedious when deploying a larger fleet.</p>
+
+<p>Using a configuration management tool such as <a href="https://www.ansible.com/">Ansible</a> to acquire a certificate makes this task completely automatic and reproducible. If you ever have to rebuild or update your server, you can just run your <a href="https://www.digitalocean.com/community/cheatsheets/how-to-use-ansible-cheat-sheet-guide">Ansible playbook</a>, rather than having to manually carry out the steps again.</p>
+
+<p>In this tutorial, you&rsquo;ll write an Ansible playbook to acquire a Let&rsquo;s Encrypt certificate automatically for an Ansible host machine.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To complete this tutorial, you will need:</p>
+
+<ul>
+<li>Two Ubuntu 18.04 servers set up by following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup with Ubuntu 18.04</a>, including a sudo non-root user.</li>
+</ul>
+
+<p>The first server will be used as your Ansible server, which we will call <strong>Ansible server</strong> throughout this tutorial. This is where Ansible will run to send the commands to the host machine. Alternatively, you can use your local machine or any other machine that has your Ansible inventory configured as your <strong>Ansible server</strong>.</p>
+
+<p>On your <strong>Ansible server</strong>, you&rsquo;ll need:</p>
+
+<ul>
+<li>A correctly configured Ansible installation that is able to connect to your Ansible hosts by following <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-ansible-on-ubuntu-18-04">How To Install and Configure Ansible on Ubuntu 18.04</a>.</li>
+</ul>
+
+<p>The second server will be used as your Ansible host, which we will call the <strong>host machine</strong> throughout this tutorial. This is the machine that you wish to configure and issue certificates on. This machine will also run a web server to serve the certificate issuance validation files.</p>
+
+<p>On your <strong>host machine</strong>, you&rsquo;ll need:</p>
+
+<ul>
+<li><p>A domain name that you are eligible to acquire a TLS certificate for, with the required DNS records configured to point to your Ansible <strong>host machine</strong>. In this particular example, the playbook will acquire a certificate valid for <code><span class="highlight">your-domain</span></code> and <code>www.<span class="highlight">your-domain</span></code>, however it can be adjusted for other domains or subdomains if required.</p></li>
+<li><p>A web server that is accessible from the internet over port <code>80</code> (HTTP), for example by following steps 1, 2, and 3 of <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04">How To Install the Apache Web Server on Ubuntu 18.04</a>. This could also be an Nginx server, or any other suitable web server software.</p></li>
+</ul>
+
+<p>Once you have these ready, log in to your <strong>Ansible server</strong> as your non-root user to begin.</p>
+
+<h2 id="step-1-—-configuring-the-settings-for-the-let-39-s-encrypt-ansible-module">Step 1 — Configuring the Settings for the Let&rsquo;s Encrypt Ansible Module</h2>
+
+<p>Ansible has a built-in module named <code>letsencrypt</code>, which allows you to acquire valid TLS certificates using the ACME (<a href="https://tools.ietf.org/html/rfc8555">Automated Certificate Management Environment</a>) protocol.</p>
+
+<p>In this first step, you will add a host variables configuration file to define the configuration variables that are required to use the module.</p>
+
+<p><span class='note'><strong>Note:</strong> The <code>letsencrypt</code> module has been renamed to <a href="https://docs.ansible.com/ansible/latest/modules/acme_certificate_module.html#acme-certificate-module"><code>acme_certificate</code></a> as of Ansible 2.6. The <code>letsencrypt</code> name is now an alias of <code>acme_certificate</code>, so will still work, but you way wish to use <code>acme_certificate</code> instead, to ensure future-proofness of your playbooks. You can check your Ansible version using <code>ansible --version</code>. As of the writing of this tutorial, the Ubuntu 18.04 Apt repositories don&rsquo;t support <code>acme_certificate</code> yet.<br></span></p>
+
+<p>Firstly, create the <code>host_vars</code> Ansible directory on your <strong>Ansible server</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /etc/ansible/host_vars
+</li></ul></code></pre>
+<p>Next, create a new file in the <code>/etc/ansible/host_vars</code> directory with the name of your <strong>Ansible host</strong> machine. In this example, you&rsquo;ll use <code>host1</code> as the name of the host:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ansible/host_vars/<span class="highlight">host1</span>
+</li></ul></code></pre>
+<p>The following sample configuration includes everything you need to get started, including: the validation method and server address, an email address to receive certificate expiry reminders to, and the directories where your Let&rsquo;s Encrypt keys and certificates will be saved.</p>
+
+<p>Copy the sample configuration into the file:</p>
+<div class="code-label " title="/etc/ansible/host_vars/host1">/etc/ansible/host_vars/host1</div><pre class="code-pre host1"><code langs="">---
+acme_challenge_type: http-01
+acme_directory: https://acme-v02.api.letsencrypt.org/directory
+acme_version: 2
+acme_email: <span class="highlight">certificate-reminders@your-domain</span>
+letsencrypt_dir: /etc/letsencrypt
+letsencrypt_keys_dir: /etc/letsencrypt/keys
+letsencrypt_csrs_dir: /etc/letsencrypt/csrs
+letsencrypt_certs_dir: /etc/letsencrypt/certs
+letsencrypt_account_key: /etc/letsencrypt/account/account.key
+domain_name: <span class="highlight">your-domain</span>
+</code></pre>
+<p>Save and close the file when you&rsquo;ve finished.</p>
+
+<p>Adjust the domain name and email address as required. You can use any email address—it doesn&rsquo;t have to be the one on <code><span class="highlight">your-domain</span></code>.</p>
+
+<p>Some of the directory/file paths defined may not actually exist on your server yet. This is OK; the first part of the playbook will be to create these directories and assign the relevant permissions.</p>
+
+<p>You&rsquo;ve added the required configuration variables to your Ansible inventory file. Next, you will begin writing the playbook to acquire a certificate.</p>
+
+<h2 id="step-2-—-creating-the-let-39-s-encrypt-directories-and-account-key">Step 2 — Creating the Let&rsquo;s Encrypt Directories and Account Key</h2>
+
+<p>In this step, you&rsquo;ll write the Ansible tasks that you&rsquo;ll use to create the required Let&rsquo;s Encrypt directories, assign the correct permissions, and generate a Let&rsquo;s Encrypt account key.</p>
+
+<p>Firstly, create a new playbook named <code>letsencrypt-issue.yml</code> on your <strong>Ansible server</strong> in a new directory of your choice, for example <code>/home/user/ansible-playbooks</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">mkdir <span class="highlight">ansible-playbooks</span>
+</li><li class="line" prefix="$">cd <span class="highlight">ansible-playbooks</span>
+</li><li class="line" prefix="$">nano letsencrypt-issue.yml
+</li></ul></code></pre>
+<p>Before you can start writing Ansible tasks, you&rsquo;ll need to specify the hosts and associated settings. Adjust the following according to how you referred to your hosts in the <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-ansible-on-ubuntu-18-04#step-3-%E2%80%94-setting-up-ansible-hosts">prerequisite tutorial</a>. Then add the following to the top of the file:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">---
+- hosts: "<span class="highlight">host1</span>"
+  tasks:
+</code></pre>
+<p>Now you can begin writing the required tasks, the first of which is to create the file system directories required to store the Let&rsquo;s Encrypt files. Add the following Ansible task to the file after the previous content:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Create required directories in /etc/letsencrypt"
+    file:
+      path: "/etc/letsencrypt/{{ item }}"
+      state: directory
+      owner: root
+      group: root
+      mode: u=rwx,g=x,o=x
+    with_items:
+    - account
+    - certs
+    - csrs
+    - keys
+</code></pre>
+<p>This Ansible task will create the <code>account</code>, <code>certs</code>, <code>csrs</code>, and <code>keys</code> directories in <code>/etc/letsencrypt</code>, which is where the files required for acquiring certificates will be stored.</p>
+
+<p>You set the owner of the directories to <code>root</code> and apply the permissions <code>u=rwx,g=x,o=x</code> so that only <code>root</code> has read and write access to them. This is recommended as the directories will contain private keys, <a href="https://en.wikipedia.org/wiki/Certificate_signing_request">certificate signing requests (CSRs)</a>, and signed certificates, which should be kept confidential.</p>
+
+<p>Next, the Let&rsquo;s Encrypt account key needs to be created. You&rsquo;ll use this to identify yourself to the Let&rsquo;s Encrypt service.</p>
+
+<p>Add the following task to your playbook:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Generate a Let's Encrypt account key"
+    shell: "if [ ! -f {{ letsencrypt_account_key }} ]; then openssl genrsa 4096 | sudo tee {{ letsencrypt_account_key }}; fi"
+</code></pre>
+<p>The account key doesn&rsquo;t need to be re-created every time you renew the certificates, so you also add a check for an existing key <code>if [ ! -f {{ letsencrypt_account_key }} ];</code>, to make sure that it isn&rsquo;t overwritten.</p>
+
+<p>You&rsquo;ll continue to work in <code>letsencrypt-issue.yml</code> in the next step, so don&rsquo;t close this file yet.</p>
+
+<p>You&rsquo;ve created your playbook and set up the initial configuration and tasks in order to prepare for acquiring your Let&rsquo;s Encrypt certificate. Next, you will add further tasks for the private key and CSR generation.</p>
+
+<h2 id="step-3-—-generating-your-private-key-and-certificate-signing-request">Step 3 — Generating Your Private Key and Certificate Signing Request</h2>
+
+<p>In this step, you&rsquo;ll write the playbook tasks to generate the required private key and certificate signing request.</p>
+
+<p>The first task in this section will generate the required private key for your certificate. Add the following to the end of your playbook that you started writing in Step 2:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Generate Let's Encrypt private key"
+    shell: "openssl genrsa 4096 | sudo tee /etc/letsencrypt/keys/{{ domain_name }}.key"
+</code></pre>
+<p>Subdomains on the same domain will all be added to the same certificate through the use of <a href="https://en.wikipedia.org/wiki/Subject_Alternative_Name">Subject Alternate Names (SANs)</a>, so you only need to generate one private key for now.</p>
+
+<p>You&rsquo;ll use the next task to generate a Certificate Signing Request (CSR) for the certificate that you want to acquire. This is submitted to Let&rsquo;s Encrypt in order for them to validate and issue each certificate.</p>
+
+<p>Add the following to the end of the playbook:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Generate Let's Encrypt CSR"
+    shell: "openssl req -new -sha256 -key /etc/letsencrypt/keys/{{ domain_name }}.key -subj \"/CN={{ domain_name }}\" -reqexts SAN -config &lt;(cat /etc/ssl/openssl.cnf &lt;(printf \"\n[SAN]\nsubjectAltName=DNS:{{ domain_name }},DNS:www.{{ domain_name }}\")) | sudo tee /etc/letsencrypt/csrs/{{ domain_name }}.csr"
+    args:
+      executable: /bin/bash
+</code></pre>
+<p>This task generates a CSR for your domain, with the <code>www</code> subdomain added to the certificate as a SAN.</p>
+
+<p>You&rsquo;ll continue to work in <code>letsencrypt-issue.yml</code> in the next step, so don&rsquo;t close this file yet.</p>
+
+<p>You&rsquo;ve written the Ansible tasks to generate the private key and CSR for your certificate. Next, you&rsquo;ll work on the tasks that will begin the validation and issuance process.</p>
+
+<h2 id="step-4-—-starting-the-acme-validation-process">Step 4 — Starting the ACME Validation Process</h2>
+
+<p>In this step, you&rsquo;ll write a task to submit the Certificate Signing Request to Let&rsquo;s Encrypt using the outputted files from the task documented in Step 3. This will return some <code>challenge</code> files, which you&rsquo;ll need to serve on your web server in order to prove ownership of the domain name and subdomain for which you&rsquo;re requesting a certificate.</p>
+
+<p>The following task will submit the CSR for <code><span class="highlight">your-domain</span></code>. Add it to the end of your playbook:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Begin Let's Encrypt challenges"
+    letsencrypt:
+      acme_directory: "{{ acme_directory }}"
+      acme_version: "{{ acme_version }}"
+      account_key_src: "{{ letsencrypt_account_key }}"
+      account_email: "{{ acme_email }}"
+      terms_agreed: 1
+      challenge: "{{ acme_challenge_type }}"
+      csr: "{{ letsencrypt_csrs_dir }}/{{ domain_name }}.csr"
+      dest: "{{ letsencrypt_certs_dir }}/{{ domain_name }}.crt"
+      fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ domain_name }}.crt"
+      remaining_days: 91
+    register: acme_challenge_<span class="highlight">your_domain</span>
+</code></pre>
+<p>This task makes wide usage of the variables that you configured in Step 1. It registers a variable containing the ACME challenge files that you&rsquo;ll use in the next step. You&rsquo;ll need to manually adjust the name of the variable to contain <code><span class="highlight">your-domain</span></code>, but with all <code>.</code> characters replaced with a <code>_</code>, as dots cannot be used in a variable name. For example, the variable for <code>example.com</code> would become <code>acme_challenge_example_com</code>.</p>
+
+<p>You&rsquo;ll continue to work in <code>letsencrypt-issue.yml</code> in the next step, so don&rsquo;t close this file yet.</p>
+
+<p>You&rsquo;ve written a task to submit your CSR to Let&rsquo;s Encrypt. Next, you will add a task to implement the ACME challenge files for finalization of the certificate validation process.</p>
+
+<h2 id="step-5-—-implementing-the-acme-challenge-files">Step 5 — Implementing the ACME Challenge Files</h2>
+
+<p>In this step, you will write an Ansible task to read and implement the ACME challenge files. These files prove that you&rsquo;re eligible to acquire a certificate for the requested domains and subdomains.</p>
+
+<p>The <a href="https://letsencrypt.org/docs/challenge-types/">ACME challenge files</a> must be served on a web server listening on port <code>80</code>, at the <code>/.well-known/acme-challenge/</code> path for the domain or subdomain that you&rsquo;re requesting a certificate for. For example, in order to validate the certificate request for <code>www.<span class="highlight">your-domain</span></code>, the ACME challenge file will need to be accessible over the internet at the following path: <code>http://www.<span class="highlight">your-domain</span>/.well-known/acme-challenge</code>.</p>
+
+<p>The method for serving these files at the required destinations will vary significantly depending on your current web server setup. However, in this guide, we will assume that you have a web server (as per the prerequisite tutorial) configured to serve files out of the <code>/var/www/html</code> directory. Therefore you may need to adjust the task accordingly in order to be compatible with your own web server setup.</p>
+
+<p>Firstly, add the following task that creates the <code>.well-known/acme-challenge/</code> directory structure required to serve the files to the end of your playbook:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Create .well-known/acme-challenge directory"
+    file:
+      path: <span class="highlight">/var/www/html</span>/.well-known/acme-challenge
+      state: directory
+      owner: root
+      group: root
+      mode: u=rwx,g=rx,o=rx
+</code></pre>
+<p>Make sure to adjust the path accordingly if you are using a directory other than <code>/var/www/html</code> to serve files with your web server.</p>
+
+<p>Next, you&rsquo;ll implement the ACME challenge files that were saved into the <code>acme_challenge_<span class="highlight">your-domain</span></code> variable in Step 4 with the following task:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Implement http-01 challenge files"
+    copy:
+      content: "{{ acme_challenge_<span class="highlight">your_domain</span>['challenge_data'][item]['http-01']['resource_value'] }}"
+      dest: "/var/www/html/{{ acme_challenge_<span class="highlight">your_domain</span>['challenge_data'][item]['http-01']['resource'] }}"
+      owner: root
+      group: root
+      mode: u=rw,g=r,o=r
+    with_items:
+    - "{{ domain_name }}"
+    - "www.{{ domain_name }}"
+</code></pre>
+<p>Note that you need to manually adjust the <code>acme_challenge_<span class="highlight">your_domain</span></code> variable name in the task to be set to the name of your ACME challenge variable, which is <code>acme_challenge_</code> followed by your domain name, but with all <code>.</code> characters replaced with <code>_</code>. This Ansible task copies the ACME validation files from the variable into the <code>.well-known/acme-challenge</code> path on your web server. This will allow Let&rsquo;s Encrypt to retrieve them in order to verify the ownership of the domain and your eligibility to acquire a certificate.</p>
+
+<p>You&rsquo;ll continue to work in <code>letsencrypt-issue.yml</code> in the next step, so don&rsquo;t close this file yet.</p>
+
+<p>You&rsquo;ve written the Ansible tasks required to create the ACME validation directory and files. Next, you will complete the ACME verification process and acquire the signed certificate.</p>
+
+<h2 id="step-6-—-acquiring-your-certificate">Step 6 — Acquiring Your Certificate</h2>
+
+<p>In this step, you&rsquo;ll write a task to trigger Let&rsquo;s Encrypt to verify the ACME challenge files that you submitted, which will allow you to acquire your signed certificate(s).</p>
+
+<p>The following task validates the ACME challenge files that you implemented in Step 5 and saves your signed certificates to the specified paths. Add it to the end of your playbook:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">...
+  - name: "Complete Let's Encrypt challenges"
+    letsencrypt:
+      acme_directory: "{{ acme_directory }}"
+      acme_version: "{{ acme_version }}"
+      account_key_src: "{{ letsencrypt_account_key }}"
+      account_email: "{{ acme_email }}"
+      challenge: "{{ acme_challenge_type }}"
+      csr: "{{ letsencrypt_csrs_dir }}/{{ domain_name }}.csr"
+      dest: "{{ letsencrypt_certs_dir }}/{{ domain_name }}.crt"
+      chain_dest: "{{ letsencrypt_certs_dir }}/chain_{{ domain_name }}.crt"
+      fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ domain_name }}"
+      data: "{{ acme_challenge_<span class="highlight">your_domain</span> }}"
+</code></pre>
+<p>Similarly to Step 4, this task makes use of the variables that you configured in Step 1. Once the task has completed, it will save the signed certificate to the specified paths, allowing you to begin using it for your application or service.</p>
+
+<p>Note that you&rsquo;ll need to manually adjust the <code>data</code> value in the task to be set to the name of your ACME challenge variable, similarly to Step 5.</p>
+
+<p>Following is the full playbook showing each of the tasks you&rsquo;ve added:</p>
+<div class="code-label " title="letsencrypt-issue.yml">letsencrypt-issue.yml</div><pre class="code-pre letsencrypt-issue.yml"><code langs="">- hosts: "<span class="highlight">host1</span>"
+  tasks:
+
+  - name: "Create required directories in /etc/letsencrypt"
+    file:
+      path: "/etc/letsencrypt/{{ item }}"
+      state: directory
+      owner: root
+      group: root
+      mode: u=rwx,g=x,o=x
+    with_items:
+    - account
+    - certs
+    - csrs
+    - keys
+
+  - name: "Generate a Let's Encrypt account key"
+    shell: "if [ ! -f {{ letsencrypt_account_key }} ]; then openssl genrsa 4096 | sudo tee {{ letsencrypt_account_key }}; fi"
+
+  - name: "Generate Let's Encrypt private key"
+    shell: "openssl genrsa 4096 | sudo tee /etc/letsencrypt/keys/{{ domain_name }}.key"
+
+  - name: "Generate Let's Encrypt CSR"
+    shell: "openssl req -new -sha256 -key /etc/letsencrypt/keys/{{ domain_name }}.key -subj \"/CN={{ domain_name }}\" -reqexts SAN -config &lt;(cat /etc/ssl/openssl.cnf &lt;(printf \"\n[SAN]\nsubjectAltName=DNS:{{ domain_name }},DNS:www.{{ domain_name }}\")) | sudo tee /etc/letsencrypt/csrs/{{ domain_name }}.csr"
+    args:
+      executable: /bin/bash
+
+  - name: "Begin Let's Encrypt challenges"
+    letsencrypt:
+      acme_directory: "{{ acme_directory }}"
+      acme_version: "{{ acme_version }}"
+      account_key_src: "{{ letsencrypt_account_key }}"
+      account_email: "{{ acme_email }}"
+      terms_agreed: 1
+      challenge: "{{ acme_challenge_type }}"
+      csr: "{{ letsencrypt_csrs_dir }}/{{ domain_name }}.csr"
+      dest: "{{ letsencrypt_certs_dir }}/{{ domain_name }}.crt"
+      fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ domain_name }}.crt"
+      remaining_days: 91
+    register: acme_challenge_<span class="highlight">your_domain</span>
+
+  - name: "Create .well-known/acme-challenge directory"
+    file:
+      path: <span class="highlight">/var/www/html</span>/.well-known/acme-challenge
+      state: directory
+      owner: root
+      group: root
+      mode: u=rwx,g=rx,o=rx
+
+  - name: "Implement http-01 challenge files"
+    copy:
+      content: "{{ acme_challenge_<span class="highlight">your_domain</span>['challenge_data'][item]['http-01']['resource_value'] }}"
+      dest: "/var/www/html/{{ acme_challenge_<span class="highlight">your_domain</span>['challenge_data'][item]['http-01']['resource'] }}"
+      owner: root
+      group: root
+      mode: u=rw,g=r,o=r
+    with_items:
+    - "{{ domain_name }}"
+    - "www.{{ domain_name }}"
+
+  - name: "Complete Let's Encrypt challenges"
+    letsencrypt:
+      acme_directory: "{{ acme_directory }}"
+      acme_version: "{{ acme_version }}"
+      account_key_src: "{{ letsencrypt_account_key }}"
+      account_email: "{{ acme_email }}"
+      challenge: "{{ acme_challenge_type }}"
+      csr: "{{ letsencrypt_csrs_dir }}/{{ domain_name }}.csr"
+      dest: "{{ letsencrypt_certs_dir }}/{{ domain_name }}.crt"
+      chain_dest: "{{ letsencrypt_certs_dir }}/chain_{{ domain_name }}.crt"
+      fullchain_dest: "{{ letsencrypt_certs_dir }}/fullchain_{{ domain_name }}"
+      data: "{{ acme_challenge_<span class="highlight">your_domain</span> }}"
+</code></pre>
+<p>Save and close your file when you&rsquo;re finished.</p>
+
+<p>You&rsquo;ve added the task to complete the ACME challenges and acquire your signed certificate. Next, you&rsquo;ll run the playbook against your Ansible <strong>host machine</strong> in order to run all of the actions.</p>
+
+<h2 id="step-7-—-running-your-playbook">Step 7 — Running Your Playbook</h2>
+
+<p>Now that you&rsquo;ve written the playbook and all of the required tasks, you can run it against your Ansible <strong>host machine</strong> to issue the certificate.</p>
+
+<p>From your <strong>Ansible server</strong>, you can run the playbook using the <code>ansible-playbook</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible-playbook letsencrypt-issue.yml
+</li></ul></code></pre>
+<p>This will run the playbook, one task at a time. You&rsquo;ll see output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>PLAY [host1] **********************************************************************************
+
+TASK [Gathering Facts] ************************************************************************
+ok: [host1]
+
+TASK [Create required directories in /etc/letsencrypt] ****************************************
+changed: [host1] =&gt; (item=account)
+changed: [host1] =&gt; (item=certs)
+changed: [host1] =&gt; (item=csrs)
+changed: [host1] =&gt; (item=keys)
+
+TASK [Generate a Let's Encrypt account key] ***************************************************
+changed: [host1]
+
+TASK [Generate Let's Encrypt private key] *****************************************************
+changed: [host1]
+
+TASK [Generate Let's Encrypt CSR] *************************************************************
+changed: [host1]
+
+TASK [Begin Let's Encrypt challenges] *********************************************************
+changed: [host1]
+
+TASK [Create .well-known/acme-challenge directory] ********************************************
+changed: [host1]
+
+TASK [Implement http-01 challenge files] ******************************************************
+changed: [host1] =&gt; (item=<span class="highlight">your-domain</span>)
+changed: [host1] =&gt; (item=www.<span class="highlight">your-domain</span>)
+
+TASK [Complete Let's Encrypt challenges] ******************************************************
+changed: [host1]
+
+PLAY RECAP ************************************************************************************
+host1                      : ok=9    changed=8    unreachable=0    failed=0
+</code></pre>
+<p>If any errors are encountered while the playbook is running, these will be outputted for your review.</p>
+
+<p>Once the playbook has finished, your valid Let&rsquo;s Encrypt certificate will be saved to the <code>/etc/letsencrypt/certs</code> directory on your <strong>host machine</strong>. You can then use this, along with the private key in <code>/etc/letsencrypt/keys</code>, to secure connections to your web server, mail server, etc.</p>
+
+<p>Let&rsquo;s Encrypt certificates are valid for 90 days by default. You will receive renewal reminders via email to the address that you specified in Step 1. To renew your certificate, you can run the playbook again. Make sure to double check that any services using your certificate have picked up the new one, as sometimes you may need to manually install it, move it to a particular directory, or restart the service for it to properly adopt the new certificate.</p>
+
+<p>In this step, you ran your playbook which issued your valid Let&rsquo;s Encrypt certificate.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this article you wrote an Ansible playbook to request and acquire a valid Let&rsquo;s Encrypt certificate.</p>
+
+<p>As a next step, you can look into using your new playbook to issue certificates for a large fleet of servers. You could even create a central ACME validation server that can issue certificates centrally and distribute them out to web servers.</p>
+
+<p>Finally, if you&rsquo;d like to learn more about the ACME specification and Let&rsquo;s Encrypt project, you may wish to review the following links:</p>
+
+<ul>
+<li><p><a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a> website and documentation.</p></li>
+<li><p><a href="https://docs.ansible.com/ansible/latest/modules/acme_certificate_module.html">Ansible acme_certificate Module</a>.</p></li>
+<li><p><a href="https://tools.ietf.org/html/rfc8555">RFC8555 - Automated Certificate Management Environment (ACME)</a>.</p></li>
+</ul>
+
+<p>You may also like to view some other relevant Ansible tutorials:</p>
+
+<ul>
+<li><p><a href="https://www.digitalocean.com/community/tutorials/how-to-use-ansible-cheat-sheet-guide">How To Use Ansible: A Reference Guide</a>.</p></li>
+<li><p><a href="https://www.digitalocean.com/community/tutorials/how-to-automate-server-setup-with-ansible-on-ubuntu-18-04">How To Automate Server Setup with Ansible on Ubuntu 18.04</a>.</p></li>
+<li><p><a href="https://www.digitalocean.com/community/tutorials/how-to-use-vault-to-protect-sensitive-ansible-data-on-ubuntu-16-04">How To Use Vault to Protect Sensitive Ansible Data on Ubuntu 16.04</a>.</p></li>
+</ul>

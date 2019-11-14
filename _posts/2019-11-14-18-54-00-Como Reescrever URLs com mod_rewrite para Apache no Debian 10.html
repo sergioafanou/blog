@@ -1,0 +1,205 @@
+---
+layout: post
+title: Como Reescrever URLs com mod_rewrite para Apache no Debian 10
+network: digitalocean
+date: November 14, 2019 at 06:54PM
+url: https://www.digitalocean.com/community/tutorials/como-reescrever-urls-com-mod_rewrite-para-apache-no-debian-10-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O módulo <code>mod_rewrite</code> do Apache permite reescrever URLs de uma maneira mais limpa, traduzindo caminhos legíveis por humanos em strings de consulta ou <em>query strings</em> amigáveis ao código. Também permite reescrever URLs com base em condições.</p>
+
+<p>Um arquivo <code>.htaccess</code> lhe permite criar e aplicar regras de reescrita sem acessar os arquivos de configuração do servidor. Ao colocar o arquivo <code>.htaccess</code> na raiz do seu site, você pode gerenciar as reescritas por site ou por diretório.</p>
+
+<p>Neste tutorial, você habilitará o <code>mod_rewrite</code> e usará arquivos <code>.htaccess</code> para criar um redirecionamento básico de URL e depois explorar alguns casos de uso avançados.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para seguir este tutorial, você precisará de:</p>
+
+<ul>
+<li><p>Um servidor Debian 10 configurado seguindo o tutorial <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Debian 10 initial server setup guide</a>, incluindo um usuário sudo não-root e um firewall.</p></li>
+<li><p>O Apache instalado seguindo os Passos 1 e 2 do tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-debian-10">How To Install the Apache Web Server on Debian 10</a>.</p></li>
+</ul>
+
+<h2 id="passo-1-—-ativando-o-mod_rewrite">Passo 1 — Ativando o mod_rewrite</h2>
+
+<p>Para que o Apache entenda as regras de reescrita, primeiro precisamos ativar o <code>mod_rewrite</code>. Ele já está instalado, mas está desativado em uma instalação padrão do Apache. Use o comando <code>a2enmod</code> para ativar o módulo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod rewrite
+</li></ul></code></pre>
+<p>Isso ativará o módulo ou o alertará que o módulo já está ativado. Para colocar essas alterações em vigor, reinicie o Apache:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>O <code>mod_rewrite</code> está agora totalmente ativado. Na próxima etapa, configuraremos um arquivo <code>.htaccess</code> que usaremos para definir regras de reescrita para redirecionamentos.</p>
+
+<h2 id="passo-2-—-configurando-o-htaccess">Passo 2 — Configurando o .htaccess</h2>
+
+<p>Um arquivo <code>.htaccess</code> nos permite modificar nossas regras de reescrita sem acessar os arquivos de configuração do servidor. Por esse motivo, o <code>.htaccess</code> é fundamental para a segurança de sua aplicação web. O ponto que precede o nome do arquivo garante que o mesmo esteja oculto.</p>
+
+<span class='note'><p>
+<strong>Nota:</strong> Quaisquer regras que você possa colocar em um arquivo <code>.htaccess</code> também podem ser colocadas diretamente nos arquivos de configuração do servidor. De fato, a <a href="http://httpd.apache.org/docs/2.4/howto/htaccess.html">documentação oficial do Apache</a> recomenda o uso de arquivos de configuração do servidor em vez do <code>.htaccess</code>, devido aos tempos de processamento mais rápidos.</p>
+
+<p>No entanto, neste exemplo simples, o aumento de desempenho será desprezível. Além disso, definir regras no <code>.htaccess</code> é conveniente, especialmente com vários sites no mesmo servidor. Não é necessário reiniciar o servidor para que as alterações tenham efeito ou privilégios de root para editar regras, simplificando a manutenção e o processo de fazer alterações com uma conta sem privilégios. Softwares open-source populares como Wordpress e Joomla contam com arquivos <code>.htaccess</code> para fazer modificações e regras adicionais sob demanda.<br></p></span>
+
+<p>Antes de começar a usar arquivos <code>.htaccess</code>, você precisará configurar e proteger mais algumas configurações.</p>
+
+<p>Por padrão, o Apache proíbe o uso de um arquivo <code>.htaccess</code> para aplicar regras de reescrita, portanto, primeiro você precisa permitir alterações no arquivo. Abra o arquivo de configuração padrão do Apache usando <code>nano</code> ou seu editor de texto favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/000-default.conf
+</li></ul></code></pre>
+<p>Dentro desse arquivo, você encontrará um bloco <code>&lt;VirtualHost *:80&gt;</code> iniciando na primeira linha. Dentro desse bloco, adicione o novo bloco a seguir para que seu arquivo de configuração se pareça com o seguinte. Verifique se todos os blocos estão identados corretamente:</p>
+<div class="code-label " title="/etc/apache2/sites-available/000-default.conf">/etc/apache2/sites-available/000-default.conf</div><pre class="code-pre "><code langs="">&lt;VirtualHost *:80&gt;
+    <span class="highlight">&lt;Directory /var/www/html&gt;</span>
+        <span class="highlight">Options Indexes FollowSymLinks</span>
+        <span class="highlight">AllowOverride All</span>
+        <span class="highlight">Require all granted</span>
+    <span class="highlight">&lt;/Directory&gt;</span>
+
+    . . .
+&lt;/VirtualHost&gt;
+</code></pre>
+<p>Salve e feche o arquivo. Se você usou o <code>nano</code>, faça isso pressionando <code>CTRL+X</code>, <code>Y</code> e, em seguida, <code>ENTER</code>.</p>
+
+<p>Em seguida, verifique sua configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>Se não houver erros, reinicie o Apache para efetivar suas alterações:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>Agora, crie um arquivo <code>.htaccess</code> na raiz dos arquivos web, também chamado de web root:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/.htaccess
+</li></ul></code></pre>
+<p>Adicione esta linha na parte superior do novo arquivo para ativar o mecanismo de reescrita.</p>
+<div class="code-label " title="/var/www/html/.htaccess">/var/www/html/.htaccess</div><pre class="code-pre "><code langs="">RewriteEngine on
+</code></pre>
+<p>Salve o arquivo e saia.</p>
+
+<p>Agora você tem um arquivo <code>.htaccess</code> operacional que pode ser usado para controlar as regras de roteamento da aplicação web. No próximo passo, criaremos um arquivo de exemplo de site que usaremos para demonstrar as regras de reescrita.</p>
+
+<h2 id="passo-3-—-configurando-as-reescritas-de-url">Passo 3 — Configurando as Reescritas de URL</h2>
+
+<p>Aqui, configuraremos uma reescrita básica de URL que converte URLs bonitas em caminhos reais para páginas. Especificamente, permitiremos aos usuários acessar <code>http://<span class="highlight">ip_do_seu_servidor</span>/about</code> e exibir uma página chamada <code>about.html</code>.</p>
+
+<p>Comece criando um arquivo chamado <code>about.html</code> no web root:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/about.html
+</li></ul></code></pre>
+<p>Copie o seguinte código HTML no arquivo, salve e feche-o.</p>
+<div class="code-label " title="/var/www/html/about.html">/var/www/html/about.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;About Us&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;h1&gt;About Us&lt;/h1&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Você pode acessar esta página em <code>http://<span class="highlight">ip_do_seu_servidor</span>/about.html</code>, mas observe que, se tentar acessar <code>http://<span class="highlight">ip_do_seu_servidor</span>/about</code>, você verá um erro <strong>404 Not Found</strong>. Para acessar a página usando <code>/about</code>, criaremos uma regra de reescrita.</p>
+
+<p>Todas as regras de reescrita ou <code>RewriteRules</code> seguem este formato: </p>
+<div class="code-label " title="General RewriteRule structure">General RewriteRule structure</div><pre class="code-pre "><code langs="">RewriteRule pattern substitution [flags]
+</code></pre>
+<ul>
+<li><code>RewriteRule</code> especifica a diretiva.</li>
+<li><code>pattern</code> é uma <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-regular-expressions">expressão regular</a> que corresponde à string desejada da URL, que é o que o usuário digita no navegador.</li>
+<li><code>substitution</code> é o caminho para a URL real, ou seja, o caminho do arquivo que o Apache vai servir.</li>
+<li><code>flags</code> são parâmetros opcionais que podem modificar o funcionamento da regra.</li>
+</ul>
+
+<p>Vamos criar nossa regra de reescrita de URL. Abra o arquivo <code>.htaccess</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/.htaccess
+</li></ul></code></pre>
+<p>Após a primeira linha, adicione o seguinte <code>RewriteRule</code> e salve o arquivo:</p>
+<div class="code-label " title="/var/www/html/.htaccess">/var/www/html/.htaccess</div><pre class="code-pre "><code langs="">RewriteEngine on
+<span class="highlight">RewriteRule ^about$ about.html [NC]</span>
+</code></pre>
+<p>Nesse caso, <code>^about$</code> é a string desejada, <code>about.html</code> é a substituição e <code>[NC]</code> é uma flag. Nosso exemplo usa alguns caracteres com significado especial:</p>
+
+<ul>
+<li><code>^</code> indica o início da URL, após <code><span class="highlight">ip_do_seu_servidor</span>/</code>.</li>
+<li><code>$</code> indica o final da URL.</li>
+<li><code>about</code> busca correspondência com a string &ldquo;about&rdquo;.</li>
+<li><code>about.html</code> é o arquivo real que o usuário acessa.</li>
+<li><code>[NC]</code> é a flag que torna a regra insensível a maiúsculas e minúsculas.</li>
+</ul>
+
+<p>Agora você pode acessar <code>http://<span class="highlight">ip_do_seu_servidor</span>/about</code> no seu navegador. De fato, com a regra mostrada acima, as seguintes URLs também apontarão para <code>about.html</code>:</p>
+
+<ul>
+<li><code>http://<span class="highlight">ip_do_seu_servidor</span>/about</code>, por causa da definição da regra.</li>
+<li><code>http://<span class="highlight">ip_do_seu_servidor</span>/About</code>, porque a regra não diferencia maiúsculas de minúsculas.</li>
+<li><code>http://<span class="highlight">ip_do_seu_servidor</span>/about.html</code>, porque o nome do arquivo original sempre funcionará.</li>
+</ul>
+
+<p>No entanto, o seguinte não funcionará:</p>
+
+<ul>
+<li><code>http://<span class="highlight">ip_do_seu_servidor</span>/about/</code>, porque a regra declara explicitamente que não pode haver nada após <code>about</code>, pois o caracter <code>$</code> aparece após <code>about</code>.</li>
+<li><code>http://<span class="highlight">ip_do_seu_servidor</span>/contact</code>, porque isso não vai conicidir com a string <code>about</code> na regra.</li>
+</ul>
+
+<p>Agora você tem um arquivo <code>.htaccess</code> operacional com uma regra básica que pode ser modificada e ampliada para suas necessidades. Nas seções a seguir, mostraremos dois exemplos adicionais de diretivas usadas com freqüência.</p>
+
+<h2 id="examplo-1-—-simplificando-query-strings-com-rewriterule">Examplo 1 — Simplificando Query Strings com RewriteRule</h2>
+
+<p>As aplicações web geralmente usam strings de consulta ou <em>query strings</em>, que são adicionadas a uma URL usando um ponto de interrogação (<code>?</code>) após o endereço. Parâmetros separados são delimitados usando um E comercial (<code>&amp;</code>). As query strings podem ser usadas para transmitir dados adicionais entre páginas individuais de aplicações.</p>
+
+<p>Por exemplo, uma página de resultados de pesquisa escrita em PHP pode usar uma URL como  <code>http://example.com/results.php?item=shirt&amp;season=summer</code>. Neste exemplo, dois parâmetros adicionais são passados para o script de aplicação imaginário <code>results.php</code>: <code>item</code>, com o valor <code>shirt</code>, e <code>season</code> com o valor <code>summer</code>. A aplicação pode usar as informações da query string para criar a página certa para o visitante.</p>
+
+<p>As regras de reescrita do Apache geralmente são empregadas para simplificar links longos e desagradáveis, como o exemplo acima, em URLs amigáveis ou <em>friendly URLs</em> que são mais fáceis de digitar e interpretar visualmente. Neste exemplo, gostaríamos de simplificar o link acima para se tornar <code>http://example.com/shirt/summer</code>. Os valores dos parâmetros <code>shirt</code> e <code>summer</code> ainda estão no endereço, mas sem a query string e o nome do script.</p>
+
+<p>Aqui está uma regra para implementar isso:</p>
+<div class="code-label " title="Simple substition">Simple substition</div><pre class="code-pre "><code langs="">RewriteRule ^<span class="highlight">shirt</span>/<span class="highlight">summer</span>$ results.php?item=<span class="highlight">shirt</span>&amp;season=<span class="highlight">summer</span> [QSA]
+</code></pre>
+<p>O <code>shirt/summer</code> é explicitamente correspondido no endereço solicitado e o Apache é instruído a servir <code>results.php?item=shirt&amp;season=summer</code> no lugar.</p>
+
+<p>As flags <code>[QSA]</code> são comumente usadas em regras de reescrita. Eles dizem ao Apache para anexar qualquer query string adicional à URL servida, portanto, se o visitante digitar <code>http://example.com/shirt/summer?<span class="highlight">page=2</span></code> o servidor irá responder com <code>results.php?item=shirt&amp;season=summer<span class="highlight">&amp;page=2</span></code>. Sem ela, a query string adicional seria descartada.</p>
+
+<p>Embora esse método atinja o efeito desejado, o nome do item e a estação são codificados fisicamente na regra. Isso significa que a regra não funcionará para outros itens, como <code>pants</code>, ou para outras estações, como <code>winter</code>.</p>
+
+<p>Para tornar a regra mais genérica, podemos usar <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-regular-expressions">expressões regulares</a> para combinar partes do endereço original e usá-las em um padrão de substituição. A regra modificada ficará assim:</p>
+<div class="code-label " title="Simple substition">Simple substition</div><pre class="code-pre "><code langs="">RewriteRule ^<span class="highlight">([A-Za-z0-9]+)</span>/<span class="highlight">(summer|winter|fall|spring)</span> results.php?item=$1&amp;season=$2 [QSA]
+</code></pre>
+<p>O primeiro grupo de expressões regulares entre parênteses corresponde a uma string contendo caracteres alfanuméricos e números como <code>shirt</code> ou <code>pants</code> e salva o fragmento correspondente como a variável <code>$1</code>. O segundo grupo de expressões regulares entre parênteses faz a correspondência exata de <code>summer</code>, <code>winter</code>, <code>fall</code>, ou <code>spring</code>, e, da mesma forma, salva o fragmento correspondente como <code>$2</code>.</p>
+
+<p>Os fragmentos que correspondem são então usados na URL resultante nas variáveis <code>item</code> e <code>season</code>, em vez dos valores <code>shirt</code> e <code>summer</code> fisicamente codificados que usamos anteriormente.</p>
+
+<p>O que foi apresentado acima irá converter, por exemplo, <code>http://example.com/pants/summer</code> para <code>http://example.com/results.php?item=pants&amp;season=summer</code>. Este exemplo também não fica obsoleto, permitindo que vários itens e estações sejam reescritos corretamente usando uma única regra.</p>
+
+<h2 id="examplo-2-—-adicionando-condições-com-lógica-usando-rewriteconds">Examplo 2 — Adicionando Condições com Lógica Usando RewriteConds</h2>
+
+<p>As regras de reescrita nem sempre são avaliadas uma a uma, sem limitações. A diretiva <code>RewriteCond</code> nos permite adicionar condições às nossas regras de reescrita para controlar quando as regras serão processadas. Todos os <code>RewriteConds</code> seguem o seguinte formato:</p>
+<div class="code-label " title="General RewriteCond structure">General RewriteCond structure</div><pre class="code-pre "><code langs="">RewriteCond TestString Condition [Flags]
+</code></pre>
+<ul>
+<li><code>RewriteCond</code> especifica a diretiva <code>RewriteCond</code>.</li>
+<li><code>TestString</code> é a string a ser testada.</li>
+<li><code>Condition</code> é o padrão ou a condição a ser correspondida.</li>
+<li><code>Flags</code> são parâmetros opcionais que podem modificar as condições e as regras de avaliação.</li>
+</ul>
+
+<p>Se um <code>RewriteCond</code> for avaliado como verdadeiro, a próxima <code>RewriteRule</code> será considerada. Caso contrário, a regra será descartada. Múltiplos <code>RewriteConds</code> podem ser usados um após o outro, embora todos devam ser avaliados como verdadeiros para que a próxima regra seja considerada.</p>
+
+<p>Como exemplo, suponha que você gostaria de redirecionar todas as solicitações para arquivos ou diretórios inexistentes no seu site de volta à página inicial, em vez de mostrar a página de erro padrão <strong>404 Not Found</strong>. Isso pode ser conseguido com as seguintes regras condicionais:</p>
+<div class="code-label " title="Redirect all requests to non-existent files and directories to home page">Redirect all requests to non-existent files and directories to home page</div><pre class="code-pre "><code langs="">RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /
+</code></pre>
+<p>Com o exposto acima:</p>
+
+<ul>
+<li><code>%{REQUEST_FILENAME}</code> é a string a ser verificada. Nesse caso, é o nome do arquivo solicitado, que é uma variável do sistema disponível para cada solicitação.</li>
+<li><code>-f</code> é uma condição interna que verifica se o nome solicitado existe no disco e é um arquivo. O <code>!</code> é um operador de negação. Combinado, <code>!-f</code> é avaliado como verdadeiro apenas se o nome especificado não existir ou não for um arquivo.</li>
+<li>De maneira similar, <code>!-d</code> é avaliado como verdadeiro somente se o nome especificado não existir ou não for um diretório.</li>
+</ul>
+
+<p>O <code>RewriteRule</code> na linha final entrará em vigor apenas para solicitações de arquivos ou diretórios inexistentes. O <code>RewriteRule</code> em si é muito simples e redireciona todas as solicitações para a raiz do site <code>/</code>.</p>
+
+<h1 id="conclusão">Conclusão</h1>
+
+<p>O <code>mod_rewrite</code> lhe permite criar URLs amigáveis e legíveis por humanos. Neste tutorial, você aprendeu como usar a diretiva <code>RewriteRule</code> para redirecionar URLs, incluindo aquelas com query strings. Você também aprendeu como redirecionar condicionalmente URLs usando a diretiva <code>RewriteCond</code>.</p>
+
+<p>Se você quiser saber mais sobre o <code>mod_rewrite</code>, dê uma olhada em <a href="http://httpd.apache.org/docs/current/rewrite/intro.html">Apache&rsquo;s mod_rewrite Introduction</a> e <a href="http://httpd.apache.org/docs/current/mod/mod_rewrite.html">Apache&rsquo;s official documentation for mod_rewrite</a>.</p>

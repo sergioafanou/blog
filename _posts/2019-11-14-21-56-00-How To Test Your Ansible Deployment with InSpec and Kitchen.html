@@ -1,0 +1,510 @@
+---
+layout: post
+title: How To Test Your Ansible Deployment with InSpec and Kitchen
+network: digitalocean
+date: November 14, 2019 at 09:56PM
+url: https://www.digitalocean.com/community/tutorials/how-to-test-your-ansible-deployment-with-inspec-and-kitchen
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/funds/diversity-in-tech">Diversity in Tech Fund</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://www.inspec.io/">InSpec</a> is an open-source auditing and automated testing framework used to describe and test for regulatory concerns, recommendations, or requirements. It is designed to be human-readable and platform-agnostic. Developers can work with InSpec locally or using SSH, WinRM, or Docker to run testing, so it&rsquo;s unnecessary to install any packages on the infrastructure that is being tested.</p>
+
+<p>Although with InSpec you can run tests directly on your servers, there is a potential for human error that could cause issues in your infrastructure. To avoid this scenario, developers can use <a href="https://kitchen.ci/">Kitchen</a> to create a virtual machine and install an OS of their choice on the machines where tests are running. Kitchen is a test runner, or test automation tool, that allows you to test infrastructure code on one or more isolated platforms. It also supports many testing frameworks and is flexible with a <a href="https://kitchen.ci/docs/drivers/">driver plugin architecture</a> for various platforms such as Vagrant, AWS, DigitalOcean, Docker, LXC containers, etc.</p>
+
+<p>In this tutorial, you&rsquo;ll write tests for your Ansible playbooks running on a DigitalOcean Ubuntu 18.04 Droplet. You&rsquo;ll use Kitchen as the test-runner and InSpec for writing the tests. By the end of this tutorial, you&rsquo;ll be able to test your Ansible playbook deployment.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin with this guide, you&rsquo;ll need a <a href="https://www.digitalocean.com/docs/getting-started/sign-up/">DigitalOcean account</a> in addition to the following:</p>
+
+<ul>
+<li>A local installation of <code>Ruby</code> on your machine. You can install Ruby by following the tutorial for your distribution in the series: <a href="https://www.digitalocean.com/community/tutorial_series/how-to-install-and-set-up-a-local-programming-environment-for-ruby">How To Install and Set Up a Local Programming Environment for Ruby</a>.</li>
+<li><a href="https://docs.chef.io/install_dk.html">Chef Development Kit (ChefDK)</a> installed on your machine.</li>
+<li>SSH keys set up on your machine by following Steps 1 and 2 of <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys--2">How To Set Up SSH Keys</a>. To upload your SSH public key to your DigitalOcean account you can follow our <a href="https://www.digitalocean.com/docs/droplets/how-to/add-ssh-keys/to-account/">How To Add SSH Keys to a DigitalOcean Account</a> tutorial.</li>
+<li>A read and write <a href="https://www.digitalocean.com/docs/api/create-personal-access-token/">DigitalOcean personal access token</a>. Make sure you record the token in a safe place; you&rsquo;ll use it later in this tutorial. This allows you to create a Droplet on DigitalOcean, which is where this tutorial will run the tests.</li>
+</ul>
+
+<h2 id="step-1-—-setting-up-and-initializing-kitchen">Step 1 — Setting Up and Initializing Kitchen</h2>
+
+<p>You&rsquo;ve installed ChefDK as part of the prerequisites that comes packaged with kitchen. In this step, you&rsquo;ll set up Kitchen to communicate with DigitalOcean.</p>
+
+<p>Before initializing Kitchen, you&rsquo;ll create and move into a project directory. In this tutorial, we&rsquo;ll call it <code><span class="highlight">ansible_testing_dir</span></code>.</p>
+
+<p>Run the following command to create the directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/<span class="highlight">ansible_testing_dir</span>
+</li></ul></code></pre>
+<p>And then move into it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/<span class="highlight">ansible_testing_dir</span>
+</li></ul></code></pre>
+<p>Using <code>gem</code> install the <a href="https://github.com/test-kitchen/kitchen-digitalocean"><code>kitchen-digitalocean</code></a> package on your local machine. This allows you to tell <code>kitchen</code> to use the DigitalOcean driver when running tests:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">gem install kitchen-digitalocean
+</li></ul></code></pre>
+<p>Within the project directory, you&rsquo;ll run the <code>kitchen init</code> command specifying <code>ansible_playbook</code> as the provisioner and <code>digitalocean</code> as the driver when initializing Kitchen:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kitchen init --provisioner=ansible_playbook --driver=digitalocean
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>create  kitchen.yml
+create  chefignore
+create  test/integration/default
+</code></pre>
+<p>This has created the following within your project directory:</p>
+
+<ul>
+<li><p><code>test/integration/default</code> is the directory to which you&rsquo;ll save your test files.</p></li>
+<li><p><a href="https://docs.chef.io/chef_repo.html"><code>chefignore</code></a> is the file you would use to ensure certain files are not uploaded to the <a href="https://docs.chef.io/server_overview.html">Chef Infra Server</a>, but you won&rsquo;t be using it in this tutorial.</p></li>
+<li><p><code>kitchen.yml</code> is the file that describes your testing configuration: what you want to test and the target platforms.</p></li>
+</ul>
+
+<p>Now, you need to export your DigitalOcean credentials as environment variables to have access to create Droplets from your CLI. First, start with your DigitalOcean access token by running the following command:  </p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">export DIGITALOCEAN_ACCESS_TOKEN="<span class="highlight">YOUR_DIGITALOCEAN_ACCESS_TOKEN</span>"
+</li></ul></code></pre>
+<p>You also need to get your SSH Key ID number; note that <code>YOUR_DIGITALOCEAN_SSH_KEY_IDS</code> must be the numeric ID of your SSH key, not the symbolic name. Using the DigitalOcean API, you can get the numeric ID of your keys with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -X GET https://api.digitalocean.com/v2/account/keys -H "Authorization: Bearer $DIGITALOCEAN_ACCESS_TOKEN"
+</li></ul></code></pre>
+<p>From this command you&rsquo;ll see a list of your SSH Keys and related metadata. Read through the output to find the correct key and identify the ID number within the output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+ {"id":<span class="highlight">your-ID-number</span>,"fingerprint":"<span class="highlight">fingerprint</span>","public_key":"ssh-rsa <span class="highlight">your-ssh-key</span>","name":"your-ssh-key-name"
+...
+</code></pre>
+<span class='note'><p>
+<strong>Note:</strong> If you would like to make your output more readable to obtain your numeric IDs, you can find and download <code>jq</code> based on your OS on the <a href="https://stedolan.github.io/jq/download/">jq download page</a>. Now, you can run the previous command piped into <code>jq</code> as following:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -X GET https://api.digitalocean.com/v2/account/keys -H "Authorization: Bearer $DIGITALOCEAN_ACCESS_TOKEN" | jq
+</li></ul></code></pre>
+<p>You&rsquo;ll see your SSH Key information formatted similarly to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "ssh_keys": [
+    {
+      <span class="highlight">"id":</span> <span class="highlight">YOUR_SSH_KEY_ID</span>,
+      "fingerprint": "2f:d0:16:6b",
+      "public_key": "ssh-rsa AAAAB3NzaC1yc2 example@example.local",
+      "name": "sannikay"
+    }
+  ],
+}
+</code></pre>
+<p></p></span>
+
+<p>Once you&rsquo;ve identified your SSH numeric IDs, export them with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">export DIGITALOCEAN_SSH_KEY_IDS="<span class="highlight">YOUR_DIGITALOCEAN_SSH_KEY_ID</span>"
+</li></ul></code></pre>
+<p>You&rsquo;ve initialized <code>kitchen</code> and set up the environment variables for your DigitalOcean credentials. Now you&rsquo;ll move on to create and run tests on your DigitalOcean Droplets directly from the command line.</p>
+
+<h2 id="step-2-—-creating-the-ansible-playbook">Step 2 — Creating the Ansible Playbook</h2>
+
+<p>In this step, you&rsquo;ll create a <a href="https://www.digitalocean.com/community/tutorials/how-to-use-ansible-cheat-sheet-guide">playbook and roles</a> that set up Nginx and Node.js on the Droplet created by <code>kitchen</code> in the next step. Your tests will be run against the playbook to ensure the conditions specified in the playbook are met.</p>
+
+<p>To begin, create a <code>roles</code> directory for both the Nginx and Node.js roles:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p roles/{nginx,nodejs}/tasks
+</li></ul></code></pre>
+<p>This will create a directory structure as follows:</p>
+<pre class="code-pre "><code langs="">roles
+├── nginx
+│   └── tasks
+└── nodejs
+    └── tasks
+</code></pre>
+<p>Now, create a <code>main.yml</code> file in the <code>roles/nginx/tasks</code> directory using your preferred editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano roles/nginx/tasks/main.yml
+</li></ul></code></pre>
+<p>In this file, create a <a href="https://docs.ansible.com/ansible/latest/user_guide/basic_concepts.html#tasks">task</a> that sets up and starts Nginx by adding the following content:</p>
+<div class="code-label " title="roles/nginx/tasks/main.yml">roles/nginx/tasks/main.yml</div><pre class="code-pre yml"><code langs="">---
+- name: Update cache repositories and install Nginx
+  apt:
+    name: nginx
+    update_cache: yes
+
+- name: Change nginx directory permission
+  file:
+    path: /etc/nginx/nginx.conf
+    mode: 0750
+
+- name: start nginx
+  service:
+    name: nginx
+    state: started
+</code></pre>
+<p>Once you&rsquo;ve added the content, save and exit the file.</p>
+
+<p>In <code>roles/nginx/tasks/main.yml</code>, you define a task that will update the cache repository of your Droplet, which is an equivalent of running the <code>apt update</code> command manually on a server. This task also changes the Nginx configuration file permissions and starts the Nginx service.</p>
+
+<p>You are also going to create a <code>main.yml</code> file in <code>roles/nodejs/tasks</code> to define a task that sets up Node.js:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano roles/nodejs/tasks/main.yml
+</li></ul></code></pre>
+<p>Add the following tasks to this file:</p>
+<div class="code-label " title="roles/nodejs/tasks/main.yml">roles/nodejs/tasks/main.yml</div><pre class="code-pre yml"><code langs="">---
+- name: Update caches repository
+  apt:
+    update_cache: yes
+
+- name: Add gpg key for NodeJS LTS
+  apt_key:
+    url: "https://deb.nodesource.com/gpgkey/nodesource.gpg.key"
+    state: present
+
+- name: Add the NodeJS LTS repo
+  apt_repository:
+    repo: "deb https://deb.nodesource.com/node_{{ NODEJS_VERSION }}.x {{ ansible_distribution_release }} main"
+    state: present
+    update_cache: yes
+
+- name: Install Node.js
+  apt:
+    name: nodejs
+    state: present
+
+</code></pre>
+<p>Save and exit the file when you&rsquo;re finished.</p>
+
+<p>In <code>roles/nodejs/tasks/main.yml</code>, you first define a task that will update the cache repository of your Droplet. Then with the next task you add the GPG key for Node.js that serves as a means of verifying the authenticity of the Node.js <code>apt</code> repository. The final two tasks add the Node.js <code>apt</code> repository and install Node.js.</p>
+
+<p>Now you&rsquo;ll define your Ansible configurations, such as variables, the order in which you want your roles to run, and super user privilege settings. To do this, you&rsquo;ll create a file named <code>playbook.yml</code>, which serves as an entry point for Kitchen. When you run your tests, Kitchen starts from your <code>playbook.yml</code> file and looks for the roles to run, which are your <code>roles/nginx/tasks/main.yml</code> and <code>roles/nodejs/tasks/main.yml</code> files.</p>
+
+<p>Run the following command to create <code>playbook.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano playbook.yml
+</li></ul></code></pre>
+<p>Add the following content to the file:</p>
+<div class="code-label " title="ansible_testing_dir/playbook.yml">ansible_testing_dir/playbook.yml</div><pre class="code-pre yml"><code langs="">---
+ - hosts: all
+   become: true
+   remote_user: ubuntu
+   vars:
+    NODEJS_VERSION: 8
+</code></pre>
+<p>Save and exit the file.</p>
+
+<p>You&rsquo;ve created the Ansible playbook roles that you&rsquo;ll be running your tests against to ensure conditions specified in the playbook are met.</p>
+
+<h2 id="step-3-—-writing-your-inspec-tests">Step 3 — Writing Your InSpec Tests</h2>
+
+<p>In this step, you&rsquo;ll write tests to check if Node.js is installed on your Droplet. Before writing your test, let&rsquo;s look at the format of an example InSpec test. As with many test frameworks, InSpec code resembles a natural language. InSpec has two main components, the subject to examine and the subject&rsquo;s expected state:</p>
+<div class="code-label " title="block A">block A</div><pre class="code-pre "><code class="code-highlight language-ruby">describe '&lt;entity&gt;' do
+  it { &lt;expectation&gt; }
+end
+</code></pre>
+<p>In block A, the keywords <code>do</code> and <code>end</code> define a <a href="http://ruby-for-beginners.rubymonstas.org/blocks.html"><code>block</code></a>. The <code>describe</code> keyword is commonly known as test suites, which contain test cases. The <code>it</code> keyword is used for defining the test cases.</p>
+
+<p><code>&lt;entity&gt;</code> is the subject you want to examine, for example, a package name, service, file, or network port. The <code>&lt;expectation&gt;</code> specifies the desired result or expected state, for example, Nginx should be installed or should have a specific version. You can check the <a href="https://www.inspec.io/docs/reference/dsl_inspec/">InSpec DSL documentation</a> to learn more about the InSpec language.</p>
+
+<p>Another example InSpec test block:</p>
+<div class="code-label " title="block B">block B</div><pre class="code-pre "><code class="code-highlight language-ruby">control 'Can be anything unique' do  
+  impact 0.7                         
+  title 'A human-readable title'     
+  desc  'An optional description'
+  describe '&lt;entity&gt;' do             
+    it { &lt;expectation&gt; }
+  end
+end
+</code></pre>
+<p>The difference between block A and block B is the <code>control</code> block. The <code>control</code> block is used as a means of regulatory control, recommendation or requirement. The <code>control</code> block has a name; usually a unique ID, metadata such as <code>desc</code>, <code>title</code>, <code>impact</code>, and finally group together related <code>describe</code> block to implement the checks.</p>
+
+<p><code>desc</code>, <code>title</code>, and <code>impact</code> define metadata that fully describe the importance of the control, its purpose, with a succinct and complete description. <code>impact</code> defines a numeric value that ranges from <code>0.0</code> to <code>1.0</code> where <code>0.0</code> to <code>&lt;0.01</code> is classified as no impact,  <code>0.01</code> to <code>&lt;0.4</code> is classified as low impact,  <code>0.4</code> to <code>&lt;0.7</code> is classified as medium impact, <code>0.7</code> to <code>&lt;0.9</code> is classified as high impact, <code>0.9</code> to <code>1.0</code> is classified as critical control.</p>
+
+<p>Now to implement a test. Using the syntax of block A, you&rsquo;ll use InSpec&rsquo;s <a href="https://www.inspec.io/docs/reference/resources/package/"><code>package</code></a> resource to test if <code>Node.js</code> is installed on the system. You&rsquo;ll create a file named <code>sample.rb</code> in your <code>test/integration/default</code> directory for your tests.</p>
+
+<p>Create <code>sample.rb</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano test/integration/default/sample.rb
+</li></ul></code></pre>
+<p>Add the following to your file:</p>
+<div class="code-label " title="test/integration/default/sample.rb">test/integration/default/sample.rb</div><pre class="code-pre "><code class="code-highlight language-ruby">describe package('nodejs') do
+  it { should be_installed }
+end
+</code></pre>
+<p>Here your test is using the <code>package</code> resource to check Node.js is installed.</p>
+
+<p>Save and exit the file when you&rsquo;re finished.</p>
+
+<p>To run this test, you need to edit <code>kitchen.yml</code> to specify the playbook you created earlier and to add to your configurations.</p>
+
+<p>Open your <code>kitchen.yml</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ansible_testing_dir/kitchen.yml
+</li></ul></code></pre>
+<p>Replace the content of <code>kitchen.yml</code> with the following:</p>
+<div class="code-label " title="ansible_testing_dir/kitchen.yml">ansible_testing_dir/kitchen.yml</div><pre class="code-pre yml"><code langs="">---
+driver:
+  name: digitalocean
+
+provisioner:
+  name: ansible_playbook
+  hosts: test-kitchen
+  playbook: ./playbook.yml
+
+verifier:
+  name: inspec
+
+platforms:
+  - name: ubuntu-18
+    driver_config:
+      ssh_key: <span class="highlight">PATH_TO_YOUR_PRIVATE_SSH_KEY</span>
+      tags:
+        - inspec-testing
+      region: fra1
+      size: 1gb
+      private_networking: false
+    verifier:
+      inspec_tests:
+        - test/integration/default
+suites:
+  - name: default
+
+</code></pre>
+<p>The <code>platform</code> options include the following:</p>
+
+<ul>
+<li><code>name</code>: The image you&rsquo;re using.</li>
+<li><p><code>driver_config</code>: Your DigitalOcean Droplet configuration. You&rsquo;re specifying the following options for the <code>driver_config</code>:</p>
+
+<ul>
+<li><code>ssh_key</code>: Path to <code><span class="highlight">YOUR_PRIVATE_SSH_KEY</span></code>. Your <code>YOUR_PRIVATE_SSH_KEY</code> is located in the directory you specified when creating your <code>ssh</code> key.</li>
+<li><code>tags</code>: The tags associated with your Droplet.</li>
+<li><code>region</code>: The <code>region</code> where you want your Droplet to be hosted.</li>
+<li><code>size</code>: The memory you want your Droplet to have.</li>
+</ul></li>
+<li><p><code>verifier</code>: This defines that the project contains InSpec tests.</p>
+
+<ul>
+<li>The <code>inspec_tests</code> part specifies that the tests exist under the project <code>test/integration/default</code> directory.</li>
+</ul></li>
+</ul>
+
+<p>Note that the <code>name</code> and <code>region</code> use abbreviations. You can check on the <a href="https://github.com/test-kitchen/kitchen-digitalocean"><code>test-kitchen</code> documentation</a> for the abbreviations you can use.</p>
+
+<p>Once you&rsquo;ve added your configuration, save and exit the file.</p>
+
+<p>Run the <code>kitchen test</code> command to run the test. This will check to see if Node.js is installed—this will purposefully fail because you don&rsquo;t currently have the Node.js role in your <code>playbook.yml</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kitchen test
+</li></ul></code></pre>
+<p>You&rsquo;ll see output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output: failing test results">Output: failing test results</div>-----&gt; Starting Kitchen (v1.24.0)
+-----&gt; Cleaning up any prior instances of &lt;default-ubuntu-18&gt;
+-----&gt; Destroying &lt;default-ubuntu-18&gt;...
+       DigitalOcean instance &lt;145268853&gt; destroyed.
+       Finished destroying &lt;default-ubuntu-18&gt; (0m2.63s).
+-----&gt; Testing &lt;default-ubuntu-18&gt;
+-----&gt; Creating &lt;default-ubuntu-18&gt;...
+       DigitalOcean instance &lt;145273424&gt; created.
+       Waiting for SSH service on 138.68.97.146:22, retrying in 3 seconds
+       [SSH] Established
+       (ssh ready)
+
+       Finished creating &lt;default-ubuntu-18&gt; (0m51.74s).
+-----&gt; Converging &lt;default-ubuntu-18&gt;...
+$$$$$$ Running legacy converge for 'Digitalocean' Driver
+-----&gt; Installing Chef Omnibus to install busser to run tests
+       PLAY [all] *********************************************************************
+
+       TASK [Gathering Facts] *********************************************************
+       ok: [localhost]
+
+       PLAY RECAP *********************************************************************
+       localhost                  : ok=1    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+
+       Downloading files from &lt;default-ubuntu-18&gt;
+       Finished converging &lt;default-ubuntu-18&gt; (0m55.05s).
+-----&gt; Setting up &lt;default-ubuntu-18&gt;...
+$$$$$$ Running legacy setup for 'Digitalocean' Driver
+       Finished setting up &lt;default-ubuntu-18&gt; (0m0.00s).
+-----&gt; Verifying &lt;default-ubuntu-18&gt;...
+       Loaded tests from {:path=&gt;". ansible_testing_dir.test.integration.default"}
+
+Profile: tests from {:path=&gt;"ansible_testing_dir/test/integration/default"} (tests from {:path=&gt;"ansible_testing_dir.test.integration.default"})
+Version: (not specified)
+Target:  ssh://root@138.68.97.146:22
+
+ <span class="highlight"> System Package nodejs</span>
+     <span class="highlight">×  should be installed </span>
+    <span class="highlight"> expected that System Package nodejs is installed</span>
+
+Test Summary: 0 successful, 1 failure, 0 skipped
+&gt;&gt;&gt;&gt;&gt;&gt; ------Exception-------
+&gt;&gt;&gt;&gt;&gt;&gt; Class: Kitchen::ActionFailed
+&gt;&gt;&gt;&gt;&gt;&gt; Message: 1 actions failed.
+&gt;&gt;&gt;&gt;&gt;&gt;     Verify failed on instance &lt;default-ubuntu-18&gt;.  Please see .kitchen/logs/default-ubuntu-18.log for more details
+&gt;&gt;&gt;&gt;&gt;&gt; ----------------------
+&gt;&gt;&gt;&gt;&gt;&gt; Please see .kitchen/logs/kitchen.log for more details
+&gt;&gt;&gt;&gt;&gt;&gt; Also try running `kitchen diagnose --all` for configuration
+
+  4.54s user 1.77s system 5% cpu 2:02.33 total
+</code></pre>
+<p>The output notes that your test is failing because you don&rsquo;t have Node.js installed on the Droplet you provisioned with <code>kitchen</code>. You&rsquo;ll fix your test by adding the <code>nodejs</code> role to your <code>playbook.yml</code> file and run the test again.</p>
+
+<p>Edit the <code>playbook.yml</code> file to include the <code>nodejs</code> role:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano playbook.yml
+</li></ul></code></pre>
+<p>Add the following highlighted lines to your file:</p>
+<div class="code-label " title="ansible_testing_dir/playbook.yml">ansible_testing_dir/playbook.yml</div><pre class="code-pre yml"><code langs="">---
+ - hosts: all
+   become: true
+   remote_user: ubuntu
+   vars:
+    NODEJS_VERSION: 8
+
+   <span class="highlight">roles:</span>
+   <span class="highlight"> - nodejs</span>
+</code></pre>
+<p>Save and close the file.</p>
+
+<p>Now, you&rsquo;ll rerun the test using the <code>kitchen test</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kitchen test
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>......
+Target:  ssh://root@46.101.248.71:22
+
+  System Package nodejs
+     ✔  should be installed
+
+Test Summary: 1 successful, 0 failures, 0 skipped
+       Finished verifying &lt;default-ubuntu-18&gt; (0m4.89s).
+-----&gt; Destroying &lt;default-ubuntu-18&gt;...
+       DigitalOcean instance &lt;145512952&gt; destroyed.
+       Finished destroying &lt;default-ubuntu-18&gt; (0m2.23s).
+       Finished testing &lt;default-ubuntu-18&gt; (2m49.78s).
+-----&gt; Kitchen is finished. (2m55.14s)
+  4.86s user 1.77s system 3% cpu 2:56.58 total
+</code></pre>
+<p>Your test now passes because you have Node.js installed using the <code>nodejs</code> role.</p>
+
+<p>Here is a summary of what Kitchen is doing in the <code>Test Action</code>:</p>
+
+<ul>
+<li>Destroys the Droplet if it exists</li>
+<li>Creates the Droplet</li>
+<li>Converges the Droplet</li>
+<li>Verifies the Droplet with InSpec</li>
+<li>Destroys the Droplet</li>
+</ul>
+
+<p>Kitchen will abort the run on your Droplet if it encounters any issues. This means if your Ansible playbook fails, InSpec won&rsquo;t run and your Droplet won&rsquo;t be destroyed. This gives you a chance to inspect the state of the instance and fix any issues. The behavior of the final destroy action can be overridden if desired. Check out the CLI help for the <code>--destroy</code> flag by running the <code>kitchen help test</code> command.</p>
+
+<p>You&rsquo;ve written your first tests and run them against your playbook with one instance failing before fixing the issue. Next you&rsquo;ll extend your test file.</p>
+
+<h2 id="step-4-—-adding-test-cases">Step 4 — Adding Test Cases</h2>
+
+<p>In this step, you&rsquo;ll add more test cases to your test file to check if Nginx modules are installed on your Droplet and the configuration file has the right permissions.</p>
+
+<p>Edit your <code>sample.rb</code> file to add more test cases:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano test/integration/default/sample.rb
+</li></ul></code></pre>
+<p>Add the following test cases to the end of the file:</p>
+<div class="code-label " title="test/integration/default/sample.rb">test/integration/default/sample.rb</div><pre class="code-pre "><code class="code-highlight language-ruby">. . .
+control 'nginx-modules' do
+  impact 1.0
+  title 'NGINX modules'
+  desc 'The required NGINX modules should be installed.'
+  describe nginx do
+    its('modules') { should include 'http_ssl' }
+    its('modules') { should include 'stream_ssl' }
+    its('modules') { should include 'mail_ssl' }
+  end
+end
+
+control 'nginx-conf' do
+  impact 1.0
+  title 'NGINX configuration'
+  desc 'The NGINX config file should owned by root, be writable only by owner, and not writeable or and readable by others.'
+  describe file('/etc/nginx/nginx.conf') do
+    it { should be_owned_by 'root' }
+    it { should be_grouped_into 'root' }
+    it { should_not be_readable.by('others') }
+    it { should_not be_writable.by('others') }
+    it { should_not be_executable.by('others') }
+  end
+end
+</code></pre>
+<p>These test cases check that the <code>nginx-modules</code> on your Droplet include <code>http_ssl</code>, <code>stream_ssl</code>, and <code>mail_ssl</code>. You are also checking for <code>/etc/nginx/nginx.conf</code> file permissions.</p>
+
+<p>You are using both the <code>it</code> and <code>its</code> keywords to define your test. The keyword <code>its</code> is only used to access properties of the <a href="https://www.inspec.io/docs/reference/resources/">resources</a>. For example, <code>modules</code> is a property of <code>nginx</code>.</p>
+
+<p>Save and exit the file once you&rsquo;ve added the test cases.</p>
+
+<p>Now run the <code>kitchen test</code> command to test again:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kitchen test
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Target:  ssh://root@104.248.131.111:22
+
+  ↺  nginx-modules: NGINX modules
+     ↺  The `nginx` binary not found in the path provided.
+  ×  nginx-conf: NGINX configuration (2 failed)
+     ×  File /etc/nginx/nginx.conf should be owned by "root"
+     expected `File /etc/nginx/nginx.conf.owned_by?("root")` to return true, got false
+     ×  File /etc/nginx/nginx.conf should be grouped into "root"
+     expected `File /etc/nginx/nginx.conf.grouped_into?("root")` to return true, got false
+     ✔  File /etc/nginx/nginx.conf should not be readable by others
+     ✔  File /etc/nginx/nginx.conf should not be writable by others
+     ✔  File /etc/nginx/nginx.conf should not be executable by others
+
+  System Package nodejs
+     ✔  should be installed
+Profile Summary: 0 successful controls, 1 control failure, 1 control skipped
+Test Summary: 4 successful, 2 failures, 1 skipped
+</code></pre>
+<p>You&rsquo;ll see that some of the tests are failing. You&rsquo;re going to fix those by adding the <code>nginx</code> role to your playbook file and rerunning the test. In the failing test, you&rsquo;re checking for <code>nginx</code> modules and file permissions that are currently not present on your server.</p>
+
+<p>Open your <code>playbook.yml</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ansible_testing_dir/playbook.yml
+</li></ul></code></pre>
+<p>Add the following highlighted line to your roles:</p>
+<div class="code-label " title="ansible_testing_dir/playbook.yml">ansible_testing_dir/playbook.yml</div><pre class="code-pre yml"><code langs="">---
+- hosts: all
+  become: true
+  remote_user: ubuntu
+  vars:
+  NODEJS_VERSION: 8
+
+  roles:
+  - nodejs
+  <span class="highlight">- nginx</span>
+</code></pre>
+<p>Save and close the file when you&rsquo;re finished.</p>
+
+<p>Then run your tests again:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kitchen test
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Target:  ssh://root@104.248.131.111:22
+✔  nginx-modules: NGINX version
+     ✔  Nginx Environment modules should include "http_ssl"
+     ✔  Nginx Environment modules should include "stream_ssl"
+     ✔  Nginx Environment modules should include "mail_ssl"
+  ✔  nginx-conf: NGINX configuration
+     ✔  File /etc/nginx/nginx.conf should be owned by "root"
+     ✔  File /etc/nginx/nginx.conf should be grouped into "root"
+     ✔  File /etc/nginx/nginx.conf should not be readable by others
+     ✔  File /etc/nginx/nginx.conf should not be writable by others
+     ✔  File /etc/nginx/nginx.conf should not be executable by others
+
+  System Package nodejs
+     ✔  should be installed
+
+Profile Summary: 2 successful controls, 0 control failures, 0 controls skipped
+Test Summary: 9 successful, 0 failures, 0 skipped
+</code></pre>
+<p>After adding the <code>nginx</code> role to the playbook all your tests now pass. The output shows that the <code>http_ssl</code>, <code>stream_ssl</code>, and <code>mail_ssl</code> modules are installed on your Droplet and the right permissions are set for the configuration file.</p>
+
+<p>Once you&rsquo;re finished, or you no longer need your Droplet, you can destroy it by running the <code>kitchen destroy</code> command to delete it after running your tests:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kitchen destroy
+</li></ul></code></pre>
+<p>Following this command you&rsquo;ll see output similar to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>-----&gt; Starting Kitchen (v1.24.0)
+-----&gt; Destroying &lt;default-ubuntu-18&gt;...
+       Finished destroying &lt;default-ubuntu-18&gt; (0m0.00s).
+-----&gt; Kitchen is finished. (0m5.07s)
+  3.79s user 1.50s system 82% cpu 6.432 total
+</code></pre>
+<p>You&rsquo;ve written tests for your playbook, run the tests, and fixed the failing tests to ensure all the tests are passing. You&rsquo;re now set up to create a virtual environment, write tests for your Ansible Playbook, and run your test on the virtual environment using Kitchen.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>You now have a flexible foundation for testing your Ansible deployment, which allows you to test your playbooks before running on a live server. You can also package your test into a <a href="https://www.inspec.io/docs/reference/profiles/">profile</a>. You can use profiles to share your test through Github or the <a href="https://supermarket.chef.io/">Chef Supermarket</a> and easily run it on a live server.</p>
+
+<p>For more comprehensive details on InSpec and Kitchen, refer to the <a href="https://www.inspec.io/docs/">official InSpec documentation</a> and the <a href="https://kitchen.ci/docs/getting-started/introduction/">official Kitchen documentation</a>.</p>

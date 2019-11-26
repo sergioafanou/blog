@@ -1,0 +1,277 @@
+---
+layout: post
+title: Como Escalar Automaticamente suas Cargas de Trabalho no Kubernetes da DigitalOcean
+network: digitalocean
+date: November 26, 2019 at 06:40PM
+url: https://www.digitalocean.com/community/tutorials/como-escalar-automaticamente-suas-cargas-de-trabalho-no-kubernetes-da-digitalocean-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Ao trabalhar com uma aplicação criada no <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes">Kubernetes</a>, os desenvolvedores frequentemente precisam provisionar <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod/">pods</a> adicionais para lidar com períodos de pico de tráfego ou aumento da carga de processamento. Por padrão, provisionar esses pods adicionais é uma etapa manual; o desenvolvedor deve alterar o número de <a href="https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/">réplicas</a> desejadas no <a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/">objeto do deployment</a> para contar com o aumento do tráfego e alterá-lo novamente quando os pods adicionais não forem mais necessários. Essa dependência da intervenção manual pode não ser o ideal em muitos cenários. Por exemplo, sua carga de trabalho pode atingir o horário de pico no meio da noite, quando ninguém está acordado para escalar os pods, ou seu site pode receber um aumento inesperado no tráfego quando uma resposta manual não seria rápida o suficiente para lidar com a carga. Nessas situações, a abordagem mais eficiente e menos sujeita a erros é automatizar o escalonamento dos seus clusters com o <a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/">Horizontal Pod Autoscaler (HPA)</a>.</p>
+
+<p>Usando informações do <a href="https://github.com/kubernetes-incubator/metrics-server">Metrics Server</a>, o HPA detectará aumento no uso de recursos e responderá escalando sua carga de trabalho para você. Isso é especialmente útil nas arquiteturas de microsserviço e dará ao cluster Kubernetes a capacidade de escalar seu deployment com base em métricas como a utilização da CPU. Quando combinado como o <a href="https://www.digitalocean.com/products/kubernetes/">DigitalOcean Kubernetes (DOKS)</a>, uma oferta de Kubernetes gerenciada que fornece aos desenvolvedores uma plataforma para fazer o deploy de aplicações containerizadas, o uso do HPA pode criar uma infraestrutura automatizada que se ajusta rapidamente às mudanças no tráfego e na carga.</p>
+
+<span class='note'><p>
+<strong>Nota:</strong> Ao considerar a possibilidade de usar o autoscaling para sua carga de trabalho, lembre-se de que o autoscaling funciona melhor para aplicativos sem estado ou stateless, especialmente aqueles capazes de ter várias instâncias da aplicação em execução e aceitando tráfego em paralelo. Esse paralelismo é importante porque o principal objetivo do autoscaling é distribuir dinamicamente a carga de trabalho de uma aplicação por várias instâncias no cluster Kubernetes para garantir que sua aplicação tenha os recursos necessários para atender o tráfego de maneira ágil e estável, sem sobrecarregar nenhuma instância única.</p>
+
+<p>Um exemplo de carga de trabalho que não apresenta esse paralelismo é o autoscaling de banco de dados. A configuração do autoscaling para um banco de dados seria muito mais complexa, pois você precisaria considerar race conditions, problemas com a integridade dos dados, sincronização de dados e adições e remoções constantes de membros do cluster de banco de dados. Por razões como essas, não recomendamos o uso da estratégia de autoscaling deste tutorial para bancos de dados.<br></p></span>
+
+<p>Neste tutorial você vai configurar um deployment de exemplo do <a href="https://www.nginx.com/">Nginx</a> no DOKS que pode auto escalar horizontalmente para dar conta do aumento da carga de CPU. Você conseguirá isso ao fazer o deploy do Metrics Server em seu cluster para reunir métricas de pod para o HPA usar para determinar quando escalar.   </p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Antes de começar este guia, você precisará do seguinte:</p>
+
+<ul>
+<li><p>Um cluster Kubernetes na DigitalOcean com sua conexão configurada como padrão <code>kubectl</code>. As instruções sobre como configurar o <code>kubectl</code> são mostradas no passo <strong>Connect to your Cluster</strong> quando você cria seu cluster. Para criar um cluster Kubernetes na DigitalOcean, consulte <a href="https://www.digitalocean.com/docs/kubernetes/quickstart/">Kubernetes Quickstart</a>.</p></li>
+<li><p>O gerenciador de pacotes Helm instalado em sua máquina local e o Tiller instalado em seu cluster. Para fazer isso, execute os passos 1 e 2 do tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-install-software-on-kubernetes-clusters-with-the-helm-package-manager">How To Install Software on Kubernetes Clusters with the Helm Package Manager</a></p></li>
+</ul>
+
+<h2 id="passo-1-—-criando-um-deployment-de-teste">Passo 1 — Criando um Deployment de Teste</h2>
+
+<p>Para mostrar o efeito do HPA, você primeiro fará o deploy de uma aplicação que você utilizará para fazer autoscale. Este tutorial usa uma <a href="https://docs.docker.com/samples/library/nginx/">imagem Nginx Docker</a> padrão como um deployment porque ela é totalmente capaz de operar em paralelo, é amplamente usada no Kubernetes com ferramentas como o <a href="https://github.com/kubernetes/ingress-nginx">Nginx Ingress Controller</a>, e é leve para configurar. Esse deployment do Nginx servirá uma página estática <strong>Welcome to Nginx!</strong>, que vem por padrão na imagem base. Se você já possui um deployment que gostaria de escalar, sinta-se à vontade para usá-lo e pule este passo.</p>
+
+<p>Crie o deployment de exemplo usando a imagem base do Nginx executando o seguinte comando. Você pode substituir o nome <code><span class="highlight">web</span></code> se desejar atribuir um nome diferente ao seu deployment:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create deployment <span class="highlight">web</span> --image=nginx:latest
+</li></ul></code></pre>
+<p>A flag <code>--image=nginx:latest</code> criará o deployment a partir da versão mais recente da imagem base do Nginx.</p>
+
+<p>Após alguns segundos, seu pod <code><span class="highlight">web</span></code> será lançado. Para ver este pod, execute o seguinte comando, que mostrará os pods em execução no namespace atual:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pods
+</li></ul></code></pre>
+<p>Isso lhe dará uma saída semelhante à seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                                                   READY   STATUS             RESTARTS   AGE
+<span class="highlight">web-84d7787df5-btf9h</span>                                   1/1     Running            0          11s
+</code></pre>
+<p>Observe que há apenas um pod <em>deployado</em> originalmente. Depois que o autoscaling é acionado, mais pods serão criados automaticamente.</p>
+
+<p>Agora você tem um deployment básico em funcionamento no cluster. Este é o deployment que você irá configurar para o autoscaling. Seu próximo passo é configurar esse deployment para definir suas solicitações de recursos e limites.</p>
+
+<h2 id="passo-2-—-definindo-limites-e-solicitações-de-cpu-em-seu-deployment">Passo 2 — Definindo Limites e Solicitações de CPU em seu Deployment</h2>
+
+<p>Neste passo, você irá definir <a href="https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#resource-requests-and-limits-of-pod-and-container">solicitações e limites</a> no uso da CPU para seu deployment. Limites ou <em>Limits</em> no Kubernetes são definidos no deployment para descrever a quantidade máxima de recursos (CPU ou Memória) que o pod pode usar. Solicitações ou <em>Requests</em> são definidas no deployment para descrever quanto desse recurso é necessário em um node para que esse node seja considerado como um node válido para escalonamento. Por exemplo, se seu servidor web tivesse uma solicitação de memória definida em 1 GB, apenas os nodes com pelo menos 1 GB de memória livre seriam considerados para escalonamento. Para o autoscaling, é necessário definir esses limites e solicitações, pois o HPA precisará ter essas informações ao tomar decisões de escalonamento e provisionamento.</p>
+
+<p>Para definir solicitações e limites, você precisará fazer alterações no deployment que você acabou de criar. Este tutorial usará o seguinte comando <a href="https://kubernetes.io/docs/concepts/cluster-administration/manage-deployment/#kubectl-edit"><code>kubectl edit</code></a> para modificar a configuração do objeto API armazenada no cluster. O comando <code>kubectl edit</code> abrirá o editor definido por suas variáveis de ambiente <code>KUBE_EDITOR</code> ou <code>EDITOR</code>, ou cairá de volta no <a href="https://www.digitalocean.com/community/tutorials/installing-and-using-the-vim-text-editor-on-a-cloud-server#editing"><code>vi</code> para Linux</a> ou <code>notepad</code> para Windows por padrão. </p>
+
+<p>Edite seu deployment:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl edit deployment <span class="highlight">web</span>
+</li></ul></code></pre>
+<p>Você verá a configuração para o deployment. Agora você pode definir limites de recursos e solicitações especificadas para o uso de CPU do seu deployment. Esses limites definem a linha de base de quanto de cada recurso um pod deste deployment pode usar individualmente. Definir isso dará ao HPA um quadro de referência para saber se um pod está sendo sobrecarregado. Por exemplo, se você espera que seu pod tenha um <code>limit</code> superior de 100 milicores de CPU e o pod esteja usando 95 milicores atualmente, a HPA saberá que está com 95% da capacidade. Sem fornecer esse limite de 100 milicores, o HPA não pode decifrar a capacidade total do pod.</p>
+
+<p>Podemos definir os limites e solicitações na seção <code>resources</code>:</p>
+<div class="code-label " title="Deployment Configuration File">Deployment Configuration File</div><pre class="code-pre "><code langs="">. . .
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: web
+    spec:
+      containers:
+      - image: nginx:latest
+        imagePullPolicy: Always
+        name: nginx
+        <span class="highlight">resources: {}</span>
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+. . .
+</code></pre>
+<p>Para este tutorial, você definirá <code>requests</code> para CPU como <code>100m</code> e memória para <code>250Mi</code>. Esses valores são apenas para fins de demonstração; cada carga de trabalho é diferente, portanto, esses valores podem não fazer sentido para outras cargas de trabalho. Como regra geral, esses valores devem ser definidos no máximo que um pod dessa carga de trabalho deve usar. Recomenda-se o monitoramento da aplicação e a coleta de dados de uso de recursos sobre o desempenho em períodos de baixa e de pico para ajudar a determinar esses valores. Esses valores também podem ser ajustados e alterados a qualquer momento, assim você sempre pode voltar e otimizar seu deployment posteriormente.</p>
+
+<p>Vá em frente e insira as seguintes linhas destacadas na seção <code>resources</code> do seu container Nginx:</p>
+<div class="code-label " title="Deployment Configuration File">Deployment Configuration File</div><pre class="code-pre "><code langs="">. . .
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: web
+    spec:
+      containers:
+      - image: nginx:latest
+        imagePullPolicy: Always
+        name: nginx
+        resources:
+          <span class="highlight">limits:</span>
+            <span class="highlight">cpu: 300m</span>
+          <span class="highlight">requests:</span>
+            <span class="highlight">cpu: 100m</span>
+            <span class="highlight">memory: 250Mi</span>
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+. . .
+</code></pre>
+<p>Depois de inserir essas linhas, salve e saia do arquivo. Se houver um problema com a sintaxe, o <code>kubectl</code> irá reabrir o arquivo para você com um erro publicado para que você obtenha mais informações.</p>
+
+<p>Agora que você definiu seus limites e solicitações, você precisa garantir que suas métricas sejam reunidas para que o HPA possa monitorar e aderir corretamente a esses limites. Para fazer isso, você irá configurar um serviço para reunir as métricas de CPU. Para este tutorial, você usará o projeto Metrics Server para coletar essas métricas, que você instalará com um chart do Helm.</p>
+
+<h2 id="passo-3-—-instalando-o-metrics-server">Passo 3 — Instalando o Metrics Server</h2>
+
+<p>Agora você instalará o <a href="https://github.com/kubernetes-incubator/metrics-server">Kubernetes Metric Server</a>. Esse é o servidor que extrai as métricas do pod, que reunirá as métricas que o HPA usará para decidir se o autoscaling é necessário. </p>
+
+<p>Para instalar o Metrics Server usando o <a href="https://helm.sh/">Helm</a>, execute o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm install stable/metrics-server --name metrics-server
+</li></ul></code></pre>
+<p>Isso instalará a versão estável mais recente do Metrics Server. A flag <code>--name</code> nomeia este release como <code>metrics-server</code>.</p>
+
+<p>Depois de aguardar a inicialização deste pod, tente usar o comando <code>kubectl top pod</code> para exibir as métricas do seu pod:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl top pod
+</li></ul></code></pre>
+<p>Este comando tem como objetivo fornecer uma visão em nível de pod do uso de recursos em seu cluster, mas devido à maneira como o DOKS lida com o DNS, esse comando retornará um erro neste momento:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Error: Metrics not available for pod
+
+Error from server (ServiceUnavailable): the server is currently unable to handle the request (get pods.metrics.k8s.io)
+</code></pre>
+<p>Esse erro ocorre porque os nodes DOKS não criam um registro DNS para eles mesmos e, como o Metrics Server entra em contato com os nodes por meio de seus nomes de host, os nomes de host não são resolvidos corretamente. Para corrigir esse problema, altere a maneira como o Metrics Server se comunica com os nodes adicionando flags de runtime ao container do Metrics Server usando o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl edit deployment metrics-server
+</li></ul></code></pre>
+<p>Você estará adicionando uma flag na seção <code>command</code>.</p>
+<div class="code-label " title="metrics-server Configuration File">metrics-server Configuration File</div><pre class="code-pre "><code langs="">. . .
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: metrics-server
+        release: metrics-server
+    spec:
+      affinity: {}
+      containers:
+      <span class="highlight">- command:</span>
+        - /metrics-server
+        - --cert-dir=/tmp
+        - --logtostderr
+        - --secure-port=8443
+        image: gcr.io/google_containers/metrics-server-amd64:v0.3.4
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+. . .
+</code></pre>
+<p>A flag que você está adicionando é <code>--kubelet-preferred-address-types=InternalIP</code>. Essa flag informa ao metrics server para contatar os nodes usando seu <code>internalIP</code> em oposição ao nome do host. Você pode usar essa flag como uma solução alternativa para se comunicar com os nodes por meio de endereços IP internos.</p>
+
+<p>Adicione também a flag <code>--metric-resolution</code> para alterar a taxa padrão na qual o Metrics Server extrai as métricas. Para este tutorial, configuraremos o Metrics Server para realizar pontos de coletas de dados a cada <code>60s</code>, mas se você quiser mais dados de métricas, poderá solicitar ao Metrics Server que extraia as métricas a cada <code>10s</code> ou <code>20s</code>. Isso lhe fornecerá mais pontos de dados de uso de recursos por período de tempo. Sinta-se livre para ajustar esta resolução para atender às suas necessidades.</p>
+
+<p>Adicione as seguintes linhas destacadas ao arquivo:</p>
+<div class="code-label " title="metrics-server Configuration File">metrics-server Configuration File</div><pre class="code-pre "><code langs="">. . .
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: metrics-server
+        release: metrics-server
+    spec:
+      affinity: {}
+      containers:
+      - command:
+        - /metrics-server
+        - --cert-dir=/tmp
+        - --logtostderr
+        - --secure-port=8443
+        <span class="highlight">- --metric-resolution=60s</span>
+        <span class="highlight">- --kubelet-preferred-address-types=InternalIP</span>
+        image: gcr.io/google_containers/metrics-server-amd64:v0.3.4
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+. . .
+</code></pre>
+<p>Após a adição da flag, salve e saia do seu editor.</p>
+
+<p>Para verificar se o Metrics Server está em execução, use o <code>kubectl top pod</code> após alguns minutos. Como antes, este comando nos fornecerá o uso de recursos em um nível de pod. Dessa vez, um Metrics Server funcionando permitirá que você veja as métricas em cada pod:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl top pod
+</li></ul></code></pre>
+<p>Isso fornecerá a seguinte saída, com o seu pod do Metrics Server em execução:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                             CPU(cores)   MEMORY(bytes)
+<span class="highlight">metrics-server-db745fcd5-v8gv6   3m           12Mi</span>
+web-555db5bf6b-f7btr             0m           2Mi        
+</code></pre>
+<p>Agora você tem um Metrics Server funcional e pode visualizar e monitorar o uso de recursos de pods em seu cluster. Em seguida, você irá configurar o HPA para monitorar esses dados e reagir a períodos de alto uso da CPU.</p>
+
+<h2 id="passo-4-—-criando-e-validando-o-autoscaler-horizontal-de-pod">Passo 4 — Criando e Validando o Autoscaler Horizontal de Pod</h2>
+
+<p>Por fim, é hora de criar o Horizontal Pod Autoscaler (HPA) para seu deployment. O HPA é o objeto real do Kubernetes que verifica rotineiramente os dados de uso de CPU coletados do Metrics Server e escala seu deployment com base nos limites que você definiu no Passo 2.</p>
+
+<p>Crie o HPA usando o comando <code>kubectl autoscale</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl autoscale deployment <span class="highlight">web</span>  --max=4 --cpu-percent=80
+</li></ul></code></pre>
+<p>Este comando cria o HPA para seu deployment <code><span class="highlight">web</span></code>. Ele também usa a flag <code>--max</code> para definir o máximo de réplicas nas quais <code><span class="highlight">web</span></code> pode ser escalado, o que, neste caso, você define como <code>4</code>.</p>
+
+<p>A flag <code>--cpu-percent</code> informa ao HPA em qual porcentagem de uso do limite que você definiu no Passo 2 você deseja que o autoscale ocorra. Isso também usa os requests para ajudar a provisionar os pods escalados para um node que possa acomodar a alocação inicial de recursos. Neste exemplo, se o limite que você definiu para o seu deployment no Passo 1 fosse 100 milicores (<code>100m</code>), esse comando dispararia um autoscale assim que o pod atingisse <code>80m</code> no uso médio da CPU. Isso permitiria que o deployment fosse escalado automaticamente antes de estourar seus recursos de CPU.</p>
+
+<p>Agora que seu deployment pode ser escalado automaticamente, é hora de testar isso.</p>
+
+<p>Para validar, você irá gerar uma carga que colocará seu cluster acima do seu limite e assistirá o autoscaler assumir o controle. Para começar, abra um segundo terminal para observar os pods provisionados no momento e atualizar a lista de pods a cada 2 segundos. Para fazer isso, use o comando <code>watch</code> neste segundo terminal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">watch "kubectl top pods"
+</li></ul></code></pre>
+<p>O comando <code>watch</code> emite o comando dado como argumento continuamente, exibindo a saída no seu terminal. A duração entre repetições pode ser configurada mais finamente com a flag <code>-n</code>. Para os fins deste tutorial, a configuração padrão de dois segundos será suficiente.</p>
+
+<p>O terminal agora exibirá a saída do <code>kubectl top pods</code> inicialmente e, a cada 2 segundos, atualizará a saída que esse comando gera, que será semelhante a esta:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Every 2.0s: kubectl top pods                                                                                                                                 
+
+NAME                              CPU(cores)   MEMORY(bytes)
+metrics-server-6fd5457684-7kqtz   3m           15Mi
+web-7476bb659d-q5bjv              0m           2Mi
+</code></pre>
+<p>Anote o número de pods atualmente <em>deployados</em> para o <code><span class="highlight">web</span></code>.</p>
+
+<p>Volte ao seu terminal original. Agora você abrirá um terminal dentro do seu pod <code><span class="highlight">web</span></code> atual usando <code>kubectl exec</code> e criará uma carga artificial. Você pode fazer isso entrando no pod e instalando o <a href="https://packages.ubuntu.com/xenial/devel/stress"><code>stress</code> CLI tool</a>.</p>
+
+<p>Digite seu pod usando <code>kubectl exec</code>, substituindo o nome do pod realçado pelo nome do seu pod <code><span class="highlight">web</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl exec -it <span class="highlight">web-f765fd676-s9729</span> /bin/bash
+</li></ul></code></pre>
+<p>Este comando é muito semelhante em conceito ao de usar <code>ssh</code> para efetuar login em outra máquina. O <code>/bin/bash</code> estabelece um shell bash no seu pod.</p>
+
+<p>Em seguida, no shell bash dentro do seu pod, atualize os metadados do repositório e instale o pacote <code>stress</code>.</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@web-f765fd676-s9729#">apt update; apt-get install -y stress
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Nota:</strong> Para containers baseados no CentOS, isso seria assim:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@web-f765fd676-s9729#">yum install -y stress
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Em seguida, gere alguma carga de CPU no seu pod usando o comando <code>stress</code> e deixe-o executar:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@web-f765fd676-s9729#">stress -c 3
+</li></ul></code></pre>
+<p>Agora, volte ao seu comando <code>watch</code> no segundo terminal. Aguarde alguns minutos para o Metrics Server reunir dados de CPU acima do limite definido pelo HPA. Observe que as métricas por padrão são coletadas na taxa que você definir como <code>--metric-resolution</code> ao configurar o metrics server. Pode demorar um minuto para que as métricas de uso sejam atualizadas.</p>
+
+<p>Após cerca de dois minutos, você verá pods adicionais <code><span class="highlight">web</span></code> subindo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Every 2.0s: kubectl top pods                                                                                                                                 
+
+NAME                             CPU(cores)   MEMORY(bytes)
+metrics-server-db745fcd5-v8gv6   6m           16Mi
+<span class="highlight">web-555db5bf6b-ck98q             0m           2Mi</span>
+<span class="highlight">web-555db5bf6b-f7btr             494m         21Mi</span>
+<span class="highlight">web-555db5bf6b-h5cbx             0m           1Mi</span>
+<span class="highlight">web-555db5bf6b-pvh9f             0m           2Mi</span>
+</code></pre>
+<p>Agora você pode ver que o HPA provisionou novos pods com base na carga de CPU coletada pelo Metrics Server. Quando estiver satisfeito com esta validação, use <code>CTRL+C</code> para interromper o comando <code>stress</code> no seu primeiro terminal e então, saia do shell bash do seu pod.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste artigo, você criou um deployment que será escalado automaticamente com base na carga de CPU. Você adicionou limites de recursos e solicitações de CPU ao seu deployment, instalou e configurou o Metrics Server em seu cluster por meio do uso do Helm e criou um HPA para tomar decisões de escalabilidade.</p>
+
+<p>Esse foi um deployment de demonstração tanto do Metrics Server quanto do HPA. Agora você pode ajustar a configuração para se adequar aos seus casos de uso específicos. Certifique-se de verificar a documentação do <a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/">Kubernetes HPA</a> para ajuda e informação sobre <a href="https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/">requests e limits</a>. Além disso, confira o <a href="https://github.com/kubernetes-incubator/metrics-server">Projeto Metrics Server</a> para ver todas as configurações ajustáveis que podem ser aplicadas ao seu caso de uso.</p>
+
+<p>Se você gostaria de fazer mais com o Kubernetes, visite nossa <a href="https://www.digitalocean.com/community/tags/kubernetes?type=tutorials">Página da Comunidade Kubernetes</a> ou explore nosso <a href="https://www.digitalocean.com/products/kubernetes/">Serviço Gerenciado de Kubernetes</a>.</p>

@@ -1,0 +1,348 @@
+---
+layout: post
+title: How To Create a Node.js Module
+network: digitalocean
+date: November 26, 2019 at 09:19PM
+url: https://www.digitalocean.com/community/tutorials/how-to-create-a-node-js-module
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/funds/open-internet-free-speech">Open Internet/Free Speech Fund</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p>In Node.js, a <em>module</em> is a collection of JavaScript functions and objects that can be used by external applications. Describing a piece of code as a module refers less to what the code is and more to what it does—any Node.js file or collection of files can be considered a module if its functions and data are made usable to external programs.</p>
+
+<p>Because modules provide units of functionality that can be reused in many larger programs, they enable you to create loosely coupled applications that scale with complexity, and open the door for you to share your code with other developers. Being able to write modules that export useful functions and data will allow you to contribute to the wider Node.js community—in fact, all packages that you use on npm were bundled and shared as modules. This makes creating modules an essential skill for a Node.js developer.</p>
+
+<p>In this tutorial, you will create a Node.js module that suggests what color web developers should use in their designs. You will develop the module by storing the colors as an array, and providing a function to retrieve one randomly. Afterwards, you will run through various ways of importing a module into a Node.js application.  </p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<ul>
+<li>You will need Node.js and npm installed on your development environment. This tutorial uses version 10.17.0. To install this on macOS or Ubuntu 18.04, follow the steps in <a href="https://www.digitalocean.com/community/tutorials/how-to-install-node-js-and-create-a-local-development-environment-on-macos">How To Install Node.js and Create a Local Development Environment on macOS</a> or the <strong>Installing Using a PPA</strong> section of <a href="https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-ubuntu-18-04">How To Install Node.js on Ubuntu 18.04</a>. By having Node.js installed you will also have npm installed; this tutorial uses version 6.11.3.</li>
+<li>You should also be familiar with the <code>package.json</code> file, and experience with npm commands would be useful as well. To gain this experience, follow <a href="https://www.digitalocean.com/community/tutorials/how-to-use-node-js-modules-with-npm-and-package-json">How To Use Node.js Modules with npm and package.json</a>, particularly the <strong>Step 1 — Creating a <code>package.json</code> File</strong>.</li>
+<li>It will also help to be comfortable with the Node.js REPL (Read-Evaluate-Print-Loop). You will use this to test your module. If you need more information on this, read our guide on <a href="https://www.digitalocean.com/community/tutorials/how-to-use-the-node-js-repl">How To Use the Node.js REPL</a>.</li>
+</ul>
+
+<h2 id="step-1-—-creating-a-module">Step 1 — Creating a Module</h2>
+
+<p>This step will guide you through creating your first Node.js module. Your module will contain a collection of colors in an array and provide a function to get one at random. You will use the Node.js built-in <code>exports</code> property to make the function and array available to external programs.</p>
+
+<p>First, you&rsquo;ll begin by deciding what data about colors you will store in your module. Every color will be an object that contains a <code>name</code> property that humans can easily identify, and a <code>code</code> property that is a string containing an HTML color code. HTML color codes are six-digit hexadecimal numbers that allow you to change the color of elements on a web page. You can learn more about HTML color codes by reading this <a href="https://www.computerhope.com/htmcolor.htm">HTML Color Codes and Names</a> article.</p>
+
+<p>You will then decide what colors you want to support in your module. Your module will contain an array called <code>allColors</code> that will contain six colors. Your module will also include a function called <code>getRandomColor()</code> that will randomly select a color from your array and return it.</p>
+
+<p>In your terminal, make a new folder called <code>colors</code> and move into it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir colors
+</li><li class="line" prefix="$">cd colors
+</li></ul></code></pre>
+<p>Initialize npm so other programs can import this module later in the tutorial:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm init -y 
+</li></ul></code></pre>
+<p>You used the <code>-y</code> flag to skip the usual prompts to customize your <code>package.json</code>. If this were a module you wished to publish to npm, you would answer all these prompts with relevant data, as explained in <a href="https://www.digitalocean.com/community/tutorials/how-to-use-node-js-modules-with-npm-and-package-json#step-1-%E2%80%94-creating-a-packagejson-file">How To Use Node.js Modules with npm and package.json</a>.</p>
+
+<p>In this case, your output will be:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "name": "colors",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" &amp;&amp; exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
+</code></pre>
+<p>Now, open up a command-line text editor such as <code>nano</code> and create a new file to serve as the entry point for your module:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano index.js
+</li></ul></code></pre>
+<p>Your module will do a few things. First, you&rsquo;ll define a <code>Color</code> <a href="https://www.digitalocean.com/community/tutorials/understanding-classes-in-javascript">class</a>. Your <code>Color</code> class will be instantiated with its name and HTML code. Add the following lines to create the class:</p>
+<div class="code-label " title="~/colors/index.js">~/colors/index.js</div><pre class="code-pre "><code class="code-highlight language-javascript">class Color {
+  constructor(name, code) {
+    this.name = name;
+    this.code = code;
+  }
+}
+</code></pre>
+<p>Now that you have your data structure for <code>Color</code>, add some instances into your module. Write the following highlighted <a href="https://www.digitalocean.com/community/tutorials/understanding-arrays-in-javascript">array</a> to your file:</p>
+<div class="code-label " title="~/colors/index.js">~/colors/index.js</div><pre class="code-pre "><code langs="">class Color {
+  constructor(name, code) {
+    this.name = name;
+    this.code = code;
+  }
+}
+
+<span class="highlight">const allColors = [</span>
+  <span class="highlight">new Color('brightred', '#E74C3C'),</span>
+  <span class="highlight">new Color('soothingpurple', '#9B59B6'),</span>
+  <span class="highlight">new Color('skyblue', '#5DADE2'),</span>
+  <span class="highlight">new Color('leafygreen', '#48C9B0'),</span>
+  <span class="highlight">new Color('sunkissedyellow', '#F4D03F'),</span>
+  <span class="highlight">new Color('groovygray', '#D7DBDD'),</span>
+<span class="highlight">];</span>
+</code></pre>
+<p>Finally, enter a <a href="https://www.digitalocean.com/community/tutorials/how-to-define-functions-in-javascript">function</a> that randomly selects an item from the <code>allColors</code> array you just created:</p>
+<div class="code-label " title="~/colors/index.js">~/colors/index.js</div><pre class="code-pre "><code langs="">class Color {
+  constructor(name, code) {
+    this.name = name;
+    this.code = code;
+  }
+}
+
+const allColors = [
+  new Color('brightred', '#E74C3C'),
+  new Color('soothingpurple', '#9B59B6'),
+  new Color('skyblue', '#5DADE2'),
+  new Color('leafygreen', '#48C9B0'),
+  new Color('sunkissedyellow', '#F4D03F'),
+  new Color('groovygray', '#D7DBDD'),
+];
+
+<span class="highlight">exports.getRandomColor = () =&gt; {</span>
+  <span class="highlight">return allColors[Math.floor(Math.random() * allColors.length)];</span>
+<span class="highlight">}</span>
+
+<span class="highlight">exports.allColors = allColors;</span>
+</code></pre>
+<p>The <code>exports</code> keyword references a global object available in every Node.js module. All functions and objects stored in a module&rsquo;s <code>exports</code> object are exposed when other Node.js modules import it. The <code>getRandomColor()</code> function was created directly on the <code>exports</code> object, for example. You then added an <code>allColors</code> property to the <code>exports</code> object that references the local constant <code>allColors</code> array created earlier in the script.</p>
+
+<p>When other modules import this module, both <code>allColors</code> and <code>getRandomColor()</code> will be exposed and available for usage.</p>
+
+<p>Save and exit the file.</p>
+
+<p>So far, you have created a module that contains an array of colors and a function that returns one randomly. You have also exported the array and function, so that external programs can use them. In the next step, you will use your module in other applications to demonstrate the effects of <code>export</code>. </p>
+
+<h2 id="step-2-—-testing-your-module-with-the-repl">Step 2 — Testing your Module with the REPL</h2>
+
+<p>Before you build a complete application, take a moment to confirm that your module is working. In this step, you will use the REPL to load the <code>colors</code> module. While in the REPL, you will call the <code>getRandomColor()</code> function to see if it behaves as you expect it to.  </p>
+
+<p>Start the Node.js REPL in the same folder as the <code>index.js</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node
+</li></ul></code></pre>
+<p>When the REPL has started, you will see the <code>&gt;</code> prompt. This means you can enter JavaScript code that will be immediately evaluated. If you would like to read more about this, follow our guide on <a href="https://www.digitalocean.com/community/tutorials/how-to-use-the-node-js-repl">using the REPL</a>.</p>
+
+<p>First, enter the following:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">colors = require('./index');
+</li></ul></code></pre>
+<p>In this command, <code>require()</code> loads the <code>colors</code> module at its entry point. When you press <code>ENTER</code> you will get:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  getRandomColor: [Function],
+  allColors: [
+    Color { name: 'brightred', code: '#E74C3C' },
+    Color { name: 'soothingpurple', code: '#9B59B6' },
+    Color { name: 'skyblue', code: '#5DADE2' },
+    Color { name: 'leafygreen', code: '#48C9B0' },
+    Color { name: 'sunkissedyellow', code: '#F4D03F' },
+    Color { name: 'groovygray', code: '#D7DBDD' }
+  ]
+}
+</code></pre>
+<p>The REPL shows us the value of <code>colors</code>, which are all the functions and objects imported from the <code>index.js</code> file. When you use the <code>require</code> keyword, Node.js returns all the contents within the <code>exports</code> object of a module.</p>
+
+<p>Recall that you added <code>getRandomColor()</code> and <code>allColors</code> to <code>exports</code> in the <code>colors</code> module. For that reason, you see them both in the REPL when they are imported.</p>
+
+<p>At the prompt, test the <code>getRandomColor()</code> function:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">colors.getRandomColor();
+</li></ul></code></pre>
+<p>You&rsquo;ll be prompted with a random color:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Color { name: '<span class="highlight">groovygray</span>', code: '#<span class="highlight">D7DBDD</span>' }
+</code></pre>
+<p>As the index is random, your output may vary. Now that you confirmed that the <code>colors</code> module is working, exit the Node.js REPL:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">.exit
+</li></ul></code></pre>
+<p>This will return you to your terminal command line.</p>
+
+<p>You have just confirmed that your module works as expected using the REPL. Next, you will apply these same concepts and load your module into an application, as you would do in a real project.</p>
+
+<h2 id="step-3-—-saving-your-local-module-as-a-dependency">Step 3 — Saving your Local Module as a Dependency</h2>
+
+<p>While testing your module in the REPL, you imported it with a <em>relative path</em>. This means you used the location of the <code>index.js</code> file in relation to the working directory to get its contents. While this works, it is usually a better programming experience to import modules by their names so that the import is not broken when the context is changed. In this step, you will install the <code>colors</code> module with npm&rsquo;s local module <code>install</code> feature.</p>
+
+<p>Set up a new Node.js module outside the <code>colors</code> folder. First, go to the previous directory and create a new folder:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ..
+</li><li class="line" prefix="$">mkdir really-large-application
+</li></ul></code></pre>
+<p>Now move into your new project:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd really-large-application
+</li></ul></code></pre>
+<p>Like with the <code>colors</code> module, initialize your folder with npm:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm init -y 
+</li></ul></code></pre>
+<p>The following <code>package.json</code> will be generated:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "name": "really-large-application",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" &amp;&amp; exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
+</code></pre>
+<p>Now, install your <code>colors</code> module and use the <code>--save</code> flag so it will be recorded in your <code>package.json</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install --save ../colors
+</li></ul></code></pre>
+<p>You just installed your <code>colors</code> module in the new project. Open the <code>package.json</code> file to see the new local dependency:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano package.json
+</li></ul></code></pre>
+<p>You will find that the following highlighted lines have been added:</p>
+<div class="code-label " title="~/really-large-application/package.json">~/really-large-application/package.json</div><pre class="code-pre "><code langs="">{
+  "name": "really-large-application",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" &amp;&amp; exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  <span class="highlight">"dependencies": {</span>
+    <span class="highlight">"colors": "file:../colors"</span>
+  }
+}
+</code></pre>
+<p>Exit the file.</p>
+
+<p>The <code>colors</code> module was copied to your <code>node_modules</code> directory. Verify it&rsquo;s there with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls node_modules
+</li></ul></code></pre>
+<p>This will give the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>colors
+</code></pre>
+<p>Use your installed local module in this new program. Re-open your text editor and create another JavaScript file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano index.js
+</li></ul></code></pre>
+<p>Your program will first import the <code>colors</code> module. It will then choose a color at random using the <code>getRandomColor()</code> function provided by the module. Finally, it will print a message to the console that tells the user what color to use.</p>
+
+<p>Enter the following code in <code>index.js</code>:</p>
+<div class="code-label " title="~/really-large-application/index.js">~/really-large-application/index.js</div><pre class="code-pre "><code class="code-highlight language-javascript">const colors = require('colors');
+
+const chosenColor = colors.getRandomColor();
+console.log(`You should use ${chosenColor.name} on your website. It's HTML code is ${chosenColor.code}`);
+</code></pre>
+<p>Save and exit this file.</p>
+
+<p>Your application will now tell the user a random color option for a website component.</p>
+
+<p>Run this script with:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node index.js
+</li></ul></code></pre>
+<p>Your output will be similar to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>You should use <span class="highlight">leafygreen</span> on your website. It's HTML code is #<span class="highlight">48C9B0</span>
+</code></pre>
+<p>You&rsquo;ve now successfully installed the <code>colors</code> module and can manage it like any other npm package used in your project. However, if you added more colors and functions to your local <code>colors</code> module, you would have to run <code>npm update</code> in your applications to be able to use the new options. In the next step, you will use the local module <code>colors</code> in another way and get automatic updates when the module code changes.</p>
+
+<h2 id="step-4-—-linking-a-local-module">Step 4 — Linking a Local Module</h2>
+
+<p>If your local module is in heavy development, continually updating packages can be tedious. An alternative would be to <em>link</em> the modules. Linking a module ensures that any updates to the module are immediately reflected in the applications using it. </p>
+
+<p>In this step, you will link the <code>colors</code> module to your application. You will also modify the <code>colors</code> module and confirm that its most recent changes work in the application without having to reinstall or upgrade.</p>
+
+<p>First, uninstall your local module:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm un colors
+</li></ul></code></pre>
+<p>npm links modules by using <em>symbolic links</em> (or symlinks), which are references that point to files or directories in your computer. Linking a module is done in two steps:</p>
+
+<ol>
+<li>Creating a <em>global link</em> to the module. npm creates a symlink between your global <code>node_modules</code> directory and the directory of your module. The global <code>node_modules</code> directory is the location in which all your system-wide npm packages are installed (any package you install with the <code>-g</code> flag).</li>
+<li>Create a <em>local link</em>. npm creates a symlink between your local project that&rsquo;s using the module and the global link of the module.</li>
+</ol>
+
+<p>First, create the global link by returning to the <code>colors</code> folder and using the <code>link</code> command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ../colors
+</li><li class="line" prefix="$">sudo npm link
+</li></ul></code></pre>
+<p>Once complete, your shell will output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/usr/local/lib/node_modules/colors -&gt; /home/<span class="highlight">sammy</span>/colors
+</code></pre>
+<p>You just created a symlink in your <code>node_modules</code> folder to your <code>colors</code> directory. </p>
+
+<p>Return to the <code>really-large-application</code> folder and link the package:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ../really-large-application
+</li><li class="line" prefix="$">sudo npm link colors
+</li></ul></code></pre>
+<p>You will receive output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/home/<span class="highlight">sammy</span>/really-large-application/node_modules/colors -&gt; /usr/local/lib/node_modules/colors -&gt; /home/<span class="highlight">sammy</span>/colors
+</code></pre>
+<p><span class='note'><strong>Note</strong>: If you would like to type a bit less, you can use <code>ln</code> instead of <code>link</code>. For example, <code>npm ln colors</code> would have worked the exact same way.<br></span></p>
+
+<p>As the output shows, you just created a symlink from your <code>really-large-application</code>&rsquo;s local <code>node_modules</code> directory to the <code>colors</code> symlink in your global <code>node_modules</code>, which points to the actual directory with the <code>colors</code> module.</p>
+
+<p>The linking process is complete. Run your file to ensure it still works:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node index.js
+</li></ul></code></pre>
+<p>Your output will be similar to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>You should use <span class="highlight">sunkissedyellow</span> on your website. It's HTML code is #<span class="highlight">F4D03F</span>
+</code></pre>
+<p>Your program functionality is intact. Next, test that updates are immediately applied. In your text editor, re-open the <code>index.js</code> file in the <code>colors</code> module:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ../colors
+</li><li class="line" prefix="$">nano index.js
+</li></ul></code></pre>
+<p>Now add a function that selects the very best shade of blue that exists. It takes no arguments, and always returns the third item of the <code>allColors</code> array. Add these lines to the end of the file:</p>
+<div class="code-label " title="~/colors/index.js">~/colors/index.js</div><pre class="code-pre "><code langs="">class Color {
+  constructor(name, code) {
+    this.name = name;
+    this.code = code;
+  }
+}
+
+const allColors = [
+  new Color('brightred', '#E74C3C'),
+  new Color('soothingpurple', '#9B59B6'),
+  new Color('skyblue', '#5DADE2'),
+  new Color('leafygreen', '#48C9B0'),
+  new Color('sunkissedyellow', '#F4D03F'),
+  new Color('groovygray', '#D7DBDD'),
+];
+
+exports.getRandomColor = () =&gt; {
+        return allColors[Math.floor(Math.random() * allColors.length)];
+        }
+
+exports.allColors = allColors;
+
+<span class="highlight">exports.getBlue = () =&gt; {</span>
+  <span class="highlight">return allColors[2];</span>
+<span class="highlight">}</span>
+</code></pre>
+<p>Save and exit the file, then re-open the <code>index.js</code> file in the <code>really-large-application</code> folder:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ../really-large-application
+</li><li class="line" prefix="$">nano index.js
+</li></ul></code></pre>
+<p>Make a call to the newly created <code>getBlue()</code> function, and print a sentence with the color&rsquo;s properties. Add these statements to the end of the file:</p>
+<div class="code-label " title="~/really-large-application/index.js">~/really-large-application/index.js</div><pre class="code-pre "><code langs="">const colors = require('colors');
+
+const chosenColor = colors.getRandomColor();
+console.log(`You should use ${chosenColor.name} on your website. It's HTML code is ${chosenColor.code}`);
+
+<span class="highlight">const favoriteColor = colors.getBlue();</span>
+<span class="highlight">console.log(`My favorite color is ${favoriteColor.name}/${favoriteColor.code}, btw`);</span>
+</code></pre>
+<p>Save and exit the file.</p>
+
+<p>The code now uses the newly create <code>getBlue()</code> function. Execute the file as before:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node index.js
+</li></ul></code></pre>
+<p>You will get output like:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>You should use <span class="highlight">brightred</span> on your website. It's HTML code is #<span class="highlight">E74C3C</span>
+My favorite color is <span class="highlight">skyblue</span>/#<span class="highlight">5DADE2</span>, btw
+</code></pre>
+<p>Your script was able to use the latest function in your <code>colors</code> module, without having to run <code>npm update</code>. This will make it easier to make changes to this application in development.</p>
+
+<p>As you write larger and more complex applications, think about how related code can be grouped into modules, and how you want these modules to be set up. If your module is only going to be used by one program, it can stay within the same project and be referenced by a relative path. If your module will later be shared separately or exists in a very different location from the project you are working on now, installing or linking might be more viable. Modules in active development also benefit from the automatic updates of linking. If the module is not under active development, using <code>npm install</code> may be the easier option.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial, you learned that a Node.js module is a JavaScript file with functions and objects that can be used by other programs. You then created a module and attached your functions and objects to the global <code>exports</code> object to make them available to external programs. Finally, you imported that module into a program, demonstrating how modules come together into larger applications.</p>
+
+<p>Now that you know how to create modules, think about the type of program you want to write and break it down into various components, keeping each unique set of activities and data in their own modules. The more practice you get writing modules, the better your ability to write quality Node.js programs on your learning journey. To work through an example of a Node.js application that uses modules, see our <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-node-js-application-for-production-on-ubuntu-18-04">How To Set Up a Node.js Application for Production on Ubuntu 18.04</a> tutorial.</p>

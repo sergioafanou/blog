@@ -1,0 +1,196 @@
+---
+layout: post
+title: 如何使用Python的交互控制台
+network: digitalocean
+date: December 02, 2019 at 04:29PM
+url: https://www.digitalocean.com/community/tutorials/python-zh
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="简介">简介</h3>
+
+<p>Python的交互控制台（也叫做Python解释器，或是Python Shell）为程序员提供了&quot;运行指令&quot;和&quot;不创建文件测试测试代码&quot;的快速途径。</p>
+
+<p>交互控制台可以调用所有的Python内置函数和任何已安装的模块、命令行历史、和自动补全。它为&quot;探索Python语言&quot;和&quot;写好代码后粘贴入文件&quot;提供了便利。 </p>
+
+<p>这个教程中我们将介绍如何使用Python的交互控制台，以及促使它成为你的得力编程工具。</p>
+
+<h2 id="进入交互控制台">进入交互控制台</h2>
+
+<p>从&quot;本地电脑&quot;或者&quot;安装了Python的服务器&quot;都可以进入Python交互控制台。</p>
+
+<p>进入你默认版本Python交互控制台的常规命令是：</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python
+</li></ul></code></pre>
+<p>如果你已经有设置好的<a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-programming-environment-on-an-ubuntu-16-04-server">编程环境</a>，你可以进入那个环境，去使用你在那个环境里安装的Python版本和模块。进入环境可以通过以下命令：</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd environments
+</li><li class="line" prefix="$">. my_env/bin/activate
+</li></ul></code></pre>
+<p>接下来输入<code>Python</code>命令：</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@ubuntu:~/environments$">python
+</li></ul></code></pre>
+<p>在这个情况下，默认的Python版本是Python 3.5.2，版本信息在你输入指令之后会自动显示。与版本信息同时显示的还有一些版权信息，以及一些可以获得更多信息的命令：</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Python 3.5.2 (default, Nov 17 2016, 17:05:23) 
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+&gt;&gt;&gt; 
+</code></pre>
+<p>主界面中的下一行将是三个大于号(<code>&gt;&gt;&gt;</code>)：</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;&gt;&gt;">
+</li></ul></code></pre>
+<p>如果你想使用某一特定版本的Python，你可以在Python命令后面直接加上版本号（没有额外的空格）：</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python2.7
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Python 2.7.12 (default, Nov 19 2016, 06:48:10) 
+[GCC 5.4.0 20160609] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+&gt;&gt;&gt; 
+</code></pre>
+<p>此处我们得知Python 2.7.2将被使用。如果我们Python2的默认版本是2.7.2， 那么我们可以在命令行里简略成<code>python2</code>。</p>
+
+<p>若你想进入Python3，那么应当使用下面的命令：</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Python 3.5.2 (default, Nov 17 2016, 17:05:23) 
+[GCC 5.4.0 20160609] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+&gt;&gt;&gt; 
+</code></pre>
+<p>我们同样可以在交互控制台中输入<code>python3.5</code>得到同样的结果。</p>
+
+<p>Python交互控制台在成功运行之后，我们可以继续学习使用Python的Shell环境。</p>
+
+<h2 id="使用python交互控制台">使用Python交互控制台</h2>
+
+<p>Python的交互解释器会接收Python的句法，你需要在<code>&gt;&gt;&gt;</code>前缀之后进行输入。</p>
+
+<p>比如，我们可以给<a href="https://www.digitalocean.com/community/tutorials/how-to-use-variables-in-python-3">变量</a>赋值：</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;&gt;&gt;">birth_year = 1868
+</li></ul></code></pre>
+<p>当我们给<code>birth_year</code>这个变量赋值为<code>1868</code>之后，我们按下回车键会得到新的一行，这一行同样会有<code>&gt;&gt;&gt;</code>的前缀：</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;&gt;&gt;">birth_year = 1868
+</li><li class="line" prefix="&gt;&gt;&gt;">
+</li></ul></code></pre>
+<p>我们可以继续赋值变量，然后<a href="https://www.digitalocean.com/community/tutorials/how-to-do-math-in-python-3-with-operators">进行数学运算</a>去得到计算结果：</p>
+<pre class="code-pre "><code langs="">&gt;&gt;&gt; birth_year = 1868
+&gt;&gt;&gt; death_year = 1921
+&gt;&gt;&gt; age_at_death = death_year - birth_year
+&gt;&gt;&gt; print(age_at_death)
+53
+&gt;&gt;&gt; 
+</code></pre>
+<p>如上脚本所示，我们给变量赋值，用一个变量减去另一个变量，让控制台打印出两者的差值。</p>
+
+<p>正如Python的其他形式一样，你同样可以将控制台直接作为计算器使用： </p>
+<pre class="code-pre "><code langs="">&gt;&gt;&gt; 203 / 20
+10.15
+&gt;&gt;&gt; 
+</code></pre>
+<p>此处我们将两个整数<code>203</code>和<code>20</code>进行相除，得到结果<code>10.15</code>。</p>
+
+<h3 id="多行">多行</h3>
+
+<p>当我们想写出多行Python命令式，解释器将有另一个提示符去表示新的连续行，三个点 (<code>...</code>)。</p>
+
+<p>去分开连续的行，你将需要按两次回车键<code>ENTER</code>。</p>
+
+<p>我们可以通过下吗的例子去看到这个句法是什么样的。给两个变量赋值，然后用一个<a href="https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-python-3-2">条件语句</a>决定在控制台中打印什么：</p>
+<pre class="code-pre "><code langs="">&gt;&gt;&gt; sammy = 'Sammy'
+&gt;&gt;&gt; shark = 'Shark'
+&gt;&gt;&gt; if len(sammy) &gt; len(shark):
+...     print('Sammy codes in Java.')
+... else:
+...     print('Sammy codes in Python.')
+... 
+Sammy codes in Python.
+&gt;&gt;&gt; 
+</code></pre>
+<p>在这个例子中两个<a href="https://www.digitalocean.com/community/tutorial_series/working-with-strings-in-python-3">字符串</a>的长度相等，因此<code>else</code>语句将进行打印。<br>
+请注意你需要用&quot;四个连续的空格&quot;去将Python代码进行缩进，否则你将得到以下错误：</p>
+<pre class="code-pre "><code langs="">&gt;&gt;&gt; if len(sammy) &gt; len(shark):
+... print('Sammy codes in Java.')
+  File "&lt;stdin&gt;", line 2
+    print('Sammy codes in Java.')
+        ^
+IndentationError: expected an indented block
+&gt;&gt;&gt; 
+</code></pre>
+<p>你不但可以在Python控制台中试验多行代码，而且可以导入模块。</p>
+
+<h3 id="导入模块">导入模块</h3>
+
+<p>Python解释器提供快捷的方法能让你去测试一个模块在一个特定的编程环境中是否可用。你可以通过<code>import</code>语句进行测试：</p>
+<pre class="code-pre "><code langs="">&gt;&gt;&gt; import matplotlib
+Traceback (most recent call last):
+  File "&lt;stdin&gt;", line 1, in &lt;module&gt;
+ImportError: No module named 'matplotlib'
+</code></pre>
+<p>在上面的例子中，<a href="https://www.digitalocean.com/community/tutorials/how-to-plot-data-in-python-3-using-matplotlib">matplotlib</a>模块在当前的编程环境中不可用。</p>
+
+<p>若想安装这个模块，你需要退出交互控制台，然后用pip的常规方法去安装：</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@ubuntu:~/environments$">pip install matplotlib
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Collecting matplotlib
+  Downloading matplotlib-2.0.2-cp35-cp35m-manylinux1_x86_64.whl (14.6MB)
+...
+Installing collected packages: pyparsing, cycler, python-dateutil, numpy, pytz, matplotlib
+Successfully installed cycler-0.10.0 matplotlib-2.0.2 numpy-1.13.0 pyparsing-2.2.0 python-dateutil-2.6.0 pytz-2017.2
+</code></pre>
+<p>当matplotlib和他的依赖包都安装好之后，你可以重新进入交互解释器：</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@ubuntu:~/environments$">python
+</li></ul></code></pre><pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;&gt;&gt;">import matplotlib
+</li><li class="line" prefix="&gt;&gt;&gt;">
+</li></ul></code></pre>
+<p>现在就不会有报错了，这个安装好的模块将可以在文件或命令行中自由使用。</p>
+
+<h2 id="退出python交互控制台">退出Python交互控制台</h2>
+
+<p>退出Python交互控制台有两种方法：使用快捷键，或是一个Python函数。</p>
+
+<p>在&quot;类*nix&quot;（Mac，Unix，Linux）系统中使用快捷键<code>CTRL</code> + <code>D</code>，或是在Windows系统中使用快捷键<code>CTRL</code> + <code>Z</code>，之后再次键入一次<code>CTRL</code>将终结Python控制台，并退出到你原来的命令行环境：</p>
+<pre class="code-pre "><code langs="">...
+&gt;&gt;&gt; age_at_death = death_year - birth_year
+&gt;&gt;&gt; print(age_at_death)
+53
+&gt;&gt;&gt; 
+sammy@ubuntu:~/environments$ 
+</code></pre>
+<p>另一种选择是使用Python的函数<code>quit()</code>，同样会结束Python控制台，退出到你原来的命令行环境：</p>
+<pre class="code-pre "><code langs="">&gt;&gt;&gt; octopus = 'Ollie'
+&gt;&gt;&gt; quit()
+sammy@PythonUbuntu:~/environments$ 
+</code></pre>
+<p>当你使用<code>quit()</code>后，它将会被记录在你的历史文件中。但键盘的快捷键<code>CTRL</code> + <code>D</code>则不会：</p>
+<div class="code-label " title="File: /home/sammy/.python_history">File: /home/sammy/.python_history</div><pre class="code-pre "><code langs="">...
+age_at_death = death_year - birth_year
+print(age_at_death)
+octopus = 'Ollie'
+quit()
+</code></pre>
+<p>退出Python解释器的两种方式可自由选择，取决你觉得哪个对你的&quot;工作流程和记录历史&quot;的需求更合适。</p>
+
+<h2 id="获取历史">获取历史</h2>
+
+<p>Python解释器提供的有用功能之一，是你可以看到你所有的命令历史。这些历史在&quot;类*nix&quot;系统中被存储在<code>.python_history</code>文件中，你可以用像nano这类的文本编辑器去查看：</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/.python_history
+</li></ul></code></pre>
+<p>当你用文本编辑器打开它之后，你的Python历史文件看上去类似于下面的格式，并包含有你自己的命令历史：</p>
+<div class="code-label " title="File: /home/sammy/.python_history">File: /home/sammy/.python_history</div><pre class="code-pre "><code langs="">import pygame
+quit()
+if 10 &gt; 5:
+    print("hello, world")
+else:
+    print("nope")
+sammy = 'Sammy'
+shark = 'Shark'
+...
+</code></pre>
+<p>当你用好文件之后，你可以使用<code>CTRL</code> + <code>X</code>退出nano。</p>
+
+<p>通过记录所有的Python历史，你将可以获得你之前试验过的所有指令。你可以复制、粘贴到这些代码到Python文件中，或是<a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-jupyter-notebook-for-python-3">Jupyter Notebook</a>中，去修改并使用这些之前的命令行代码。</p>
+
+<h2 id="总结">总结</h2>
+
+<p>Python的交互控制台提供了一个可以试验Python代码的空间。你可以用它进行测试，设计出逻辑方法等等。</p>
+
+<p>若想在Python文件里debug，你可以使用Python的<code>code</code>模块去用交互控制台打开一个文件。这里是更加具体的指南<a href="https://www.digitalocean.com/community/tutorials/how-to-debug-python-with-an-interactive-console">如何用交互控制台debug Python</a>.</p>

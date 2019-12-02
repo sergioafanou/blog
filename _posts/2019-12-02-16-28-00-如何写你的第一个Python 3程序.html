@@ -1,0 +1,76 @@
+---
+layout: post
+title: 如何写你的第一个Python 3程序
+network: digitalocean
+date: December 02, 2019 at 04:28PM
+url: https://www.digitalocean.com/community/tutorials/python-3-zh
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="简介">简介</h3>
+
+<p>&ldquo;Hello, World!&rdquo; 程序是一个经典的，确立已久的传统电脑程序。&quot;Hello, World!&ldquo;因为能展示一个语言的基本句法，因此常被用作初学者的第一个&quot;简单但完整&quot;的程序，并可以被用来测试编程环境。</p>
+
+<p>这个教程将指导你写出第一个Python 3中的&quot;Hello, World&quot;程序。</p>
+
+<h2 id="前提要求">前提要求</h2>
+
+<p>你需要<a href="https://www.digitalocean.com/community/tutorial_series/how-to-install-and-set-up-a-local-programming-environment-for-python-3">安装好Python 3</a>，并在你的电脑上设置好本地的编程环境。</p>
+
+<p>如果你还没有设置好环境，你可以根据你的操作系统去选择以下之一的Python安装和配置指南：</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-ubuntu-16-04">Ubuntu 16.04 或 Debian 8</a> </li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-centos-7">CentOS 7</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-mac-os-x">Mac OS X</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-windows-10">Windows 10</a></li>
+</ul>
+
+<h2 id="写-quot-hello-world-quot-程序">写&quot;Hello, World!&quot;程序</h2>
+
+<p>开始写&quot;Hello, World!&quot;，让我们打开一个命令行文本编辑器（比如nano）去创建一个新文件：</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano hello.py
+</li></ul></code></pre>
+<p>当这个文本文件在命令行窗口打开之后，让我们输入以下程序：</p>
+<div class="code-label " title="hello.py">hello.py</div><pre class="code-pre "><code langs="">print("Hello, World!")
+</code></pre>
+<p>让我们分解这段代码的每个部分，去分步理解。</p>
+
+<p><code>print()</code>是一个<strong>函数</strong>，它告诉电脑去执行一个&quot;行动&quot;。我们可以通过&quot;它使用可括号&quot;而知道它是一个函数。<code>print()</code>告诉Python去显示出我们放入括号的任意内容。默认情况下，结果将会打印在当前的命令行窗口之中。</p>
+
+<p>与<code>print()</code>类似的一些其它函数，被默认包含在Python语言之中。这些内置函数在写的Python程序中可以随时使用（无需额外步骤去添加）。我们同样可以<a href="https://www.digitalocean.com/community/tutorials/how-to-define-functions-in-python-3">定义我们自己函数</a>，这需要我们自己通过其它的元素创建。</p>
+
+<p>在<code>print()</code>的括号里是一串字符 — <code>Hello, World!</code>。 引号里的任何一串字符都被称作 <strong><a href="https://www.digitalocean.com/community/tutorial_series/working-with-strings-in-python-3">string（字符串）</a></strong>。</p>
+
+<p>当我们写好程序之后，我们可以通过<code>control</code>+<code>x</code>退出nano，在弹出&quot;是否保存文件&quot;选项时点击 <code>y</code>。</p>
+
+<p>退出nano后，我们将回到起初的命令行界面。</p>
+
+<h2 id="运行-quot-hello-world-quot-程序">运行&quot;Hello, World!&quot;程序</h2>
+
+<p>我们的&quot;Hello, World!&quot;写好之后，我们就可以准备好去运行它。我们将使用<code>python3</code>命令与文件名一同去运行：</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3 hello.py
+</li></ul></code></pre>
+<p>我们刚刚创建的hello.py程序将会让你的终端打印出：</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+</code></pre>
+<p>让我们更加详细地回顾，这个程序做了什么。</p>
+
+<p>Python通过 <em>call（调用）</em> <code>print()</code>函数，执行了这一行<code>print("Hello, World!")</code>。字符串的值<code>Hello, World!</code>被 <em>pass（传递）</em> 到函数之中。 </p>
+
+<p>在这个例子中，字符串<code>Hello, World!</code>同样被称作<strong>argument（参数）</strong>，因为它是一个被传入函数的值。</p>
+
+<p><code>Hello, World!</code>左右两边的引号都没有被打印出来，因为它们被用于告诉Python它们包含着字符串。引号描述了字符串的起始和结束位置。</p>
+
+<p>因为程序成功运行了，我们因此可以确信Python 3已经成功地安装好，并且程序的句法正确。</p>
+
+<h2 id="总结">总结</h2>
+
+<p>恭喜你已成功地用Python 3写出了&quot;Hello, World!&quot;程序。</p>
+
+<p>从这里开始，你可以继续使用<code>print()</code>打印出你自己的想显示的字符串，你同样也可以创建新的程序文件。</p>
+
+<p>请通过阅读这个完整的系列教程<a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-python-3">如何用Python 3编程</a>，去继续学习Python编程。</p>

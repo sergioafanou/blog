@@ -1,0 +1,493 @@
+---
+layout: post
+title: How To Install and Use TimescaleDB on Ubuntu 18.04
+network: digitalocean
+date: December 03, 2019 at 09:22PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-use-timescaledb-on-ubuntu-18-04
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://computerhistory.org/">Computer History Museum</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p>Many applications, such as monitoring systems and data collection systems, accumulate data for further analysis. These analyses often look at the way a piece of data or a system changes over time. In these instances, data is represented as a time series, with every data point accompanied by a timestamp. An example would look like this:</p>
+<pre class="code-pre "><code langs=""><span class="highlight">2019-11-01 09:00:00</span>    server.cpu.1    0.9
+<span class="highlight">2019-11-01 09:00:00</span>    server.cpu.15   0.8
+<span class="highlight">2019-11-01 09:01:00</span>    server.cpu.1    0.9
+<span class="highlight">2019-11-01 09:01:00</span>    server.cpu.15   0.8
+...
+</code></pre>
+<p>Managing time series data has become an essential skill with the rise of the <a href="https://en.wikipedia.org/wiki/Internet_of_things">Internet of Things</a> (IoT) and Industrial Internet of Things. There are more and more devices that collect various time series information: fitness trackers, smart watches, home weather stations, and various sensors, to name a few. These devices collect a lot of information, and all this data must be stored somewhere.</p>
+
+<p>Classic relational databases are most often used to store data, but they don&rsquo;t always fit when it comes to the huge data volumes of time series. When you need to process a large amount of time series data, relational databases can be too slow. Because of this, specially optimized databases, called <a href="https://www.digitalocean.com/community/tutorials/a-comparison-of-nosql-database-management-systems-and-models">NoSQL databases</a>, have been created to avoid the problems of relational databases.</p>
+
+<p><a href="https://www.timescale.com/">TimescaleDB</a> is an open-source database optimized for storing time series data. It is implemented as an extension of <a href="https://www.digitalocean.com/community/tutorials/introduction-to-queries-postgresql">PostgreSQL</a> and combines the ease-of-use of relational databases and the speed of NoSQL databases. As a result, it allows you to use PostgreSQL for both storing business data and time series data in one place.</p>
+
+<p>By following this tutorial, you&rsquo;ll set up TimescaleDB on Ubuntu 18.04, configure it, and learn how to work with it. You&rsquo;ll create time series databases and make simple queries. Finally, you&rsquo;ll see how to get rid of unnecessary data.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To follow this tutorial, you will need:</p>
+
+<ul>
+<li>One Ubuntu 18.04 server set up by following our <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup Guide for Ubuntu 18.04</a>, including a non-root user with sudo privileges and a firewall. </li>
+<li>PostgreSQL installed on your server. Follow <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-postgresql-on-ubuntu-18-04"><strong>Step 1</strong> of How To Install and Use PostgreSQL on Ubuntu 18.04</a> to install it.</li>
+</ul>
+
+<h2 id="step-1-—-installing-timescaledb">Step 1 — Installing TimescaleDB</h2>
+
+<p>TimescaleDB is not available in Ubuntu&rsquo;s default package repositories, so in this step you will install it from the TimescaleDB Personal Packages Archive (PPA).</p>
+
+<p>First, add Timescale&rsquo;s APT repository:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository ppa:timescale/timescaledb-ppa
+</li></ul></code></pre>
+<p>Confirm this action by hitting the <code>ENTER</code> key.</p>
+
+<p>Next, refresh your APT cache to update your package lists:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>You can now proceed with the installation. This tutorial uses PostgreSQL version 10; if you are using a different version of PostgreSQL (11 or 9.6, for example), replace the value in the following command and run it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install timescaledb-postgresql-<span class="highlight">10</span> 
+</li></ul></code></pre>
+<p>TimescaleDB is now installed and ready to be used. Next, you will turn it on and adjust some of the settings associated with it in the PostgreSQL configuration file to optimize the database.</p>
+
+<h2 id="step-2-—-configuring-timescaledb">Step 2 — Configuring TimescaleDB</h2>
+
+<p>The TimescaleDB module works fine with the default PostgreSQL configuration settings, but to improve performance and make better use of processor, memory, and disk resources, the developers of TimescaleDB suggest configuring some individual parameters. This can be done automatically with the <code>timescaledb-tune</code> tool or by manually editing your server&rsquo;s <code>postgresql.conf</code> file.</p>
+
+<p>In this tutorial, you will use the <a href="https://blog.timescale.com/blog/better-database-performance-using-timescaledb-tune-fbd7ae7016fa/"><code>timescaledb-tune</code> tool</a>, which will read the <code>postgresql.conf</code> file and interactively suggest making changes.</p>
+
+<p>Run the following command to start the configuration wizard:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo timescaledb-tune
+</li></ul></code></pre>
+<p>First, you will be asked to confirm the path to the PostgreSQL configuration file:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Using postgresql.conf at this path:
+/etc/postgresql/<span class="highlight">10</span>/main/postgresql.conf
+
+Is this correct? [(y)es/(n)o]:
+</code></pre>
+<p>The utility automatically detects the path to the configuration file, so confirm this by entering <code>y</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Is this correct? [(y)es/(n)o]: <span class="highlight">y</span>
+Writing backup to:
+/tmp/timescaledb_tune.backup<span class="highlight">201911181111</span>
+</code></pre>
+<p>Next, you will be prompted to change the <code>shared_preload_libraries</code> variable to preload the TimescaleDB module upon starting the PostgreSQL server:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>shared_preload_libraries needs to be updated
+Current:
+#shared_preload_libraries = ''
+Recommended:
+shared_preload_libraries = 'timescaledb'
+Is this okay? [(y)es/(n)o]:
+</code></pre>
+<p><code>shared_preload_libraries</code> accepts a comma separated list of modules as a value, designating which modules PostgreSQL should load before starting the database server. Making this change will add the <code>timescaledb</code> module to that list.</p>
+
+<p><span class='note'><strong>Note:</strong> If a library specified by <code>shared_preload_libraries</code> is not found, the database server will fail to start. Keep this in mind when debugging applications that make use of <code>shared_preload_libraries</code>. For more information on this, see this <a href="https://postgresqlco.nf/en/doc/param/shared_preload_libraries">PostgresqlCO.NF article on <code>shared_preload_libraries</code></a>.<br></span></p>
+
+<p>Enable the TimescaleDB module by typing <code>y</code> at this prompt and pressing <code>ENTER</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Is this okay? [(y)es/(n)o]:  <span class="highlight">y</span>
+success: shared_preload_libraries will be updated
+</code></pre>
+<p>Based on the characteristics of your server and the PostgreSQL version, the script will then offer to tune your settings. Press <code>y</code> to start the tuning process:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Tune memory/parallelism/WAL and other settings? [(y)es/(n)o]:  <span class="highlight">y</span>
+Recommendations based on <span class="highlight">7.79</span> GB of available memory and <span class="highlight">4</span> CPUs for PostgreSQL <span class="highlight">10</span>
+
+Memory settings recommendations
+Current:
+shared_buffers = 128MB
+#effective_cache_size = 4GB
+#maintenance_work_mem = 64MB
+#work_mem = 4MB
+Recommended:
+shared_buffers = <span class="highlight">1994MB</span>
+effective_cache_size = <span class="highlight">5982MB</span>
+maintenance_work_mem = <span class="highlight">1021001kB</span>
+work_mem = <span class="highlight">5105kB</span>
+Is this okay? [(y)es/(s)kip/(q)uit]:
+</code></pre>
+<p><code>timescaledb-tune</code> will automatically detect the servers&rsquo;s available memory and calculate recommended values for a number of settings. <code>shared_buffers</code>, for example, determines the amount of memory allocated for caching data. By default this setting is relatively low to account for a wider range of platforms, so <code>timescaledb-tune</code> has suggested increasing the value from <code>128MB</code> to <code>1994MB</code>, taking better advantage of resources by making more room to store cached information like repeated queries. The <code>work_mem</code> variable has been increased as well to allow for more complicated sorts.</p>
+
+<p>If you would like to learn more about the process of tuning memory settings for PostgreSQL, see the <a href="https://wiki.postgresql.org/wiki/Tuning_Your_PostgreSQL_Server"><strong>Tuning Your PostgreSQL Server</strong> article on the PostgreSQL wiki</a>.</p>
+
+<p>Enter <code>y</code> to accept the values:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Is this okay? [(y)es/(s)kip/(q)uit]:  <span class="highlight">y</span>
+success: memory settings will be updated
+</code></pre>
+<p>At this point, if your server has multiple CPUs, you will find the recommendations for parallelism settings. These settings determine how multiple CPUs can make simultaneous queries in parallel to scan databases and return the requested data quicker.</p>
+
+<p>Those with multiple CPUs will encounter recommendations like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Parallelism settings recommendations
+Current:
+missing: timescaledb.max_background_workers
+#max_worker_processes = 8
+#max_parallel_workers_per_gather = 2
+#max_parallel_workers = 8
+Recommended:
+timescaledb.max_background_workers = 8
+max_worker_processes = 13
+max_parallel_workers_per_gather = 1
+max_parallel_workers = 2
+Is this okay? [(y)es/(s)kip/(q)uit]:
+</code></pre>
+<p>These settings regulate the number of <em>workers</em>, which process requests and background tasks. You can learn more about these settings from the <a href="https://docs.timescale.com/latest/getting-started/configuring#workers">TimescaleDB</a> and <a href="https://www.postgresql.org/docs/10/runtime-config-resource.html#RUNTIME-CONFIG-RESOURCE-ASYNC-BEHAVIOR">PostgreSQL</a> documentation.</p>
+
+<p>Type <code>y</code> then <code>ENTER</code> to accept these settings:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Is this okay? [(y)es/(s)kip/(q)uit]: <span class="highlight">y</span>
+success: parallelism settings will be updated
+</code></pre>
+<p>Next, you will find recommendations for <a href="https://www.postgresql.org/docs/9.1/wal-intro.html"><em>Write Ahead Log</em> (WAL)</a>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>WAL settings recommendations
+Current:
+#wal_buffers = -1
+#min_wal_size = 80MB
+#max_wal_size = 1GB
+Recommended:
+wal_buffers = <span class="highlight">16MB</span>
+min_wal_size = <span class="highlight">4GB</span>
+max_wal_size = <span class="highlight">8GB</span>
+Is this okay? [(y)es/(s)kip/(q)uit]:
+</code></pre>
+<p>WAL is a logging method in which PostgreSQL logs changes to data files before the changes are made to the database. By prioritizing an up-to-date record of data changes, WAL ensures that you can reconstruct your database in the event of a crash. In this way, it preserves data integrity. However, the default settings can cause inefficient input/output (I/O) operations that slow down write performance. To fix this, type and enter <code>y</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Is this okay? [(y)es/(s)kip/(q)uit]: <span class="highlight">y</span>
+success: WAL settings will be updated
+</code></pre>
+<p>You&rsquo;ll now find some miscellaneous recommendations:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Miscellaneous settings recommendations
+Current:
+#default_statistics_target = 100
+#random_page_cost = 4.0
+#checkpoint_completion_target = 0.5
+#max_locks_per_transaction = 64
+#autovacuum_max_workers = 3
+#autovacuum_naptime = 1min
+#effective_io_concurrency = 1
+Recommended:
+default_statistics_target = <span class="highlight">500</span>
+random_page_cost = <span class="highlight">1.1</span>
+checkpoint_completion_target = <span class="highlight">0.9</span>
+max_locks_per_transaction = <span class="highlight">64</span>
+autovacuum_max_workers = <span class="highlight">10</span>
+autovacuum_naptime = <span class="highlight">10</span>
+effective_io_concurrency = <span class="highlight">200</span>
+Is this okay? [(y)es/(s)kip/(q)uit]:
+</code></pre>
+<p>All of these different parameters are aimed at increasing performance. For example, SSDs can process many concurrent requests, so the best value for the <code>effective_io_concurrency</code> might be in the hundreds. You can find more info about these options in the <a href="https://www.postgresql.org/docs/10/runtime-config.html">PostgreSQL documentation</a>.</p>
+
+<p>Press <code>y</code> then <code>ENTER</code> to continue.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Is this okay? [(y)es/(s)kip/(q)uit]: <span class="highlight">y</span>
+success: miscellaneous settings will be updated
+Saving changes to: /etc/postgresql/<span class="highlight">10</span>/main/postgresql.conf
+</code></pre>
+<p>As a result, you will get a ready-made configuration file at <code>/etc/postgresql/<span class="highlight">10</span>/main/postgresql.conf</code>.</p>
+
+<span class='note'><p>
+<strong>Note:</strong> If you are automating the installation, you could also run the initial command with the <code>--quiet</code> and <code>--yes</code> flags, which will automatically apply all the recommendations and will make changes to the <code>postgresql.conf</code> configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo timescaledb-tune --quiet --yes
+</li></ul></code></pre>
+<p></p></span>
+
+<p>In order for the configuration changes to take effect, you must restart the PostgreSQL service:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart postgresql.service
+</li></ul></code></pre>
+<p>Now the database is running with optimal parameters and is ready to work with the time series data. In the next steps, you&rsquo;ll try out working with this data: creating new databases and hypertables and performing operations.</p>
+
+<h2 id="step-3-—-creating-a-new-database-and-hypertable">Step 3 — Creating a New Database and Hypertable</h2>
+
+<p>With your TimescaleDB setup optimized, you are ready to work with time series data. TimescaleDB is implemented as an extension of PostgreSQL, so operations with time series data are not much different from relational data operations. At the same time, the database allows you to freely combine data from time series and relational tables in the future.</p>
+
+<p>To demonstrate this, you will use PostgreSQL commands to create a database, then enable the TimescaleDB extension to create a <a href="https://docs.timescale.com/latest/introduction/architecture#hypertables"><em>hypertable</em></a>, which is a higher-level abstraction of many individual tables. Hypertables are the main structures you will work with in TimescaleDB.</p>
+
+<p>Log into your PostgreSQL database:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u postgres psql
+</li></ul></code></pre>
+<p>Now create a new database and connect to it. This tutorial will name the database <code><span class="highlight">timeseries</span></code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">CREATE DATABASE <span class="highlight">timeseries</span>;
+</li><li class="line" prefix="postgres=#">\c <span class="highlight">timeseries</span>
+</li></ul></code></pre>
+<p>You can find additional information about working with the PostgreSQL database in <a href="https://www.digitalocean.com/community/tutorials/how-to-create-remove-manage-tables-in-postgresql-on-a-cloud-server">our How To Create, Remove &amp; Manage Tables in PostgreSQL on a Cloud Server tutorial</a>.</p>
+
+<p>Finally, enable the TimescaleDB extension:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+</li></ul></code></pre>
+<p>You will see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>WARNING:
+WELCOME TO
+ _____ _                               _     ____________
+|_   _(_)                             | |    |  _  \ ___ \
+  | |  _ _ __ ___   ___  ___  ___ __ _| | ___| | | | |_/ /
+  | | | |  _ ` _ \ / _ \/ __|/ __/ _` | |/ _ \ | | | ___ \
+  | | | | | | | | |  __/\__ \ (_| (_| | |  __/ |/ /| |_/ /
+  |_| |_|_| |_| |_|\___||___/\___\__,_|_|\___|___/ \____/
+               Running version 1.5.1
+For more information on TimescaleDB, please visit the following links:
+
+ 1. Getting started: https://docs.timescale.com/getting-started
+ 2. API reference documentation: https://docs.timescale.com/api
+ 3. How TimescaleDB is designed: https://docs.timescale.com/introduction/architecture
+
+Note: TimescaleDB collects anonymous reports to better understand and assist our users.
+For more information and how to disable, please see our docs https://docs.timescaledb.com/using-timescaledb/telemetry.
+
+CREATE EXTENSION
+</code></pre>
+<p>As mentioned earlier, the primary points of interaction with your time series data are hypertables, which consist of many individual tables holding data, called <a href="https://docs.timescale.com/latest/introduction/architecture#chunks"><strong>chunks</strong></a>.</p>
+
+<p>To create a hypertable, start with a regular SQL table and then convert it into a hypertable via the function <code>create_hypertable</code>.</p>
+
+<p>Make a table that will store data for tracking temperature and humidity across a collection of devices over time:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">CREATE TABLE conditions (
+</li><li class="line" prefix="timeseries=#">  time        TIMESTAMP WITH TIME ZONE NOT NULL,
+</li><li class="line" prefix="timeseries=#">  device_id   TEXT,
+</li><li class="line" prefix="timeseries=#">  temperature  NUMERIC,
+</li><li class="line" prefix="timeseries=#">  humidity     NUMERIC
+</li><li class="line" prefix="timeseries=#">);
+</li></ul></code></pre>
+<p>This command creates a table called <code>conditions</code> with four columns. The first column will store the timestamp, which includes the time zone and cannot be empty. Next, you will use the time column to transform your table into a hypertable that is partitioned by time:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT create_hypertable('conditions', 'time');
+</li></ul></code></pre>
+<p>This command calls the <a href="https://docs.timescale.com/latest/api#create_hypertable"><code>create_hypertable()</code></a> function, which creates a TimescaleDB hypertable from a PostgreSQL table, replacing the latter.</p>
+
+<p>You will receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>    create_hypertable
+-------------------------
+ (1,public,conditions,t)
+(1 row)
+</code></pre>
+<p>In this step, you created a new hypertable to store time series data. Now you can populate it with data by writing to the hypertable, then run through the process of deleting it.</p>
+
+<h2 id="step-4-—-writing-and-deleting-data">Step 4 — Writing and Deleting Data</h2>
+
+<p>In this step, you will insert data using standard SQL commands and import large sets of data from external sources. This will show you the relational database aspects of TimescaleDB.</p>
+
+<p>First, try out the basic commands. You can insert data into the hypertable using the standard <code>INSERT</code> SQL command. Insert some sample <code>temperature</code> and <code>humidity</code> data for the theoretical device <code>weather-pro-000000</code> using the following command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">INSERT INTO conditions(time, device_id, temperature, humidity)
+</li><li class="line" prefix="timeseries=#">  VALUES (NOW(), 'weather-pro-000000', 84.1, 84.1);
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>INSERT 0 1
+</code></pre>
+<p>You can also insert multiple rows of data at once. Try the following:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">INSERT INTO conditions
+</li><li class="line" prefix="timeseries=#">  VALUES
+</li><li class="line" prefix="timeseries=#">    (NOW(), 'weather-pro-000002', 71.0, 51.0),
+</li><li class="line" prefix="timeseries=#">    (NOW(), 'weather-pro-000003', 70.5, 50.5),
+</li><li class="line" prefix="timeseries=#">    (NOW(), 'weather-pro-000004', 70.0, 50.2);
+</li></ul></code></pre>
+<p>You will receive the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>INSERT 0 3
+</code></pre>
+<p>You can also specify that the <code>INSERT</code> command will return some or all of the inserted data using the <code>RETURNING</code> statement:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">INSERT INTO conditions
+</li><li class="line" prefix="timeseries=#">  VALUES (NOW(), 'weather-pro-000002', 70.1, 50.1) RETURNING *;
+</li></ul></code></pre>
+<p>You will see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>             time              |     device_id      | temperature | humidity 
+-------------------------------+--------------------+-------------+----------
+ 2019-09-15 14:14:01.576651+00 | weather-pro-000002 |        70.1 |     50.1
+(1 row)
+</code></pre>
+<p>If you want to delete data from the hypertable, use the standard <code>DELETE</code> SQL command. Run the following to delete whatever data has a <code>temperature</code> higher than <code>80</code> or a <code>humidity</code> higher than <code>50</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">DELETE FROM conditions WHERE temperature &gt; 80;
+</li><li class="line" prefix="timeseries=#">DELETE FROM conditions WHERE humidity &gt; 50;
+</li></ul></code></pre>
+<p>After the delete operation, use the <code>VACUUM</code> command to reclaim space still used by data that has been deleted.</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">VACUUM conditions;
+</li></ul></code></pre>
+<p>You can find more info about <code>VACUUM</code> command in the <a href="https://www.postgresql.org/docs/current/sql-vacuum.html">PostgreSQL documentation</a>.</p>
+
+<p>These commands are fine for small-scale data entry, but since time series data often generates huge datasets from multiple devices simultaneously, it&rsquo;s essential also to know how to insert hundreds or thousands of rows at a time. If you have prepared data from external sources in a structured form, for example in <a href="https://en.wikipedia.org/wiki/Comma-separated_values">csv</a> format, this task can be accomplished quickly.</p>
+
+<p>To test this out, you will use a sample dataset that represents temperature and humidity data from a variety of locations. This is an official TimescaleDB dataset, made to test out their database. You can check out more info about sample datasets in <a href="https://docs.timescale.com/latest/tutorials/other-sample-datasets">the TimescaleDB documentation</a>.</p>
+
+<p>Let&rsquo;s see how you can import data from the <a href="https://docs.timescale.com/latest/tutorials/other-sample-datasets"><code>weather_small</code> sample dataset</a> into your database. First, quit Postgresql:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">\q
+</li></ul></code></pre>
+<p>Then download the dataset and extract it: </p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://timescaledata.blob.core.windows.net/datasets/<span class="highlight">weather_small</span>.tar.gz
+</li><li class="line" prefix="$">tar -xvzf weather_small.tar.gz
+</li></ul></code></pre>
+<p>Next, import the temperature and humidity data into your database:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u postgres psql -d <span class="highlight">timeseries</span> -c "\COPY conditions FROM weather_small_conditions.csv CSV"
+</li></ul></code></pre>
+<p>This connects to the <code><span class="highlight">timeseries</span></code> database and executes the <code>\COPY</code> command that copies the data from the chosen file into the <code>conditions</code> hypertable. It will run for a few seconds.</p>
+
+<p>When the data has been entered into your table, you will receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>COPY 1000000
+</code></pre>
+<p>In this step, you added data to the hypertable manually and in batches. Next, continue on to performing queries.</p>
+
+<h2 id="step-5-—-querying-data">Step 5 — Querying Data</h2>
+
+<p>Now that your table contains data, you can perform various queries to analyze it.</p>
+
+<p>To get started, log in to the database:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u postgres psql -d <span class="highlight">timeseries</span>
+</li></ul></code></pre>
+<p>As mentioned before, to work with hypertables you can use standard SQL commands. For example, to show the last 10 entries from the <code>conditions</code> hypertable, run the following command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT * FROM conditions LIMIT 10;
+</li></ul></code></pre>
+<p>You will see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>          time          |     device_id      |    temperature     | humidity
+------------------------+--------------------+--------------------+----------
+ 2016-11-15 12:00:00+00 | weather-pro-000000 |               39.9 |     49.9
+ 2016-11-15 12:00:00+00 | weather-pro-000001 |               32.4 |     49.8
+ 2016-11-15 12:00:00+00 | weather-pro-000002 | 39.800000000000004 |     50.2
+ 2016-11-15 12:00:00+00 | weather-pro-000003 | 36.800000000000004 |     49.8
+ 2016-11-15 12:00:00+00 | weather-pro-000004 |               71.8 |     50.1
+ 2016-11-15 12:00:00+00 | weather-pro-000005 |               71.8 |     49.9
+ 2016-11-15 12:00:00+00 | weather-pro-000006 |                 37 |     49.8
+ 2016-11-15 12:00:00+00 | weather-pro-000007 |                 72 |       50
+ 2016-11-15 12:00:00+00 | weather-pro-000008 |               31.3 |       50
+ 2016-11-15 12:00:00+00 | weather-pro-000009 |               84.4 |     87.8
+(10 rows)
+</code></pre>
+<p>This command lets you see what data is in the database. Since the database contains a million records, you used <code>LIMIT 10</code> to limit the output to 10 entries.</p>
+
+<p>To see the most recent entries, sort the data array by time in descending order:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT * FROM conditions ORDER BY time DESC LIMIT 20;
+</li></ul></code></pre>
+<p>This will output the top 20 most recent entries.</p>
+
+<p>You can also add a filter. For example, to see entries from the <code>weather-pro-000000</code> device, run the following:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT * FROM conditions WHERE device_id = 'weather-pro-000000' ORDER BY time DESC LIMIT 10;
+</li></ul></code></pre>
+<p>In this case, you will see the 10 most recent temperature and humidity datapoints recorded by the <code>weather-pro-000000</code> device.</p>
+
+<p>In addition to standard SQL commands, TimescaleDB also provides a number of special functions that are useful for time series data analysis. For example, to find the median of the temperature values, you can use the following query with the <code>percentile_cont</code> function:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT percentile_cont(0.5)
+</li><li class="line" prefix="timeseries=#">  WITHIN GROUP (ORDER BY temperature)
+</li><li class="line" prefix="timeseries=#">  FROM conditions
+</li><li class="line" prefix="timeseries=#">  WHERE device_id = 'weather-pro-000000';
+</li></ul></code></pre>
+<p>You will see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div> percentile_cont 
+-----------------
+            40.5
+(1 row)
+
+</code></pre>
+<p>In this way, you&rsquo;ll see the median temperature for the entire observation period where the <code>weather-pro-00000</code> sensor is located.</p>
+
+<p>To show the latest values from each of the sensors, you can use the <code>last</code> function:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">select device_id, last(temperature, time)
+</li><li class="line" prefix="timeseries=#">  FROM conditions
+</li><li class="line" prefix="timeseries=#">  GROUP BY device_id;
+</li></ul></code></pre>
+<p>In the output you will see a list of all the sensors and relevant latest values.</p>
+
+<p>To get the first values use the <code>first</code> function. </p>
+
+<p>The following example is more complex. It will show the hourly average, minimum, and maximum temperatures for the chosen sensor within the last 24 hours:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT time_bucket('1 hour', time) "hour",
+</li><li class="line" prefix="timeseries=#">trunc(avg(temperature), 2) avg_temp,
+</li><li class="line" prefix="timeseries=#">trunc(min(temperature), 2) min_temp,
+</li><li class="line" prefix="timeseries=#">trunc(max(temperature), 2) max_temp
+</li><li class="line" prefix="timeseries=#">FROM conditions
+</li><li class="line" prefix="timeseries=#">WHERE device_id = 'weather-pro-000000'
+</li><li class="line" prefix="timeseries=#">GROUP BY "hour" ORDER BY "hour" DESC LIMIT 24;
+</li></ul></code></pre>
+<p>Here you used the <code>time_bucket</code> function, which acts as a more powerful version of the PostgreSQL <a href="https://www.postgresql.org/docs/current/functions-datetime.html#functions-datetime-trunc"><code>date_trunc</code></a> function. As a result, you will see which periods of the day the temperature rises or decreases:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>          hour          | avg_temp | min_temp | max_temp
+------------------------+----------+----------+----------
+ 2016-11-16 21:00:00+00 |    42.00 |    42.00 |    42.00
+ 2016-11-16 20:00:00+00 |    41.92 |    41.69 |    42.00
+ 2016-11-16 19:00:00+00 |    41.07 |    40.59 |    41.59
+ 2016-11-16 18:00:00+00 |    40.11 |    39.79 |    40.59
+ 2016-11-16 17:00:00+00 |    39.46 |    38.99 |    39.79
+ 2016-11-16 16:00:00+00 |    38.54 |    38.19 |    38.99
+ 2016-11-16 15:00:00+00 |    37.56 |    37.09 |    38.09
+ 2016-11-16 14:00:00+00 |    36.62 |    36.39 |    37.09
+ 2016-11-16 13:00:00+00 |    35.59 |    34.79 |    36.29
+ 2016-11-16 12:00:00+00 |    34.59 |    34.19 |    34.79
+ 2016-11-16 11:00:00+00 |    33.94 |    33.49 |    34.19
+ 2016-11-16 10:00:00+00 |    33.27 |    32.79 |    33.39
+ 2016-11-16 09:00:00+00 |    33.37 |    32.69 |    34.09
+ 2016-11-16 08:00:00+00 |    34.94 |    34.19 |    35.49
+ 2016-11-16 07:00:00+00 |    36.12 |    35.49 |    36.69
+ 2016-11-16 06:00:00+00 |    37.02 |    36.69 |    37.49
+ 2016-11-16 05:00:00+00 |    38.05 |    37.49 |    38.39
+ 2016-11-16 04:00:00+00 |    38.71 |    38.39 |    39.19
+ 2016-11-16 03:00:00+00 |    39.72 |    39.19 |    40.19
+ 2016-11-16 02:00:00+00 |    40.67 |    40.29 |    40.99
+ 2016-11-16 01:00:00+00 |    41.63 |    40.99 |    42.00
+ 2016-11-16 00:00:00+00 |    42.00 |    42.00 |    42.00
+ 2016-11-15 23:00:00+00 |    42.00 |    42.00 |    42.00
+ 2016-11-15 22:00:00+00 |    42.00 |    42.00 |    42.00
+(24 rows)
+</code></pre>
+<p>You can find more useful functions in the <a href="https://docs.timescale.com/latest/using-timescaledb/reading-data">TimescaleDB documentation</a>.</p>
+
+<p>Now you know how to handle your data. Next, you will go through how to delete unnecessary data and how to compress data.</p>
+
+<h2 id="step-6-—-configuring-data-compression-and-deletion">Step 6 — Configuring Data Compression and Deletion</h2>
+
+<p>As data accumulates, it will take up more and more space on your hard drive. To save space, the latest version of TimescaleDB provides a data compression feature. This feature doesn&rsquo;t require tweaking any file system settings, and can be used to quickly make your database more efficient. For more information on how this compression works, take a look at <a href="https://docs.timescale.com/latest/using-timescaledb/compression#how-it-works">this Compression article from TimescaleDB</a>.</p>
+
+<p>First, enable the compression of your hypertable:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">ALTER TABLE conditions SET (
+</li><li class="line" prefix="timeseries=#">  timescaledb.compress,
+</li><li class="line" prefix="timeseries=#">  timescaledb.compress_segmentby = 'device_id'
+</li><li class="line" prefix="timeseries=#">);
+</li></ul></code></pre>
+<p>You will receive the following data:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NOTICE:  adding index _compressed_hypertable_2_device_id__ts_meta_sequence_num_idx ON _timescaledb_internal._compressed_hypertable_2 USING BTREE(device_id, _ts_meta_sequence_num)
+ALTER TABLE
+</code></pre>
+<span class='note'><p>
+<strong>Note:</strong> You can also set up TimescaleDB to compress data over the specified time period. For example, you could run:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT add_compress_chunks_policy('conditions', INTERVAL '7 days');
+</li></ul></code></pre>
+<p>In this example, the data will be automatically compressed after a week.<br></p></span>
+
+<p>You can see the statistics on the compressed data with the command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT * 
+</li><li class="line" prefix="timeseries=#">FROM timescaledb_information.compressed_chunk_stats;
+</li></ul></code></pre>
+<p>You will then see a list of chunks with their statuses: compression status and how much space is taken up by uncompressed and compressed data in bytes.</p>
+
+<p>If you don&rsquo;t have the need to store data for a long period of time, you can delete out-of-date data to free up even more space. There is a special <a href="https://docs.timescale.com/latest/api#drop_chunks"><code>drop_chunks</code></a> function for this. It allows you to delete chunks with data older than the specified time:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">SELECT drop_chunks(interval '24 hours', 'conditions');
+</li></ul></code></pre>
+<p>This query will drop all chunks from the hypertable <code>conditions</code> that only include data older than a day ago.</p>
+
+<p>You will receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>              drop_chunks
+----------------------------------------
+ _timescaledb_internal._hyper_1_2_chunk
+(1 row)
+</code></pre>
+<p>To automatically delete old data, you can configure a <code>cron</code> task. See our tutorial to learn more about <a href="https://www.digitalocean.com/community/tutorials/how-to-use-cron-to-automate-tasks-on-a-vps">how to use <code>cron</code> to automate various system tasks</a>. </p>
+
+<p>Exit from the database:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="timeseries=#">\q
+</li></ul></code></pre>
+<p>Next, edit your <code>crontab</code> with the following command, which should be run from the shell:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">crontab -e
+</li></ul></code></pre>
+<p>Now add the following line to the end of the file:</p>
+<div class="code-label " title="crontab">crontab</div><pre class="code-pre "><code langs="">...
+
+0 1 * * * /usr/bin/psql -h localhost -p 5432 -U postgres -d postgres -c "SELECT drop_chunks(interval '24 hours', 'conditions');" &gt;/dev/null 2&gt;&amp;1
+</code></pre>
+<p>This job will delete obsolete data that is older than one day at 1:00 AM every day. </p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>You&rsquo;ve now set up TimescaleDB on your Ubuntu 18.04 server. You also tried out creating hypertables, inserting data into it, querying the data, compressing, and deleting unnecessary records. With these examples, you&rsquo;ll be able to take advantage of TimescaleDB&rsquo;s key benefits over traditional relational database management systems for storing time-series data, including:</p>
+
+<ul>
+<li>Higher data ingest rates</li>
+<li>Quicker query performance</li>
+<li>Time-oriented features</li>
+</ul>
+
+<p>Now that you know how to store time series data, you could use the data to create graphs. TimescaleDB is compatible with visualization tools that work with PostgreSQL, like <a href="https://grafana.com/docs/features/datasources/postgres/">Grafana</a>. You can use our <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-grafana-on-ubuntu-18-04">How To Install and Secure Grafana on Ubuntu 18.04 tutorial</a> to learn more about this popular visualization tool.</p>

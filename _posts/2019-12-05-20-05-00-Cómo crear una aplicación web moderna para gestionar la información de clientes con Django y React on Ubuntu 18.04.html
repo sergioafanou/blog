@@ -1,0 +1,1337 @@
+---
+layout: post
+title: Cómo crear una aplicación web moderna para gestionar la información de clientes con Django y React on Ubuntu 18.04
+network: digitalocean
+date: December 05, 2019 at 08:05PM
+url: https://www.digitalocean.com/community/tutorials/como-crear-una-aplicacion-web-moderna-para-gestionar-la-informacion-de-clientes-con-django-y-react-on-ubuntu-18-04-es
+image: https://assets.digitalocean.com/articles/django_react_1604/django_home.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>El autor seleccionó <a href="https://www.brightfunds.org/organizations/open-sourcing-mental-illness-ltd">Open Sourcing Mental Illness Ltd</a> para recibir una donación como parte del programa <a href="https://do.co/w4do-cta">Write for Donations</a></em>.</p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p>Las personas utilizan diferentes tipos de dispositivos para conectarse a internet y navegar por la Web. Debido a esto, las aplicaciones deben ser accesibles desde varios lugares. Para los sitios web tradicionales, tener una IU receptiva suele ser suficiente, pero las aplicaciones más complejas suelen requerir el uso de otras técnicas y arquitecturas. Entre ellas se contempla tener aplicaciones back-end y front-end REST independientes que puedan implementarse como aplicaciones web para el cliente, aplicaciones web progresivas (PWA) o aplicaciones móviles nativas.</p>
+
+<p>Algunas herramientas que puede utilizar al crear aplicaciones más complejas incluyen:</p>
+
+<ul>
+<li><a href="https://reactjs.org/">React</a>, un marco de trabajo de JavaScript que permite a los desarrolladores crear frontends web y nativos para sus backend de API REST.</li>
+<li><a href="https://www.djangoproject.com/">Django</a>, una estructura web de Python gratuita y de código abierto que sigue el patrón de arquitectura del software de <a href="https://en.wikipedia.org/wiki/Model%E2%80%93view%E2%80%93controller"><em>modelo vista controlador (MVC)</em></a>.</li>
+<li><a href="http://www.django-rest-framework.org/">Django REST</a> framework, un conjunto de herramientas potentes y flexibles para el desarrollo de REST APIs en Django.</li>
+</ul>
+
+<p>En este tutorial, usted creará una aplicación web moderna con un backend REST API independiente y un frontend utilizando React, Django y Django REST Framework. Al utilizar React con Django, podrá beneficiarse de los últimos avances en el desarrollo de JavaScript y front-end. En lugar de crear una aplicación de Django que utilice un motor de plantillas incorporado, usted utilizará React como biblioteca de IU, aprovechando su enfoque virtual de Modelo de objetos de documentos (DOM), enfoque declarativo y componentes que rápidamente reproduzcan cambios en los datos.</p>
+
+<p>La aplicación web que usted creará almacena registros sobre clientes en una base de datos, y puede utilizarlo como punto de partida para una aplicación CRM. Cuando haya terminado, podrá crear, leer, actualizar y borrar registros utilizando una interfaz React de estilo <a href="https://getbootstrap.com/">Bootstrap</a> 4.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para completar este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un equipo de desarrollo con Ubuntu 18.04.</li>
+<li>Python 3, <code>pip</code> y <code>venv</code> instalados en su equipo siguiendo los Pasos 1 y 2 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-ubuntu-18-04">Cómo instalar Python 3 y Configurar un entorno de programación local en Ubuntu 18.04</a>.</li>
+<li>Node.js 6+ y <code>npm</code> 5.2 o superior instalados en su equipo. Puede instalar ambos siguiendo las instrucciones en <a href="https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-ubuntu-18-04#installing-using-a-ppa">Cómo instalar Node.js en Ubuntu 18.04</a> al instalar una PPA.</li>
+</ul>
+
+<h2 id="paso-1-creación-de-un-entorno-virtual-de-python-e-instalación-de-dependencias">Paso 1: Creación de un entorno virtual de Python e instalación de dependencias</h2>
+
+<p>En este paso, crearemos un entorno virtual e instalaremos las dependencias necesarias para nuestra aplicación, entre ellas, Django, Django REST framework y <code>django-cors-headers</code>.</p>
+
+<p>Nuestra aplicación utilizará dos servidores de desarrollo distintos para Django y React. Se ejecutarán en diferentes puertos y funcionarán como dos dominios separados. Debido a esto, debemos permitir el intercambio de recursos <a href="https://en.wikipedia.org/wiki/Cross-origin_resource_sharing"><em>de origen cruzado (CORS)</em></a> para enviar solicitudes HTTP desde React a Django sin que el navegador pueda bloquearlos.</p>
+
+<p>Navegue a su directorio principal y cree un entorno virtual utilizando el módulo <code>venv</code> Python 3:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">python3 -m venv ./env
+</li></ul></code></pre>
+<p>Active el entorno virtual creado utilizando &ldquo;source:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source env/bin/activate
+</li></ul></code></pre>
+<p>A continuación, instale las dependencias del proyecto con <code>pip</code>. Entre ellas se incluyen:</p>
+
+<ul>
+<li><strong>Django</strong>: el marco de trabajo web para el proyecto.</li>
+<li><strong>Django REST framework</strong>: Una aplicación externa que desarrolla REST APIs con Django.</li>
+<li><strong><code>django-cors-headers</code></strong>: un paquete que habilita CORS.</li>
+</ul>
+
+<p>Instalar la estructura de Django:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">pip install django djangorestframework django-cors-headers
+</li></ul></code></pre>
+<p>Con las dependencias del proyecto instaladas, puede crear el proyecto Django y el frontend de React.</p>
+
+<h2 id="paso-2-creación-del-proyecto-django">Paso 2: Creación del proyecto Django</h2>
+
+<p>En este paso, generaremos el proyecto Django utilizando las siguientes comandos y utilidades:</p>
+
+<ul>
+<li><p><code>**django-admin startproject <span class="highlight">project-name</span>**</code>:<a href="https://docs.djangoproject.com/en/2.0/ref/contrib/admin/#"><code>django-admin</code></a> es una utilidad de línea de comandos que se utiliza para realizar tareas con Django. El comando <code>startproject</code> crea un nuevo proyecto Django.</p></li>
+<li><p><code>**python manage.py startapp <span class="highlight">myapp</span>**</code>: <code>manage.py</code> es un script de utilidad que se añade automáticamente a cada proyecto de Django, y que ejecuta varias tareas administrativas, como crear nuevas aplicaciones, migrar la base de datos y servir de forma local el proyecto de Django. Su comando <code>startapp</code> crea una aplicación de Django dentro del proyecto Django. En Django, el término <em>aplicación</em> describe un paquete de Python que proporciona algunas características en un proyecto.</p></li>
+</ul>
+
+<p>Para comenzar, cree el proyecto Django con <code>django-admin startproject</code>. Hemos de nombrar a nuestro proyecto <code><span class="highlight">djangoreactproject</span></code></p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">django-admin startproject <span class="highlight">djangoreactproject</span> 
+</li></ul></code></pre>
+<p>Antes de seguir, observemos la estructura del directorio de nuestro proyecto Django utilizando el comando <code>tree</code>.</p>
+
+<span class='note'><p>
+<strong>Nota:</strong> <code>tree</code> es un comando útil para visualizar estructuras de archivos y directorio desde la línea de comandos. Puede instalarlo con el comando que se indica a continuación:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install tree
+</li></ul></code></pre>
+<p>Para utilizarlo, use el comando <code>cd</code> en el directorio que desee y escriba <code>tree</code> o proporcione la ruta al punto de partida con <code>tree /home/<span class="highlight">sammy</span>/<span class="highlight">sammys-project</span></code>.<br></p></span>
+
+<p>Navegue a la carpeta <code>djangoreactproject</code> dentro del root de su proyecto y ejecute el comando <code>tree</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">cd ~/djangoreactproject
+</li><li class="line" prefix="(env) sammy@ubuntu:$">tree
+</li></ul></code></pre>
+<p>Verá lo siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── djangoreactproject
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+└── manage.py
+</code></pre>
+<p>La carpeta <code>~/djangoreactproject</code> es la root del proyecto. Dentro de esta carpeta, hay varios archivos que serán importantes para su labor:</p>
+
+<ul>
+<li><strong><code>manage.py</code></strong>: el script de utilidad que realiza diversas tareas administrativas.</li>
+<li><strong><code>settings.py</code></strong>: el archivo de configuración principal para el proyecto de Django, donde puede modificar la configuración del proyecto. Estos ajustes incluyen variables como <code>INSTALLED_APPS</code>, una <a href="https://www.digitalocean.com/community/tutorials/understanding-lists-in-python-3">lista</a> de strings que designan las aplicaciones habilitadas para su proyecto. La documentación de Django contiene más información sobre los <a href="https://docs.djangoproject.com/en/2.0/ref/settings/">ajustes disponibles</a>.</li>
+<li><strong><code>urls.py</code></strong>: este archivo contiene una lista de patrones de URL y vistas relacionadas. Cada patrón traza una conexión entre una URL y la función que se debe solicitar para esa URL. Para más información sobre URL y vistas, consulte nuestro tutorial sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-views">Cómo crear vistas de Django</a>.</li>
+</ul>
+
+<p>Nuestro primer paso en el trabajo con el proyecto será configurar los paquetes que instalamos en el paso anterior, incluidos Django REST framework y el paquete Django CORS, al añadirlos a <code>settings.py</code>. Abra el archivo con <code>nano</code> o su editor favorito:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">nano ~/djangoreactproject/djangoreactproject/settings.py
+</li></ul></code></pre>
+<p>Navegue al ajuste <code>INSTALLED_APPS</code> y añada las aplicaciones <code>rest_framework</code> y <code>corsheaders</code> en la parte inferior de la lista:</p>
+<div class="code-label " title="~/djangoreactproject/djangoreactproject/settings.py">~/djangoreactproject/djangoreactproject/settings.py</div><pre class="code-pre "><code langs="">...
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    <span class="highlight">'rest_framework',</span>
+    <span class="highlight">'corsheaders'</span>
+]
+</code></pre>
+<p>A continuación, añada el middleware <code>corsheaders.middleware.CorsMiddleware</code> desde el paquete CORS instalado previamente al ajuste <code>MIDDLEWARE</code>. Este ajuste es una lista de <em>middlewares</em>, una clase de Python que contiene código que se procesa cada vez que su aplicación web gestiona una solicitud o respuesta:</p>
+<div class="code-label " title="~/djangoreactproject/djangoreactproject/settings.py">~/djangoreactproject/djangoreactproject/settings.py</div><pre class="code-pre "><code langs="">...
+
+MIDDLEWARE = [
+...
+'django.contrib.messages.middleware.MessageMiddleware',
+'django.middleware.clickjacking.XFrameOptionsMiddleware',
+<span class="highlight">'corsheaders.middleware.CorsMiddleware'</span>
+]
+</code></pre>
+<p>A continuación, puede habilitar CORS. El ajuste <code>CORS_ORIGIN_ALLOW_ALL</code> especifica si desea habilitar CORS para todos los dominios o no, y <code>CORS_ORIGIN_WHITELIST</code> es una tupla de Python que contiene URL permitidas. En nuestro caso, dado que el servidor de desarrollo de React se ejecutará en <code>http://localhost:3000</code>, añadiremos nuevos ajustes <code>CORS_ORIGIN_ALLOW_ALL = False</code> y <code>CORS_ORIGIN_WHITELIST('localhost:3000',)</code> a nuestro archivo <code>settings.py</code>. Añade estos ajustes en cualquier parte del archivo:</p>
+<div class="code-label " title="~/djangoreactproject/djangoreactproject/settings.py">~/djangoreactproject/djangoreactproject/settings.py</div><pre class="code-pre "><code langs="">
+...
+<span class="highlight">CORS_ORIGIN_ALLOW_ALL = False</span>
+
+<span class="highlight">CORS_ORIGIN_WHITELIST = (</span>
+       <span class="highlight">'localhost:3000',</span>
+<span class="highlight">)</span>
+...
+</code></pre>
+<p>Puede encontrar más opciones de configuración en la <a href="https://github.com/ottoyiu/django-cors-headers/#configuration">documentación de <code>django-cors-headers</code></a>.</p>
+
+<p>Guarde el archivo y salga del editor cuando haya terminado.</p>
+
+<p>Aún en el directorio <code>~/djangoreactproject</code>, cree una nueva aplicación de Django llamada <code><span class="highlight">customers</span></code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">python manage.py startapp <span class="highlight">customers</span>
+</li></ul></code></pre>
+<p>Contendrá los <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-models">modelos</a> y las <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-views">vistas</a> para gestionar clientes. Los modelos definen los campos y los comportamientos de nuestros datos de aplicaciones, mientras que las vistas permiten a nuestras aplicaciones gestionar adecuadamente las solicitudes web y devolver las respuestas requeridas.</p>
+
+<p>A continuación, añada esta aplicación a la lista de aplicaciones instaladas en el archivo <code>settings.py</code> de su proyecto para que Django la reconozca como parte del proyecto. Abra <code>settings.py</code> de nuevo:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">nano ~/djangoreactproject/djangoreactproject/settings.py
+</li></ul></code></pre>
+<p>Añada la aplicación <code>customers</code>:</p>
+<div class="code-label " title="~/djangoreactproject/djangoreactproject/settings.py">~/djangoreactproject/djangoreactproject/settings.py</div><pre class="code-pre "><code langs="">...
+INSTALLED_APPS = [
+    ...
+    'rest_framework',
+    'corsheaders'<span class="highlight">,</span>
+    <span class="highlight">'customers'</span>
+]
+...
+</code></pre>
+<p>A continuación, *migre *la base de datos e inicie el servidor de desarrollo local. <a href="https://docs.djangoproject.com/en/2.0/topics/migrations/">Las migraciones</a> son la manera en que Django propaga los cambios que usted realiza a sus modelos en su esquema de base de datos. Estos cambios pueden ser, por ejemplo, añadir un campo o eliminar un modelo. Para obtener más información sobre modelos y migraciones, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-models">Cómo crear modelos de Django</a>.</p>
+
+<p>Migre la base de datos:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">python manage.py migrate
+</li></ul></code></pre>
+<p>Inicie el servidor de desarrollo local:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">python manage.py runserver
+</li></ul></code></pre>
+<p>El resultado debe ser similar a lo siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Performing system checks...
+
+System check identified no issues (0 silenced).
+October 22, 2018 - 15:14:50
+Django version 2.1.2, using settings 'djangoreactproject.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+</code></pre>
+<p>Su aplicación web se ejecuta desde <code>http://127.0.0.1:8000</code>. Si se dirige a esta dirección en su navegador web, debería ver la siguiente página:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/django_react_1604/django_home.png" alt="Página de demostración de Django"></p>
+
+<p>En este momento, deje la aplicación en ejecución y abra una nueva terminal para seguir desarrollando el proyecto.</p>
+
+<h2 id="paso-3-creación-del-frontend-de-react">Paso 3: creación del frontend de React</h2>
+
+<p>En esta sección, vamos a crear la aplicación frontend de nuestro proyecto utilizando React.</p>
+
+<p>React tiene una herramienta oficial que le permite generar proyectos de React de forma rápida sin tener que configurar <a href="https://webpack.js.org/">Webpack</a> directamente. Webpack es un empaquetador de módulos que se utiliza para agrupar recursos web, como código de JavaScript, CSS e imágenes. Normalmente, para poder utilizar Webpack, debe establecer varias opciones de configuración, pero, gracias a la herramienta <code>create-react-app</code>, no tiene que lidiar con Webpack directamente hasta que decida que necesita más control. Para ejecutar <code>create-react-app</code> puede utilizar <a href="https://github.com/zkat/npx">npx</a>, una herramienta que ejecuta binarios de paquetes <code>npm</code>.</p>
+
+<p>En su segunda terminal, asegúrese de que estar en el directorio de su proyecto:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/djangoreactproject
+</li></ul></code></pre>
+<p>Cree un proyecto de React llamado <code><span class="highlight">frontend</span></code> utilizando <code>create-react-app</code> y <code>npx</code></p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npx create-react-app <span class="highlight">frontend</span>
+</li></ul></code></pre>
+<p>A continuación, navegue al interior de su aplicación de React e inicie el servidor de desarrollo:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/djangoreactproject/frontend
+</li><li class="line" prefix="$">npm start
+</li></ul></code></pre>
+<p>Su aplicación se ejecutará desde <code>http://localhost:3000/</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/django_react_1604/react_home.png" alt="Página de demostración de React"></p>
+
+<p>Deje el servidor de desarrollo de React en ejecución y abra otra ventana de terminal para proceder.</p>
+
+<p>Para ver la estructura del directorio de todo el proyecto en este punto, navegue a la carpeta root y ejecute el comando <code>tree</code> de nuevo:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/djangoreactproject
+</li><li class="line" prefix="$">tree
+</li></ul></code></pre>
+<p>Verá una estructura como esta:</p>
+<pre class="code-pre  third-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── customers
+│   ├── admin.py
+│   ├── apps.py
+│   ├── __init__.py
+│   ├── migrations
+│   │   └── __init__.py
+│   ├── models.py
+│   ├── tests.py
+│   └── views.py
+├── djangoreactproject
+│   ├── __init__.py
+│   ├── __pycache__
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── frontend
+│   ├── package.json
+│   ├── public
+│   │   ├── favicon.ico
+│   │   ├── index.html
+│   │   └── manifest.json
+│   ├── README.md
+│   ├── src
+│   │   ├── App.css
+│   │   ├── App.js
+│   │   ├── App.test.js
+│   │   ├── index.css
+│   │   ├── index.js
+│   │   ├── logo.svg
+│   │   └── registerServiceWorker.js
+│   └── yarn.lock
+└── manage.py
+</code></pre>
+<p>Nuestra aplicación utilizará Bootstrap 4 para dar forma a la interfaz de React, por lo que lo incluiremos en el archivo <code>frontend/src/App.css</code> que gestiona nuestros ajustes de CSS. Abra el archivo:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/djangoreactproject/frontend/src/App.css
+</li></ul></code></pre>
+<p>Añada <a href="https://www.digitalocean.com/community/tutorials/how-to-import-modules-in-python-3#importing-modules"><em>la importación que se indica a continuación</em></a> al comienzo del archivo. Puede eliminar el contenido existente del archivo, pero no es necesario hacerlo:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/App.css">~/djangoreactproject/frontend/src/App.css</div><pre class="code-pre "><code class="code-highlight language-css">@import  'https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css';
+</code></pre>
+<p>Aquí, <code>@import</code> es una instrucción de CSS que se utiliza para importar reglas de estilo de otras hojas de estilo.</p>
+
+<p>Ahora que hemos creado las aplicaciones back-end y front-end, vamos a crear el modelo de cliente y algunos datos de prueba.</p>
+
+<h2 id="paso-4-creación-del-modelo-de-cliente-y-datos-iniciales">Paso 4: creación del modelo de cliente y datos iniciales</h2>
+
+<p>Tras crear la aplicación de Django y el frontend de React, nuestro próximo paso será crear el modelo de cliente, que representa la tabla de base de datos que almacenará información sobre los clientes. No necesita nada de SQL, dado que el <em>mapeo objeto-relacional (ORM)</em> de Django se encargará de las operaciones de la base de datos al asignar las clases y variables de Python a tablas y columnas de SQL. De esta manera, el ORM de Django extrae las interacciones de SQL con la base de datos a través de una interfaz de Python.</p>
+
+<p>Active su entorno virtual de nuevo:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">source env/bin/activate
+</li></ul></code></pre>
+<p>Diríjase al directorio <code>customers</code> y abra <code>models.py</code>, un archivo de Python que contiene los modelos de su aplicación:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">cd ~/djangoreactproject/customers/
+</li><li class="line" prefix="(env) sammy@ubuntu:$">nano models.py
+</li></ul></code></pre>
+<p>El archivo incluirá el siguiente contenido:</p>
+<div class="code-label " title="~/djangoreactproject/customers/models.py">~/djangoreactproject/customers/models.py</div><pre class="code-pre "><code class="code-highlight language-python">from django.db import models
+# Create your models here.
+</code></pre>
+<p>La API del modelo de cliente ya está importada en el archivo gracias a la instrucción import <code>from django.db import models</code>. Ahora, añadirá la clase <code>Customer</code>, que extiende <code>models.Model</code>. Cada modelo de Django es una clase de Python que extiende <a href="https://docs.djangoproject.com/en/2.0/ref/models/instances/#django.db.models.Model"><code>django.db.models.Model</code></a>.</p>
+
+<p>El modelo <code>Customer</code> tendrá estos campos de base de datos:</p>
+
+<ul>
+<li><strong><code>first_name</code></strong>: el nombre del cliente.</li>
+<li><strong><code>last_name</code></strong>: el apellido del cliente.</li>
+<li><strong><code>email</code></strong>: la dirección de correo electrónico del cliente.</li>
+<li><strong><code>phone</code></strong>: el número de teléfono del cliente.</li>
+<li><strong><code>address</code></strong>: la dirección del cliente.</li>
+<li><strong><code>description</code></strong>: la descripción del cliente.</li>
+<li><strong><code>createdAt</code></strong>: la fecha en que se añade el cliente.</li>
+</ul>
+
+<p>También añadiremos la función <code>__str__()</code>, que define la manera en que se mostrará el modelo. En nuestro caso, será con el nombre del cliente. Para obtener más información sobre la creación de clases y la definición de objetos, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-construct-classes-and-define-objects-in-python-3">Cómo crear clases y definir objetos en Python 3</a>.</p>
+
+<p>Añada el código siguiente al archivo:</p>
+<div class="code-label " title="~/djangoreactproject/customers/models.py">~/djangoreactproject/customers/models.py</div><pre class="code-pre "><code class="code-highlight language-python">from django.db import models
+
+class Customer(models.Model):
+    first_name = models.CharField("First name", max_length=255)
+    last_name = models.CharField("Last name", max_length=255)
+    email = models.EmailField()
+    phone = models.CharField(max_length=20)
+    address =  models.TextField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    createdAt = models.DateTimeField("Created At", auto_now_add=True)
+
+    def __str__(self):
+        return self.first_name
+</code></pre>
+<p>A continuación, migre la base de datos para crear las tablas de la base de datos. El comando <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-models#step-4-%E2%80%94-make-migrations"><code>makemigrations</code></a> crea los archivos de migración en los que se añadirán los cambios al modelo, y <code>migrate</code> aplica los cambios en los archivos de migraciones a la base de datos.</p>
+
+<p>Vuelva a navegar a la carpeta root del proyecto:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">cd ~/djangoreactproject
+</li></ul></code></pre>
+<p>Ejecute lo siguiente para crear los archivos de migración:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">python manage.py makemigrations
+</li></ul></code></pre>
+<p>Verá algo similar a esto:</p>
+<pre class="code-pre  third-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>customers/migrations/0001_initial.py
+    - Create model Customer
+</code></pre>
+<p>Aplique estos cambios en la base de datos:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">python manage.py migrate
+</li></ul></code></pre>
+<p>Verá un resultado que indica que la migración se realizó correctamente:</p>
+<pre class="code-pre  third-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, customers, sessions
+Running migrations:
+  Applying customers.0001_initial... OK
+</code></pre>
+<p>A continuación, utilizará un <em>archivo de migración de datos</em> para crear datos iniciales de clientes. Un <a href="https://docs.djangoproject.com/en/2.0/topics/migrations/#data-migrations">archivo de migración de datos</a> es una migración que añade o altera datos en la base de datos. Cree un archivo de migración de datos vacío para la aplicación <code>customers</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">python manage.py makemigrations --empty --name customers customers
+</li></ul></code></pre>
+<p>Visualizará la siguiente confirmación con el nombre de su archivo de migración:</p>
+<pre class="code-pre  third-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Migrations for 'customers':
+  customers/migrations/0002_customers.py
+</code></pre>
+<p>Tenga en cuenta que el nombre de su archivo de migración es <code>0002_customers.py</code>.</p>
+
+<p>A continuación, navegue al interior de la carpeta de migraciones de la aplicación <code>customers</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">cd ~/djangoreactproject/customers/migrations
+</li></ul></code></pre>
+<p>Abra el archivo de migración creado:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">nano 0002_customers.py
+</li></ul></code></pre>
+<p>Este es el contenido inicial del archivo:</p>
+<div class="code-label " title="~/djangoreactproject/customers/migrations/0002_customers.py">~/djangoreactproject/customers/migrations/0002_customers.py</div><pre class="code-pre "><code class="code-highlight language-python">from django.db import migrations
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ('customers', '0001_initial'),
+    ]
+    operations = [
+    ]        
+</code></pre>
+<p>La instrucción import importa la API de <code>migraciones</code>, una API de Django para crear migraciones, desde <code>django.db</code>, un paquete incorporado que contiene clases para trabajar con bases de datos.</p>
+
+<p>La clase <code>Migration</code> es una clase de Python que describe las operaciones que se ejecutan al migrar bases de datos. Esta clase extiende <code>migrations.Migration</code> y tiene dos listas:</p>
+
+<ul>
+<li><strong><code>dependencies</code></strong>: contiene las migraciones dependientes.</li>
+<li><strong><code>operations</code></strong>: contiene las operaciones que se ejecutarán al aplicar la migración.</li>
+</ul>
+
+<p>A continuación, añada un <a href="https://www.digitalocean.com/community/tutorials/how-to-define-functions-in-python-3">método</a> para crear datos de clientes de prueba. Añada el método que se indica a continuación antes de la definición de la clase <code>Migration</code>:</p>
+<div class="code-label " title="~/djangoreactproject/customers/migrations/0002_customers.py">~/djangoreactproject/customers/migrations/0002_customers.py</div><pre class="code-pre "><code class="code-highlight language-python">...
+def create_data(apps, schema_editor):
+    Customer = apps.get_model('customers', 'Customer')
+    Customer(first_name="Customer 001", last_name="Customer 001", email="customer001@email.com", phone="00000000", address="Customer 000 Address", description= "Customer 001 description").save()
+
+...
+</code></pre>
+<p>En este método, estamos tomando la clase <code>Customer</code> de nuestra aplicación <code>customers</code> y creando un cliente de prueba para insertar en la base de datos.</p>
+
+<p>Para obtener la clase <code>Customer</code>, que permitirá la creación de nuevos clientes, usamos el método <code>get_model()</code> del objeto <code>apps</code>. El objeto <code>apps</code> representa el <a href="https://docs.djangoproject.com/en/2.1/ref/applications/#django.apps.apps">registro</a> de aplicaciones instaladas y sus modelos de base de datos.</p>
+
+<p>El objeto <code>apps</code> se pasará del método <code>RunPython()</code> cuando lo usemos para ejecutar <code>create_data()</code>. Añada el método <code>migrations.RunPython()</code> a la lista <code>operations</code> vacía:</p>
+<div class="code-label " title="~/djangoreactproject/customers/migrations/0002_customers.py">~/djangoreactproject/customers/migrations/0002_customers.py</div><pre class="code-pre "><code class="code-highlight language-python">
+...
+    operations = [
+        <span class="highlight">migrations.RunPython(create_data),</span>
+    ]  
+</code></pre>
+<p><code>RunPython()</code> es parte de la API de Migrations que le permite ejecutar código de Python personalizado en una migración. Nuestra lista <code>operations</code> especifica que este método se ejecutará al aplicar la migración.</p>
+
+<p>Este es el archivo completo:</p>
+<div class="code-label " title="~/djangoreactproject/customers/migrations/0002_customers.py">~/djangoreactproject/customers/migrations/0002_customers.py</div><pre class="code-pre "><code class="code-highlight language-python">from django.db import migrations
+
+def create_data(apps, schema_editor):
+    Customer = apps.get_model('customers', 'Customer')
+    Customer(first_name="Customer 001", last_name="Customer 001", email="customer001@email.com", phone="00000000", address="Customer 000 Address", description= "Customer 001 description").save()
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ('customers', '0001_initial'),
+    ]
+    operations = [
+        migrations.RunPython(create_data),
+    ]        
+</code></pre>
+<p>Para obtener más información sobre migraciones de datos, consulte la documentación sobre <a href="https://docs.djangoproject.com/en/2.0/topics/migrations/#data-migrations">migraciones de datos en Django</a></p>
+
+<p>Para migrar su base de datos, primero, vuelva a navegar a la carpeta root de su proyecto:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">cd ~/djangoreactproject
+</li></ul></code></pre>
+<p>Migre su base de datos para crear los datos de prueba:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">python manage.py migrate
+</li></ul></code></pre>
+<p>Visualizará un resultado que confirma la migración:</p>
+<pre class="code-pre  third-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, customers, sessions
+Running migrations:
+  Applying customers.0002_customers... OK
+</code></pre>
+<p>Para obtener más detalles sobre este proceso, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-models">Cómo crear modelos de Django</a>.</p>
+
+<p>Con el modelo Customer y los datos de prueba creados, podemos pasar a la creación de la API REST.</p>
+
+<h2 id="paso-5-creación-de-la-api-rest">Paso 5: creación de la API REST</h2>
+
+<p>En este paso, vamos a crear la API REST utilizando Django REST Framework. Crearemos varias <em>vistas de API</em> diferentes. Una vista de API es una función que gestiona una solicitud o llamada de API, mientras que un <em>punto de final de API</em> es una URL única que representa un punto de contacto con el sistema REST. Por ejemplo, cuando el usuario envía una solicitud de GET a un punto final de API, Django llama a la función o vista de API correspondiente para gestionar la solicitud y devolver los resultados posibles.</p>
+
+<p>También utilizaremos <a href="http://www.django-rest-framework.org/api-guide/serializers/">serializadores</a>. Un <a href="https://docs.djangoproject.com/en/2.0/topics/serialization/">serializador</a> de Django REST Framework permite que instancias de modelos complejas y QuerySets se conviertan en formato JSON para el consumo de API. La clase de serialización también puede funcionar en dirección inversa, proporcionando mecanismos para el análisis y la deserialización de datos en QuerySets y modelos de Django.</p>
+
+<p>Nuestros puntos finales de API incluirán lo siguiente:</p>
+
+<ul>
+<li><code>api/customers</code>: este punto final se utiliza para crear clientes y devuelve conjuntos paginados de clientes.</li>
+<li><code>api/clusters/&lt;pk&gt;</code>: este punto final se utiliza para obtener, actualizar y eliminar clientes individuales por clave primaria o id.</li>
+</ul>
+
+<p>También crearemos URL en el archivo <code>urls.py</code> del proyecto para los puntos finales correspondientes (es decir, <code>api/clusters</code> y <code>api/clusters/&lt;pk&gt;</code>).</p>
+
+<p>Comencemos por crear la <em>clase de serialización</em> para nuestro modelo <code>Customer</code>.</p>
+
+<h3 id="incorporación-de-la-clase-de-serialización">Incorporación de la clase de serialización</h3>
+
+<p>Es necesario crear una clase de serialización para nuestro modelo <code>Customer</code> para transformar las instancias de cliente y QuerySets hacia y desde JSON. Para crear la clase de serialización, primero, cree un archivo <code>serializer.py</code> dentro de la aplicación <code>customers</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">cd ~/djangoreactproject/customers/
+</li><li class="line" prefix="(env) sammy@ubuntu:$">nano serializers.py
+</li></ul></code></pre>
+<p>Añada el código siguiente para importar el modelo <code>Customer</code> y la API de serializadores:</p>
+<div class="code-label " title="~/djangoreactproject/customers/serializers.py">~/djangoreactproject/customers/serializers.py</div><pre class="code-pre "><code class="code-highlight language-python">from rest_framework import serializers
+from .models import Customer
+</code></pre>
+<p>A continuación, cree una clase de serialización que extienda <code>serializers.ModelSerializer</code> y especifique los campos que han de serializarse:</p>
+<div class="code-label " title="~/djangoreactproject/customers/serializers.py">~/djangoreactproject/customers/serializers.py</div><pre class="code-pre "><code class="code-highlight language-python">
+...
+class CustomerSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Customer 
+        fields = ('pk','first_name', 'last_name', 'email', 'phone','address','description')
+</code></pre>
+<p>La clase <code>Meta</code> especifica qué campos y modelos se serializarán: <code>pk</code>, <code>first_name</code>, <code>last_name</code>, <code>email</code>, <code>phone</code>, <code>address</code>, <code>description</code>.</p>
+
+<p>Este es el contenido completo del archivo:</p>
+<div class="code-label " title="~/djangoreactproject/customers/serializers.py">~/djangoreactproject/customers/serializers.py</div><pre class="code-pre "><code class="code-highlight language-python">from rest_framework import serializers
+from .models import Customer
+
+class CustomerSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Customer 
+        fields = ('pk','first_name', 'last_name', 'email', 'phone','address','description')
+</code></pre>
+<p>Ahora que hemos creado nuestra clase de serialización, podemos añadir las vistas de API.</p>
+
+<h3 id="incorporación-de-vistas-de-api">Incorporación de vistas de API</h3>
+
+<p>En esta sección, crearemos las vistas de API para nuestra aplicación, a las que llamará Django cuando el usuario visite el punto final correspondiente a la función de vista.</p>
+
+<p>Abra <code>~/djangoreactproject/customers/views.py</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">nano ~/djangoreactproject/customers/views.py
+</li></ul></code></pre>
+<p>Elimine lo que haya allí y añada las siguientes importaciones:</p>
+<div class="code-label " title="~/djangoreactproject/customers/views.py">~/djangoreactproject/customers/views.py</div><pre class="code-pre "><code class="code-highlight language-python">from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework import status
+
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from .models import Customer 
+from .serializers import *
+</code></pre>
+<p>Estamos importando el serializador que creamos, junto con el modelo <code>Customer</code> y las API de Django y Django REST Framework.</p>
+
+<p>A continuación, añada la vista para el procesamiento de POST y las solicitudes GET HTTP:</p>
+<div class="code-label " title="~/djangoreactproject/customers/views.py">~/djangoreactproject/customers/views.py</div><pre class="code-pre "><code class="code-highlight language-python">...
+
+@api_view(['GET', 'POST'])
+def customers_list(request):
+    """
+ List  customers, or create a new customer.
+ """
+    if request.method == 'GET':
+        data = []
+        nextPage = 1
+        previousPage = 1
+        customers = Customer.objects.all()
+        page = request.GET.get('page', 1)
+        paginator = Paginator(customers, 10)
+        try:
+            data = paginator.page(page)
+        except PageNotAnInteger:
+            data = paginator.page(1)
+        except EmptyPage:
+            data = paginator.page(paginator.num_pages)
+
+        serializer = CustomerSerializer(data,context={'request': request} ,many=True)
+        if data.has_next():
+            nextPage = data.next_page_number()
+        if data.has_previous():
+            previousPage = data.previous_page_number()
+
+        return Response({'data': serializer.data , 'count': paginator.count, 'numpages' : paginator.num_pages, 'nextlink': '/api/customers/?page=' + str(nextPage), 'prevlink': '/api/customers/?page=' + str(previousPage)})
+
+    elif request.method == 'POST':
+        serializer = CustomerSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+</code></pre>
+<p>Primero, usamos el decorador <code>@api_view(['GET', 'POST'])</code> para crear una vista de API que pueda aceptar solicitudes GET y POST. Un <a href="https://wiki.python.org/moin/PythonDecorators">decorador</a> es una función que toma otra función y la extiende de forma dinámica.</p>
+
+<p>En el cuerpo del método, usamos la variable <code>request.method</code> para verificar el método HTTP actual y ejecutar la lógica correspondiente dependiendo del tipo de solicitud:</p>
+
+<ul>
+<li>Si se trata de una solicitud GET, el método pagina los datos utilizando Django <a href="https://docs.djangoproject.com/en/2.0/topics/pagination/">Paginator</a> y devuelve a la primera página de datos después de la serialización, el conteo de clientes disponibles, el número de páginas disponibles y los enlaces a las páginas anteriores y siguientes. Paginator es una clase integrada de Django que pagina una lista de datos en páginas y proporciona métodos para acceder a los elementos de cada una de ellas.</li>
+<li>Si se trata de una solicitud POST, el método serializa los datos de clientes recibidos y, luego, llama al método <code>save()</code> del objeto serializador. A continuación, devuelve un objeto de Response, una instancia de <a href="https://docs.djangoproject.com/en/2.0/ref/request-response/#httpresponse-objects">HttpResponse</a>, con el código de estado 201. Cada vista que crea se encarga de regresar un objeto <code>HttpResponse</code>. El método <code>save()</code> guarda los datos serializados en la base de datos.</li>
+</ul>
+
+<p>Para obtener más información sobre <code>HttpResponse</code> y las vistas, consulte esta discusión con respecto a la <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-views#step-1-%E2%80%94-create-view-functions">creación de funciones de vista</a>.</p>
+
+<p>Ahora, añada la vista de API que se encargará del procesamiento de las solicitudes GET, PUT y DELETE para obtener, actualizar y eliminar clientes por <code>pk</code> (clave primaria):</p>
+<div class="code-label " title="~/djangoreactproject/customers/views.py">~/djangoreactproject/customers/views.py</div><pre class="code-pre "><code class="code-highlight language-python">
+...
+@api_view(['GET', 'PUT', 'DELETE'])
+def customers_detail(request, pk):
+ """
+ Retrieve, update or delete a customer by id/pk.
+ """
+    try:
+        customer = Customer.objects.get(pk=pk)
+    except Customer.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = CustomerSerializer(customer,context={'request': request})
+        return Response(serializer.data)
+
+    elif request.method == 'PUT':
+        serializer = CustomerSerializer(customer, data=request.data,context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        customer.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+</code></pre>
+<p>El método está representado con <code>@api_view(['GET', 'PUT', 'DELETE'])</code> para indicar que se trata de una vista de API que puede aceptar las solicitudes GET, PUT y DELETE.</p>
+
+<p>La marca de revisión en el campo <code>request.method</code> verifica el método de solicitud y, dependiendo de su valor, llama a la lógica correcta:</p>
+
+<ul>
+<li>Si se trata de una solicitud GET, se serializan los datos de clientes y se envían utilizando un objeto Response.</li>
+<li>Si se trata de una solicitud PUT, el método crea un serializador para nuevos datos de cliente y, luego, llama al método <code>save()</code> del objeto serializador creado. Por último, envía un objeto Response con el cliente actualizado.</li>
+<li>Si se trata de una solicitud DELETE, el método llama al método <code>delete()</code> del objeto de cliente para eliminarlo y, a continuación, devuelve un objeto Response sin datos.</li>
+</ul>
+
+<p>El archivo completo se ve de este modo:</p>
+<div class="code-label " title="~/djangoreactproject/customers/views.py">~/djangoreactproject/customers/views.py</div><pre class="code-pre "><code class="code-highlight language-python">from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework import status
+
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from .models import Customer 
+from .serializers import *
+
+
+@api_view(['GET', 'POST'])
+def customers_list(request):
+    """
+ List  customers, or create a new customer.
+ """
+    if request.method == 'GET':
+        data = []
+        nextPage = 1
+        previousPage = 1
+        customers = Customer.objects.all()
+        page = request.GET.get('page', 1)
+        paginator = Paginator(customers, 5)
+        try:
+            data = paginator.page(page)
+        except PageNotAnInteger:
+            data = paginator.page(1)
+        except EmptyPage:
+            data = paginator.page(paginator.num_pages)
+
+        serializer = CustomerSerializer(data,context={'request': request} ,many=True)
+        if data.has_next():
+            nextPage = data.next_page_number()
+        if data.has_previous():
+            previousPage = data.previous_page_number()
+
+        return Response({'data': serializer.data , 'count': paginator.count, 'numpages' : paginator.num_pages, 'nextlink': '/api/customers/?page=' + str(nextPage), 'prevlink': '/api/customers/?page=' + str(previousPage)})
+
+    elif request.method == 'POST':
+        serializer = CustomerSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+def customers_detail(request, pk):
+    """
+ Retrieve, update or delete a customer by id/pk.
+ """
+    try:
+        customer = Customer.objects.get(pk=pk)
+    except Customer.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = CustomerSerializer(customer,context={'request': request})
+        return Response(serializer.data)
+
+    elif request.method == 'PUT':
+        serializer = CustomerSerializer(customer, data=request.data,context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        customer.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+</code></pre>
+<p>Ahora, podemos pasar a crear nuestros puntos finales.</p>
+
+<h3 id="incorporación-de-puntos-finales-de-api">Incorporación de puntos finales de API</h3>
+
+<p>Ahora, crearemos los puntos finales de API: <code>api/customers/</code> para consultar y crear clientes, y <code>api/customers/ &lt;pk&gt;</code> para obtener, actualizar o eliminar clientes individuales por su <code>pk</code>.</p>
+
+<p>Abra <code>~/djangoreactproject/djangoreactproject/urls.py</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">nano ~/djangoreactproject/djangoreactproject/urls.py
+</li></ul></code></pre>
+<p>Deje lo que haya allí, pero añada la importación a las vistas <code>customers</code> en la parte superior del archivo:</p>
+<div class="code-label " title="~/djangoreactproject/djangoreactproject/urls.py">~/djangoreactproject/djangoreactproject/urls.py</div><pre class="code-pre "><code class="code-highlight language-python">from django.contrib import admin
+from django.urls import path
+<span class="highlight">from customers import views</span>
+<span class="highlight">from django.conf.urls import url</span>
+</code></pre>
+<p>A continuación, añada las URL de <code>api/customers/</code> y <code>api/customers/&lt;pk&gt;</code> a la lista <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-views#step-2-%E2%80%94-map-urls-to-views"><code>urlpatterns</code></a> que contiene las URL de la aplicación:</p>
+<div class="code-label " title="~/djangoreactproject/djangoreactproject/urls.py">~/djangoreactproject/djangoreactproject/urls.py</div><pre class="code-pre "><code class="code-highlight language-python">...
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    <span class="highlight">url(r'^api/customers/$', views.customers_list),</span>
+    <span class="highlight">url(r'^api/customers/(?P&lt;pk&gt;[0-9]+)$', views.customers_detail),</span>
+]
+</code></pre>
+<p>Con nuestros puntos finales REST creados, veamos cómo podemos consumirlos.</p>
+
+<h2 id="paso-6-consumo-de-api-rest-con-axios">Paso 6: consumo de API REST con Axios.</h2>
+
+<p>En este paso, instalaremos <a href="https://github.com/axios/axios">Axios</a>, el cliente HTTP que utilizaremos para realizar llamadas de API. También crearemos una clase para consumir los puntos finales de API que hemos creado.</p>
+
+<p>Primero, desactive su entorno virtual:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="(env) sammy@ubuntu:$">deactivate
+</li></ul></code></pre>
+<p>A continuación, navegue a su carpeta <code>frontend</code>:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/djangoreactproject/frontend
+</li></ul></code></pre>
+<p>Instale <code>axios</code> desde <code>npm</code> utilizando:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install axios --save
+</li></ul></code></pre>
+<p>La opción <code>--save</code> añade la dependencia <code>axios</code> al archivo <code>package.json</code> de su aplicación.</p>
+
+<p>A continuación, cree un archivo de JavaScript denominado <code>CustomersService.js</code>, que contendrá el código para llamar a las API REST. Realizaremos esto dentro de la carpeta <code>src</code>, donde residirá el código de la aplicación de nuestro proyecto:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd src
+</li><li class="line" prefix="$">nano CustomersService.js
+</li></ul></code></pre>
+<p>Añada el código siguiente, que contiene métodos para conectarse a la API REST de Django:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersService.js">~/djangoreactproject/frontend/src/CustomersService.js</div><pre class="code-pre "><code class="code-highlight language-js">import axios from 'axios';
+const API_URL = 'http://localhost:8000';
+
+export default class CustomersService{
+
+    constructor(){}
+
+
+    getCustomers() {
+        const url = `${API_URL}/api/customers/`;
+        return axios.get(url).then(response =&gt; response.data);
+    }  
+    getCustomersByURL(link){
+        const url = `${API_URL}${link}`;
+        return axios.get(url).then(response =&gt; response.data);
+    }
+    getCustomer(pk) {
+        const url = `${API_URL}/api/customers/${pk}`;
+        return axios.get(url).then(response =&gt; response.data);
+    }
+    deleteCustomer(customer){
+        const url = `${API_URL}/api/customers/${customer.pk}`;
+        return axios.delete(url);
+    }
+    createCustomer(customer){
+        const url = `${API_URL}/api/customers/`;
+        return axios.post(url,customer);
+    }
+    updateCustomer(customer){
+        const url = `${API_URL}/api/customers/${customer.pk}`;
+        return axios.put(url,customer);
+    }
+}
+</code></pre>
+<p>La clase <code>CustomersService</code> llamará a los siguientes métodos de Axios:</p>
+
+<ul>
+<li><code>getCustomers()</code>: obtiene la primera página de clientes.</li>
+<li><code>getCustomersByURL()</code>: obtiene clientes por URL. Esto permite obtener las siguientes páginas de clientes al pasar enlaces como <code>/api/customers/?page=2</code>.</li>
+<li><code>get Customer()</code>: obtiene un cliente por clave primaria.</li>
+<li><code>createCustomer()</code>: crea un cliente.</li>
+<li><code>updateCustomer()</code>: actualiza un cliente.</li>
+<li><code>deleteCustomer()</code>: elimina un cliente.</li>
+</ul>
+
+<p>Ahora, podemos mostrar los datos de nuestra API en nuestra IU de React al crear un componente <code>CustomersList</code>.</p>
+
+<h2 id="paso-7-visualización-de-datos-de-la-api-en-la-aplicación-de-react">Paso 7: visualización de datos de la API en la aplicación de React</h2>
+
+<p>En este paso, crearemos el <code>componente</code> <em>CustomersList</em> de React. Un componente de React representa una parte de la IU; también le permite dividir la IU en piezas independientes y reutilizables.</p>
+
+<p>Comience por crear <code>CustomersList.js</code> en <code>frontend/src</code>:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/djangoreactproject/frontend/src/CustomersList.js
+</li></ul></code></pre>
+<p>Inicie la importación de <code>React</code> y <code>Component</code> para crear un componente de React:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">import  React, { Component } from  'react';
+</code></pre>
+<p>A continuación, importe e instancie el módulo <code>CustomersService</code> que creó en el paso anterior, el cual proporciona métodos que interactúan con el backend de API REST:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+import  CustomersService  from  './CustomersService';
+
+const  customersService  =  new  CustomersService();
+</code></pre>
+<p>A continuación, cree un componente <code>CustomersList</code> que extienda <code>Component</code> para llamar a la API REST. Un componente de React debería <a href="https://reactjs.org/docs/react-component.html">extender o crear una subclase de la clase</a> <code>Component</code>. Para obtener más información acerca de las clases E6 y herencia, consulte nuestro tutorial sobre <a href="https://www.digitalocean.com/community/tutorials/understanding-classes-in-javascript">Comprensión de las clases de JavaScript</a>.</p>
+
+<p>Añada el siguiente código para crear un componente de React que extienda <code>react.Component</code>:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+class  CustomersList  extends  Component {
+
+    constructor(props) {
+        super(props);
+        this.state  = {
+            customers: [],
+            nextPageURL:  ''
+        };
+        this.nextPage  =  this.nextPage.bind(this);
+        this.handleDelete  =  this.handleDelete.bind(this);
+    }
+}
+export  default  CustomersList;
+</code></pre>
+<p>Dentro del <a href="https://reactjs.org/docs/react-component.html#constructor">constructor</a>, estamos inicializando el objeto <a href="https://reactjs.org/docs/react-component.html#state"><code>state</code></a>. Este almacena las variables de estado de nuestro componente utilizando una <a href="https://www.digitalocean.com/community/tutorial_series/working-with-arrays-in-javascript">matriz</a> <code>customers</code> vacía. Esta matriz almacenará clientes y una <code>nextPageURL</code> que contendrá la URL de la siguiente página que se obtendrá del back-end de la API. También procedemos a <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_objects/Function/bind">vincular</a> los <a href="https://www.digitalocean.com/community/tutorials/understanding-classes-in-javascript#defining-methods">métodos</a> <code>nextPage()</code> y <code>handleDelete()</code> a <code>this</code> para que sean accesibles desde el código HTML.</p>
+
+<p>A continuación, añada el método <code>componentDidMount()</code> y una llamada a <code>getCustomers()</code> dentro de la clase <code>CustomersList</code>, antes de la llave de cierre.</p>
+
+<p>El método <code>componentDidMount()</code> es un método de ciclo de vida del componente que se llama al crear el componente y se inserta en el DOM. <code>getCustomers()</code> llama al objeto Customers Service para obtener la primera página de datos y el enlace de la siguiente página del backend de Django:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+componentDidMount() {
+    var  self  =  this;
+    customersService.getCustomers().then(function (result) {
+        self.setState({ customers:  result.data, nextPageURL:  result.nextlink})
+    });
+}
+</code></pre>
+<p>Ahora, añada el método <code>handleDelete()</code>, que gestiona la eliminación de un cliente, debajo de <code>componentDidMount()</code>:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+handleDelete(e,pk){
+    var  self  =  this;
+    customersService.deleteCustomer({pk :  pk}).then(()=&gt;{
+        var  newArr  =  self.state.customers.filter(function(obj) {
+            return  obj.pk  !==  pk;
+        });
+        self.setState({customers:  newArr})
+    });
+}
+</code></pre>
+<p>El método <code>handleDelete()</code> llama al método <code>deleteCustomer()</code> para eliminar un cliente utilizando su <code>pk</code> (clave primaria). Si la operación se realiza correctamente, la matriz <code>customers</code> se filtra por el cliente eliminado.</p>
+
+<p>A continuación, añada un método <code>nextPage()</code> para obtener los datos de la siguiente página y actualice el enlace de la página siguiente:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+nextPage(){
+    var  self  =  this;
+    customersService.getCustomersByURL(this.state.nextPageURL).then((result) =&gt; {
+        self.setState({ customers:  result.data, nextPageURL:  result.nextlink})
+    });
+}
+</code></pre>
+<p>El método <code>nextPage()</code> llama a un método <code>getCustomersByURL()</code>, que obtiene la URL de la página siguiente del objeto de estado, <code>this.state.nextPageURL</code>, y actualiza la matriz <code>customers</code> con los datos devueltos.</p>
+
+<p>Por último, añada el método <a href="https://reactjs.org/docs/react-component.html#render"><code>render()</code></a> del componente, que produce una tabla de clientes del estado de componente:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+render() {
+
+    return (
+    &lt;div  className="customers--list"&gt;
+        &lt;table  className="table"&gt;
+            &lt;thead  key="thead"&gt;
+            &lt;tr&gt;
+                &lt;th&gt;#&lt;/th&gt;
+                &lt;th&gt;First Name&lt;/th&gt;
+                &lt;th&gt;Last Name&lt;/th&gt;
+                &lt;th&gt;Phone&lt;/th&gt;
+                &lt;th&gt;Email&lt;/th&gt;
+                &lt;th&gt;Address&lt;/th&gt;
+                &lt;th&gt;Description&lt;/th&gt;
+                &lt;th&gt;Actions&lt;/th&gt;
+            &lt;/tr&gt;
+            &lt;/thead&gt;
+            &lt;tbody&gt;
+                {this.state.customers.map( c  =&gt;
+                &lt;tr  key={c.pk}&gt;
+                    &lt;td&gt;{c.pk}  &lt;/td&gt;
+                    &lt;td&gt;{c.first_name}&lt;/td&gt;
+                    &lt;td&gt;{c.last_name}&lt;/td&gt;
+                    &lt;td&gt;{c.phone}&lt;/td&gt;
+                    &lt;td&gt;{c.email}&lt;/td&gt;
+                    &lt;td&gt;{c.address}&lt;/td&gt;
+                    &lt;td&gt;{c.description}&lt;/td&gt;
+                    &lt;td&gt;
+                    &lt;button  onClick={(e)=&gt;  this.handleDelete(e,c.pk) }&gt; Delete&lt;/button&gt;
+                    &lt;a  href={"/customer/" + c.pk}&gt; Update&lt;/a&gt;
+                    &lt;/td&gt;
+                &lt;/tr&gt;)}
+            &lt;/tbody&gt;
+        &lt;/table&gt;
+        &lt;button  className="btn btn-primary"  onClick=  {  this.nextPage  }&gt;Next&lt;/button&gt;
+    &lt;/div&gt;
+    );
+}
+</code></pre>
+<p>Este es el contenido completo del archivo:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomersList.js">~/djangoreactproject/frontend/src/CustomersList.js</div><pre class="code-pre "><code class="code-highlight language-js">import  React, { Component } from  'react';
+import  CustomersService  from  './CustomersService';
+
+const  customersService  =  new  CustomersService();
+
+class  CustomersList  extends  Component {
+
+constructor(props) {
+    super(props);
+    this.state  = {
+        customers: [],
+        nextPageURL:  ''
+    };
+    this.nextPage  =  this.nextPage.bind(this);
+    this.handleDelete  =  this.handleDelete.bind(this);
+}
+
+componentDidMount() {
+    var  self  =  this;
+    customersService.getCustomers().then(function (result) {
+        console.log(result);
+        self.setState({ customers:  result.data, nextPageURL:  result.nextlink})
+    });
+}
+handleDelete(e,pk){
+    var  self  =  this;
+    customersService.deleteCustomer({pk :  pk}).then(()=&gt;{
+        var  newArr  =  self.state.customers.filter(function(obj) {
+            return  obj.pk  !==  pk;
+        });
+
+        self.setState({customers:  newArr})
+    });
+}
+
+nextPage(){
+    var  self  =  this;
+    console.log(this.state.nextPageURL);        
+    customersService.getCustomersByURL(this.state.nextPageURL).then((result) =&gt; {
+        self.setState({ customers:  result.data, nextPageURL:  result.nextlink})
+    });
+}
+render() {
+
+    return (
+        &lt;div  className="customers--list"&gt;
+            &lt;table  className="table"&gt;
+            &lt;thead  key="thead"&gt;
+            &lt;tr&gt;
+                &lt;th&gt;#&lt;/th&gt;
+                &lt;th&gt;First Name&lt;/th&gt;
+                &lt;th&gt;Last Name&lt;/th&gt;
+                &lt;th&gt;Phone&lt;/th&gt;
+                &lt;th&gt;Email&lt;/th&gt;
+                &lt;th&gt;Address&lt;/th&gt;
+                &lt;th&gt;Description&lt;/th&gt;
+                &lt;th&gt;Actions&lt;/th&gt;
+            &lt;/tr&gt;
+            &lt;/thead&gt;
+            &lt;tbody&gt;
+            {this.state.customers.map( c  =&gt;
+                &lt;tr  key={c.pk}&gt;
+                &lt;td&gt;{c.pk}  &lt;/td&gt;
+                &lt;td&gt;{c.first_name}&lt;/td&gt;
+                &lt;td&gt;{c.last_name}&lt;/td&gt;
+                &lt;td&gt;{c.phone}&lt;/td&gt;
+                &lt;td&gt;{c.email}&lt;/td&gt;
+                &lt;td&gt;{c.address}&lt;/td&gt;
+                &lt;td&gt;{c.description}&lt;/td&gt;
+                &lt;td&gt;
+                &lt;button  onClick={(e)=&gt;  this.handleDelete(e,c.pk) }&gt; Delete&lt;/button&gt;
+                &lt;a  href={"/customer/" + c.pk}&gt; Update&lt;/a&gt;
+                &lt;/td&gt;
+            &lt;/tr&gt;)}
+            &lt;/tbody&gt;
+            &lt;/table&gt;
+            &lt;button  className="btn btn-primary"  onClick=  {  this.nextPage  }&gt;Next&lt;/button&gt;
+        &lt;/div&gt;
+        );
+  }
+}
+export  default  CustomersList;
+</code></pre>
+<p>Ahora que hemos creado el componente <code>CustomersList</code> para visualizar la lista de clientes, podemos añadir el componente que gestiona la creación y la actualización de clientes.</p>
+
+<h2 id="paso-8-incorporación-del-componente-de-react-de-creación-y-actualización-de-clientes">Paso 8: incorporación del componente de React de creación y actualización de clientes</h2>
+
+<p>En este paso, crearemos el componente <code>CustomerCreateUpdate</code>, que se encargará de crear y actualizar clientes. Lo hará al proporcionar una forma que los usuarios puedan utilizar para ingresar datos sobre un cliente nuevo o actualizar una entrada existente.</p>
+
+<p>En <code>frontend/src</code>, cree un archivo <code>CustomerCreateUpdate.js</code>:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/djangoreactproject/frontend/src/CustomerCreateUpdate.js
+</li></ul></code></pre>
+<p>Añada el siguiente código para crear un componente de React, importando <code>React</code> y <code>Component</code>:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">import  React, { Component } from  'react';
+</code></pre>
+<p>A continuación, también podemos importar e instanciar la clase <code>CustomersService</code> que creamos en el paso anterior, que proporciona métodos que interactúan con el backend de API REST:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+import  CustomersService  from  './CustomersService';
+
+const  customersService  =  new  CustomersService();
+</code></pre>
+<p>Luego, cree un componente <code>CustomerCreateUpdate</code> que extienda <code>Component</code> para crear y actualizar clientes:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+class  CustomerCreateUpdate  extends  Component {
+
+    constructor(props) {
+        super(props);
+    }
+
+}
+export default CustomerCreateUpdate;
+</code></pre>
+<p>Dentro de la definición de clase, añada el método <code>render()</code> del componente, que produce un formulario HTML que toma información sobre el cliente:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+render() {
+        return (
+          &lt;form onSubmit={this.handleSubmit}&gt;
+          &lt;div className="form-group"&gt;
+            &lt;label&gt;
+              First Name:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='firstName' /&gt;
+
+            &lt;label&gt;
+              Last Name:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='lastName'/&gt;
+
+            &lt;label&gt;
+              Phone:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='phone' /&gt;
+
+            &lt;label&gt;
+              Email:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='email' /&gt;
+
+            &lt;label&gt;
+              Address:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='address' /&gt;
+
+            &lt;label&gt;
+              Description:&lt;/label&gt;
+              &lt;textarea className="form-control" ref='description' &gt;&lt;/textarea&gt;
+
+
+            &lt;input className="btn btn-primary" type="submit" value="Submit" /&gt;
+            &lt;/div&gt;
+          &lt;/form&gt;
+        );
+  }
+</code></pre>
+<p>Para cada elemento de entrada del formulario, el método añade una propiedad <code>ref</code> para acceder al valor del elemento del formulario y establecerlo.</p>
+
+<p>A continuación, por encima del método <code>render()</code>, defina un método <code>handleSubmit(event)</code> de modo que tenga la funcionalidad correcta cuando un usuario haga clic en el botón de enviar:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+handleSubmit(event) {
+    const { match: { params } } =  this.props;
+    if(params  &amp;&amp;  params.pk){
+        this.handleUpdate(params.pk);
+    }
+    else
+    {
+        this.handleCreate();
+    }
+    event.preventDefault();
+}
+
+...
+</code></pre>
+<p>El método <code>handleSubmit(event)</code> gestiona el envío del formulario y, dependiendo de la ruta, llama al método <code>handleUpdate(pk)</code> para actualizar el cliente con la <code>pk</code> correcta, o el método <code>handleCreate()</code> para crear un nuevo cliente. Procederemos a definir estos métodos en breve.</p>
+
+<p>De nuevo en el constructor del componente, vincule el método <code>handleSubmit()</code> recientemente añadido a <code>this</code> para poder acceder a él en su formulario:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+class CustomerCreateUpdate extends Component {
+
+constructor(props) {
+    super(props);
+    <span class="highlight">this.handleSubmit = this.handleSubmit.bind(this);</span>
+}
+...
+</code></pre>
+<p>A continuación, defina el método <code>handleCreate()</code> para crear un cliente a partir de los datos del formulario. Encima del método <code>handleSubmit(event)</code>, añada el siguiente código:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+handleCreate(){
+    customersService.createCustomer(
+        {
+        "first_name":  this.refs.firstName.value,
+        "last_name":  this.refs.lastName.value,
+        "email":  this.refs.email.value,
+        "phone":  this.refs.phone.value,
+        "address":  this.refs.address.value,
+        "description":  this.refs.description.value
+        }).then((result)=&gt;{
+                alert("Customer created!");
+        }).catch(()=&gt;{
+                alert('There was an error! Please re-check your form.');
+        });
+}
+
+...
+</code></pre>
+<p>El método <code>handleCreate()</code> se utilizará para crear un cliente a partir de los datos ingresados. Llama al método <code>CustomersService.createCustomer()</code> correspondiente que provoca que la API real llame al backend para crear un cliente.</p>
+
+<p>A continuación, por debajo del método <code>handleCreate()</code>, defina el método <code>handleUpdate(pk)</code> para implementar actualizaciones:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+handleUpdate(pk){
+customersService.updateCustomer(
+    {
+    "pk":  pk,
+    "first_name":  this.refs.firstName.value,
+    "last_name":  this.refs.lastName.value,
+    "email":  this.refs.email.value,
+    "phone":  this.refs.phone.value,
+    "address":  this.refs.address.value,
+    "description":  this.refs.description.value
+    }
+    ).then((result)=&gt;{
+
+        alert("Customer updated!");
+    }).catch(()=&gt;{
+        alert('There was an error! Please re-check your form.');
+    });
+}
+</code></pre>
+<p>El método <code>updateCustomer()</code> actualizará un cliente por <code>pk,</code> utilizando la nueva información del formulario de información de clientes. Llama al método <code>customersService.updateCustomer()</code>.</p>
+
+<p>A continuación, añada un método <code>componentDidMount()</code>. Si el usuario visita una ruta <code>customer/:pk</code>, queremos que el formulario se complete con información relacionada con el cliente utilizando la clave primaria de la URL. Para ello, podemos añadir el método <code>getCustomer(pk)</code> una vez que el componente se monte en el evento de ciclo de vida de <code>componentDidMount()</code>. Añada el siguiente código por debajo del constructor del componente para añadir este método:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">
+...
+componentDidMount(){
+    const { match: { params } } =  this.props;
+    if(params  &amp;&amp;  params.pk)
+    {
+        customersService.getCustomer(params.pk).then((c)=&gt;{
+            this.refs.firstName.value  =  c.first_name;
+            this.refs.lastName.value  =  c.last_name;
+            this.refs.email.value  =  c.email;
+            this.refs.phone.value  =  c.phone;
+            this.refs.address.value  =  c.address;
+            this.refs.description.value  =  c.description;
+        })
+    }
+}
+</code></pre>
+<p>Este es el contenido completo del archivo:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/CustomerCreateUpdate.js">~/djangoreactproject/frontend/src/CustomerCreateUpdate.js</div><pre class="code-pre "><code class="code-highlight language-js">import React, { Component } from 'react';
+import CustomersService from './CustomersService';
+
+const customersService = new CustomersService();
+
+class CustomerCreateUpdate extends Component {
+    constructor(props) {
+        super(props);
+
+        this.handleSubmit = this.handleSubmit.bind(this);
+      }
+
+      componentDidMount(){
+        const { match: { params } } = this.props;
+        if(params &amp;&amp; params.pk)
+        {
+          customersService.getCustomer(params.pk).then((c)=&gt;{
+            this.refs.firstName.value = c.first_name;
+            this.refs.lastName.value = c.last_name;
+            this.refs.email.value = c.email;
+            this.refs.phone.value = c.phone;
+            this.refs.address.value = c.address;
+            this.refs.description.value = c.description;
+          })
+        }
+      }
+
+      handleCreate(){
+        customersService.createCustomer(
+          {
+            "first_name": this.refs.firstName.value,
+            "last_name": this.refs.lastName.value,
+            "email": this.refs.email.value,
+            "phone": this.refs.phone.value,
+            "address": this.refs.address.value,
+            "description": this.refs.description.value
+        }          
+        ).then((result)=&gt;{
+          alert("Customer created!");
+        }).catch(()=&gt;{
+          alert('There was an error! Please re-check your form.');
+        });
+      }
+      handleUpdate(pk){
+        customersService.updateCustomer(
+          {
+            "pk": pk,
+            "first_name": this.refs.firstName.value,
+            "last_name": this.refs.lastName.value,
+            "email": this.refs.email.value,
+            "phone": this.refs.phone.value,
+            "address": this.refs.address.value,
+            "description": this.refs.description.value
+        }          
+        ).then((result)=&gt;{
+          console.log(result);
+          alert("Customer updated!");
+        }).catch(()=&gt;{
+          alert('There was an error! Please re-check your form.');
+        });
+      }
+      handleSubmit(event) {
+        const { match: { params } } = this.props;
+
+        if(params &amp;&amp; params.pk){
+          this.handleUpdate(params.pk);
+        }
+        else
+        {
+          this.handleCreate();
+        }
+
+        event.preventDefault();
+      }
+
+      render() {
+        return (
+          &lt;form onSubmit={this.handleSubmit}&gt;
+          &lt;div className="form-group"&gt;
+            &lt;label&gt;
+              First Name:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='firstName' /&gt;
+
+            &lt;label&gt;
+              Last Name:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='lastName'/&gt;
+
+            &lt;label&gt;
+              Phone:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='phone' /&gt;
+
+            &lt;label&gt;
+              Email:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='email' /&gt;
+
+            &lt;label&gt;
+              Address:&lt;/label&gt;
+              &lt;input className="form-control" type="text" ref='address' /&gt;
+
+            &lt;label&gt;
+              Description:&lt;/label&gt;
+              &lt;textarea className="form-control" ref='description' &gt;&lt;/textarea&gt;
+
+
+            &lt;input className="btn btn-primary" type="submit" value="Submit" /&gt;
+            &lt;/div&gt;
+          &lt;/form&gt;
+        );
+      }  
+}
+
+export default CustomerCreateUpdate;
+</code></pre>
+<p>Con el componente <code>CustomerCreateUpdate</code> creado, podemos actualizar el componente principal <code>App</code> para añadir enlaces a los diferentes componentes que hemos creado.</p>
+
+<h2 id="paso-9-actualización-del-componente-principal-app">Paso 9: actualización del componente principal App</h2>
+
+<p>En esta sección, actualizaremos el componente <code>App</code> de nuestra aplicación para crear enlaces a los componentes que hemos creado en los pasos anteriores.</p>
+
+<p>Desde la carpeta <code>frontend</code>, ejecute el siguiente comando para instalar <a href="https://www.npmjs.com/package/react-router-dom">React Router</a>, que le permite añadir enrutamiento y navegación entre varios componentes de React:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/djangoreactproject/frontend
+</li><li class="line" prefix="$">npm install --save react-router-dom
+</li></ul></code></pre>
+<p>A continuación, abra <code>~/djangoreactproject/frontend/src/App.js</code>:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/djangoreactproject/frontend/src/App.js
+</li></ul></code></pre>
+<p>Elimine todo lo que haya allí y añada el siguiente código para importar las clases necesarias para incorporar enrutamiento. Estas incluyen <code>BrowserRouter</code>, que crea un componente Router, y <code>Route</code>, que crea un componente de ruta:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/App.js">~/djangoreactproject/frontend/src/App.js</div><pre class="code-pre "><code class="code-highlight language-js">import  React, { Component } from  'react';
+import { BrowserRouter } from  'react-router-dom'
+import { Route, Link } from  'react-router-dom'
+import  CustomersList  from  './CustomersList'
+import  CustomerCreateUpdate  from  './CustomerCreateUpdate'
+import  './App.css';
+</code></pre>
+<p><a href="https://reacttraining.com/react-router/web/api/BrowserRouter"><code>BrowserRouter</code></a>mantiene la IU sincronizada con la URL utilizando la ](<a href="https://developer.mozilla.org/en-US/docs/Web/API/History_API)API">https://developer.mozilla.org/en-US/docs/Web/API/History_API)API</a> de historial HTML5[.</p>
+
+<p>A continuación, cree un diseño base que proporcione el componente básico que envolverá el componente <code>BrowserRouter</code>:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/App.js">~/djangoreactproject/frontend/src/App.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+const  BaseLayout  = () =&gt; (
+&lt;div  className="container-fluid"&gt;
+    &lt;nav  className="navbar navbar-expand-lg navbar-light bg-light"&gt;
+        &lt;a  className="navbar-brand"  href="#"&gt;Django React Demo&lt;/a&gt;
+        &lt;button  className="navbar-toggler"  type="button"  data-toggle="collapse"  data-target="#navbarNavAltMarkup"  aria-controls="navbarNavAltMarkup"  aria-expanded="false"  aria-label="Toggle navigation"&gt;
+        &lt;span  className="navbar-toggler-icon"&gt;&lt;/span&gt;
+    &lt;/button&gt;
+    &lt;div  className="collapse navbar-collapse"  id="navbarNavAltMarkup"&gt;
+        &lt;div  className="navbar-nav"&gt;
+            &lt;a  className="nav-item nav-link"  href="/"&gt;CUSTOMERS&lt;/a&gt;
+            &lt;a  className="nav-item nav-link"  href="/customer"&gt;CREATE CUSTOMER&lt;/a&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;/nav&gt;
+    &lt;div  className="content"&gt;
+        &lt;Route  path="/"  exact  component={CustomersList}  /&gt;
+        &lt;Route  path="/customer/:pk"  component={CustomerCreateUpdate}  /&gt;
+        &lt;Route  path="/customer/"  exact  component={CustomerCreateUpdate}  /&gt;
+    &lt;/div&gt;
+&lt;/div&gt;
+)
+</code></pre>
+<p>Utilizamos el componente <code>Route</code> para definir las rutas de nuestra aplicación; el componente que el enrutador debe cargar cuando se encuentra una coincidencia. Cada ruta requiere un <code>path</code> que especifique la ruta que se debe seguir y un <code>component</code> que indique el componente que se debe cargar. La propiedad <code>exact</code> le indica al enrutador que siga la trayectoria exacta.</p>
+
+<p>Por último, cree el componente <code>App</code>, el componente root o de nivel superior de nuestra aplicación de React:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/App.js">~/djangoreactproject/frontend/src/App.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+class  App  extends  Component {
+
+render() {
+    return (
+    &lt;BrowserRouter&gt;
+        &lt;BaseLayout/&gt;
+    &lt;/BrowserRouter&gt;
+    );
+}
+}
+export  default  App;
+</code></pre>
+<p>Hemos envuelto el componente <code>BaseLayout</code> con el componente <code>BrowserRouter</code>, dado que nuestra aplicación está diseñada para ejecutarse en un navegador.</p>
+
+<p>El archivo completo se ve de este modo:</p>
+<div class="code-label " title="~/djangoreactproject/frontend/src/App.js">~/djangoreactproject/frontend/src/App.js</div><pre class="code-pre "><code class="code-highlight language-js">import React, { Component } from 'react';
+import { BrowserRouter } from 'react-router-dom'
+import { Route, Link } from 'react-router-dom'
+
+import  CustomersList from './CustomersList'
+import  CustomerCreateUpdate  from './CustomerCreateUpdate'
+import './App.css';
+
+const BaseLayout = () =&gt; (
+  &lt;div className="container-fluid"&gt;
+&lt;nav className="navbar navbar-expand-lg navbar-light bg-light"&gt;
+  &lt;a className="navbar-brand" href="#"&gt;Django React Demo&lt;/a&gt;
+  &lt;button className="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation"&gt;
+    &lt;span className="navbar-toggler-icon"&gt;&lt;/span&gt;
+  &lt;/button&gt;
+  &lt;div className="collapse navbar-collapse" id="navbarNavAltMarkup"&gt;
+    &lt;div className="navbar-nav"&gt;
+      &lt;a className="nav-item nav-link" href="/"&gt;CUSTOMERS&lt;/a&gt;
+      &lt;a className="nav-item nav-link" href="/customer"&gt;CREATE CUSTOMER&lt;/a&gt;
+
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/nav&gt;  
+
+    &lt;div className="content"&gt;
+      &lt;Route path="/" exact component={CustomersList} /&gt;
+      &lt;Route path="/customer/:pk"  component={CustomerCreateUpdate} /&gt;
+      &lt;Route path="/customer/" exact component={CustomerCreateUpdate} /&gt;
+
+    &lt;/div&gt;
+
+  &lt;/div&gt;
+)
+
+class App extends Component {
+  render() {
+    return (
+      &lt;BrowserRouter&gt;
+        &lt;BaseLayout/&gt;
+      &lt;/BrowserRouter&gt;
+    );
+  }
+}
+
+export default App;
+</code></pre>
+<p>Ahora que añadimos enrutamiento a nuestra aplicación, estamos listos para probarla. Navegue a <code>http://localhost:3000</code>. Debería ver la primera página de la aplicación:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/django_react_1604/django_react_app.png" alt="Página de inicio de la aplicación"></p>
+
+<p>Con la implementación de esta aplicación, ahora, cuenta con la base para una aplicación de CRM.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>En este tutorial, usted creó una aplicación de prueba utilizando Django y React. Utilizó Django REST framework para crear la API REST, Axios para consumir la API y Bootstrap 4 para dar estilo a su CSS. Puede encontrar el código fuente de este proyecto en este <a href="https://github.com/techiediaries/django-react">repositorio de GitHub</a>.</p>
+
+<p>En la configuración de este tutorial, se utilizaron aplicaciones de  front-end y back-end. Para obtener un enfoque diferente de la integración de React con Django, consulte este <a href="https://www.techiediaries.com/django-react-rest/">tutorial</a> y este otro <a href="http://v1k45.com/blog/modern-django-part-1-setting-up-django-and-react/">tutorial</a>.</p>
+
+<p>Para obtener más información sobre la creación de aplicaciones con Django, puede seguir la <a href="https://www.digitalocean.com/community/tutorial_series/django-development">serie de desarrollo de Django</a>. También puede consultar la <a href="https://docs.djangoproject.com/en/2.1/">documentación oficial de Django</a>.</p>

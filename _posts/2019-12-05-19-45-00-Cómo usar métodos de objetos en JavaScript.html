@@ -1,0 +1,254 @@
+---
+layout: post
+title: Cómo usar métodos de objetos en JavaScript
+network: digitalocean
+date: December 05, 2019 at 07:45PM
+url: https://www.digitalocean.com/community/tutorials/como-usar-metodos-de-objetos-en-javascript-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Los <a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">objetos</a> de JavaScript son grupos de pares <strong>clave</strong>-<strong>valor</strong>. Los valores pueden consistir en <strong>propiedades</strong> y <strong>métodos</strong>, y pueden contener todos los demás tipos de datos de JavaScript, como cadenas, números y booleanos.</p>
+
+<p>Todos los objetos de JavaScript derivan del constructor del <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object"><code>Object</code></a>principal.<code>Object</code> tiene muchos métodos incorporados útiles a los cuales podemos acceder y recurrir para simplificar el trabajo con objetos individuales. A diferencia de los <a href="https://www.digitalocean.com/community/tutorials/how-to-use-array-methods-in-javascript-mutator-methods">métodos Array.prototype</a>, como <code>sort()</code> y <code>reverse()</code> que se usan en la instancia de Array, los métodos Object se usan directamente en el constructor <code>Object</code> y emplean la instancia del objeto como parámetro. Esto se conoce como método estático.</p>
+
+<p>En este tutorial, se detallarán importantes métodos de objeto incorporados, y en cada sección posterior se abordará un método específico y sxe proporcionará un ejemplo de uso.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para aprovechar al máximo de este tutorial, debería estar familiarizado con la creación, la modificación y el funcionamiento de los objetos, aspectos que podrá ver en el artículo “<a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">Comprensión de objetos en JavaScript</a>”.</p>
+
+<p>Para obtener orientación adicional sobre JavaScript en general, puede revisar nuestra serie <em><a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-javascript">Cómo producir código en JavaScript</a></em>.</p>
+
+<h2 id="object-create">Object.create()</h2>
+
+<p>El método <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/create"><code>Object.create()</code></a> se usa para crear un nuevo objeto y vincularlo al prototipo de un objeto existente.</p>
+
+<p>Podemos crear una instancia de objeto <code>job</code> y ampliarla para obtener un objeto más específico.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object with properties and methods
+const job = {
+    position: 'cashier',
+    type: 'hourly',
+    isAvailable: true,
+    showDetails() {
+        const accepting = this.isAvailable ? 'is accepting applications' : "is not currently accepting applications";
+
+        console.log(`The ${this.position} position is ${this.type} and ${accepting}.`);
+    }
+};
+
+// Use Object.create to pass properties
+const barista = Object.create(job);
+
+barista.position = "barista";
+barista.showDetails();
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>The barista position is hourly and is accepting applications.
+</code></pre>
+<p>El objeto <code>barista</code> ahora tiene una propiedad, <code>position</code>, pero las propiedades y los métodos de <code>job</code> que restan están disponibles a través del prototipo. <code>Object.create()</code> es útil para que el código siga siendo <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#dry-development">DRY</a> mediante la reducción de la duplicación.</p>
+
+<h2 id="object-keys">Object.keys()</h2>
+
+<p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/keys"><code>Object.keys()</code></a> crea una matriz que contiene las claves de un objeto.</p>
+
+<p>Podemos crear un objeto e imprimir la matriz de claves.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const employees = {
+    boss: 'Michael',
+    secretary: 'Pam',
+    sales: 'Jim',
+    accountant: 'Oscar'
+};
+
+// Get the keys of the object
+const keys = Object.keys(employees);
+
+console.log(keys);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["boss", "secretary", "sales", "accountant"]
+</code></pre>
+<p><code>Object.keys</code> puede usarse para generar repeticiones a través de las claves y los valores de un objeto.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Iterate through the keys
+Object.keys(employees).forEach(key =&gt; {
+    let value = employees[key];
+
+     console.log(`${key}: ${value}`);
+});
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>boss: Michael
+secretary: Pam
+sales: Jim
+accountant: Oscar
+</code></pre>
+<p><code>Object.keys</code> también es útil para verificar la extensión de un objeto.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Get the length of the keys
+const length = Object.keys(employees).length;
+
+console.log(length);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>4
+</code></pre>
+<p>Mediante la propiedad <code>length</code>, pudimos contar las <code>4</code> propiedades de <code>employees</code>.</p>
+
+<h2 id="object-values">Object.values()</h2>
+
+<p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/values"><code>Object.values()</code></a> crea una matriz que contiene los valores de un objeto.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const session = {
+    id: 1,
+    time: `26-July-2018`,
+    device: 'mobile',
+    browser: 'Chrome'
+};
+
+// Get all values of the object
+const values = Object.values(session);
+
+console.log(values);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[1, "26-July-2018", "mobile", "Chrome"]
+</code></pre>
+<p><code>Object.keys()</code> y <code>Object.values()</code> le permiten mostrar los datos de un objeto.</p>
+
+<h2 id="object-entries">Object.entries()</h2>
+
+<p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/entries"><code>Object.entries()</code></a>crea una matriz anidada con los pares clave-valor de un objeto.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const operatingSystem = {
+    name: 'Ubuntu',
+    version: 18.04,
+    license: 'Open Source'
+};
+
+// Get the object key/value pairs
+const entries = Object.entries(operatingSystem);
+
+console.log(entries);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[
+    ["name", "Ubuntu"]
+    ["version", 18.04]
+    ["license", "Open Source"]
+]
+</code></pre>
+<p>Una vez que contemos con las matrices de pares claves-valor, podremos usar el método <code>forEach()</code> para repetir los resultados y trabajar con ellos.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Loop through the results
+entries.forEach(entry =&gt; {
+    let key = entry[0];
+    let value = entry[1];
+
+    console.log(`${key}: ${value}`);
+});
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>name: Ubuntu
+version: 18.04
+license: Open Source
+</code></pre>
+<p>El método <code>Object.entries()</code> solo mostrará las propiedades de la instancia del objeto. No mostrará ninguna propiedad que pueda heredarse a través de su prototipo.</p>
+
+<h2 id="object-assign">Object.assign()</h2>
+
+<p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign"><code>Object.assign()</code></a> se usa para copiar valores de un objeto a otro.</p>
+
+<p>Podemos crear dos objetos y fusionarlos con <code>Object.assign()</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const name = {
+    firstName: 'Philip',
+    lastName: 'Fry'
+};
+
+// Initialize another object
+const details = {
+    job: 'Delivery Boy',
+    employer: 'Planet Express'
+};
+
+// Merge the objects
+const character = Object.assign(name, details);
+
+console.log(character);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{firstName: "Philip", lastName: "Fry", job: "Delivery Boy", employer: "Planet Express"}
+</code></pre>
+<p>También es posible usar el operador de propagación (<code>...</code>) para realizar la misma tarea. En el siguiente código, modificaremos la forma en que declaramos <code>character</code> mediante la fusión de los objetos <code>name</code> y <code>details</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const name = {
+    firstName: 'Philip',
+    lastName: 'Fry'
+};
+
+// Initialize another object
+const details = {
+    job: 'Delivery Boy',
+    employer: 'Planet Express'
+};
+
+// Merge the object with the spread operator
+const character = {...name, ...details}
+
+console.log(character);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{firstName: "Philip", lastName: "Fry", job: "Delivery Boy", employer: "Planet Express"}
+</code></pre>
+<p>Esta <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax#Spread_in_object_literals">sintaxis de propagación</a> en literales de objeto también se conoce como “clonación superficial”.</p>
+
+<h2 id="object-freeze">Object.freeze()</h2>
+
+<p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze"><code>Object.freeze()</code></a> impide la modificación de propiedades y valores de un objeto, y evita que se agreguen propiedades a un objeto o que se eliminen de él.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const user = {
+    username: 'AzureDiamond',
+    password: 'hunter2'
+};
+
+// Freeze the object
+const newUser = Object.freeze(user);
+
+newUser.password = '*******';
+newUser.active = true;
+
+console.log(newUser);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{username: "AzureDiamond", password: "hunter2"}
+</code></pre>
+<p>En el ejemplo anterior, intentamos anular la contraseña <code>hunter2</code> con <code>*******</code>, pero la propiedad <code>password</code> siguió siendo la misma. También intentamos agregar una nueva propiedad, <code>active</code>, pero no fue posible.</p>
+
+<p><code>Object.isFrozen()</code> está disponible para determinar si un objeto se congeló o no, y muestra un booleano.</p>
+
+<h2 id="object-seal">Object.seal()</h2>
+
+<p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/seal"><code>Object.seal()</code></a> impide la adición de nuevas propiedades a un objeto, pero permite la modificación de propiedades existentes. Este método es similar a <code>Object.freeze()</code>. Actualice su consola antes de implementar el código siguiente para evitar un error.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const user = {
+    username: 'AzureDiamond',
+    password: 'hunter2'
+};
+
+// Seal the object
+const newUser = Object.seal(user);
+
+newUser.password = '*******';
+newUser.active = true;
+
+console.log(newUser);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{username: "AzureDiamond", password: "*******"}
+</code></pre>
+<p>La nueva propiedad <code>active</code> no se agregó al objeto sellado, pero la propiedad <code>password</code> se cambió de forma correcta.</p>
+
+<h2 id="object-object-getprototypeof">Object Object.getPrototypeOf()</h2>
+
+<p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getPrototypeOf"><code>Object.getPrototypeOf()</code></a> se usa para obtener la propiedad interna oculta <code>[[Prototype]]</code> de un objeto, también accesible a través de la propiedad <code>__proto__</code>.</p>
+
+<p>En este ejemplo, podemos crear una matriz que tenga acceso al prototipo <code>Array</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">const employees = ['Ron', 'April', 'Andy', 'Leslie'];
+
+Object.getPrototypeOf(employees);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[constructor: ƒ, concat: ƒ, find: ƒ, findIndex: ƒ, pop: ƒ, &hellip;]
+</code></pre>
+<p>Podemos ver en el resultado que el prototipo de la matriz <code>employees</code> tiene acceso a <code>pop</code>, <code>find</code> y otros métodos de prototipo <code>Array</code>. Podemos confirmarlo probando el prototipo <code>employees</code> en comparación con <code>Array.prototype</code>.</p>
+<pre class="code-pre "><code langs="">Object.getPrototypeOf(employees) === Array.prototype;
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+</code></pre>
+<p>Este método puede ser útil para obtener más información sobre un objeto o asegurarse de que tenga acceso al prototipo de otro objeto.</p>
+
+<p>También existe un método <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/setPrototypeOf"><code>Object.setPrototypeOf()</code></a> asociado, que agregará un prototipo a otro objeto. Se recomienda usar <code>Object.create()</code> en su lugar, ya que es más rápido y tiene mejor rendimiento.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Los objetos tienen muchos métodos útiles que nos ayudan a modificarlos, protegerlos y generar repeticiones de ellos. En este tutorial, abordamos la forma de crear y asignar nuevos objetos, repetir las claves y los valores de estos y a congelarlos o sellarlos.</p>
+
+<p>Si necesita consultar material sobre los objetos de JavaScript, puede leer “<a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">Información sobre objetos de JavaScript</a>”. Si desea familiarizarse con la cadena de prototipos, puede consultar <a href="https://www.digitalocean.com/community/tutorials/understanding-prototypes-and-inheritance-in-javascript">“Información sobre los prototipos y la herencia en JavaScript</a>”.</p>

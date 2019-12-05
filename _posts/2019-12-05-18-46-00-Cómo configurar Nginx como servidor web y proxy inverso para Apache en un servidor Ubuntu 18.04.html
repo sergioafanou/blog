@@ -1,0 +1,638 @@
+---
+layout: post
+title: Cómo configurar Nginx como servidor web y proxy inverso para Apache en un servidor Ubuntu 18.04
+network: digitalocean
+date: December 05, 2019 at 06:46PM
+url: https://www.digitalocean.com/community/tutorials/como-configurar-nginx-como-servidor-web-y-proxy-inverso-para-apache-en-un-servidor-ubuntu-18-04-es
+image: https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/qQcGNe8.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>El autor seleccionó la <a href="https://www.brightfunds.org/organizations/electronic-frontier-foundation-inc">Electronic Frontier Foundation</a> para recibir una donación como parte del programa <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p>Apache y Nginx son dos servidores web de código abierto populares que se suelen utilizar con PHP. Puede ser útil ejecutar ambos en la misma máquina virtual al albergar múltiples sitios web con requisitos variados. La solución general para ejecutar dos servidores web en un solo sistema es usar varias direcciones IP o diferentes números de puerto.</p>
+
+<p>Los servidores que tienen direcciones IPv4 e IPv6 pueden configurarse para servir sitios de Apache en un protocolo y sitios de Nginx en el otro, pero, actualmente, esto no resulta práctico, dado que la adopción de IPv6 por parte de los ISP todavía no está generalizada. Si bien tener un número de puerto diferente, como <code>81</code> o <code>8080</code>, para el segundo servidor web es otra solución, compartir URL con números de puerto (como <code>http://example.com:81</code>) no siempre es razonable o ideal.</p>
+
+<p>En este tutorial, procederá a configurar Nginx como servidor web y como proxy inverso para Apache en un solo servidor.</p>
+
+<p>Dependiendo de la aplicación web, se pueden requerir cambios de código para mantener Apache al tanto del proxy inverso, en especial, cuando se configuran los sitios de SSL. Para evitar esto, instalará un módulo de Apache denominado <code>mod_rpaf</code> que reescribe ciertas variables de entorno para que parezca que Apache está gestionando directamente solicitudes de clientes web.</p>
+
+<p>Albergaremos cuatro nombres de dominio en un servidor. Nginx servirá dos de ellos: <code>example.com</code> (el host virtual predeterminado) y <code>sample.org</code>. Apache servirá los otros dos: <code>foobar.net</code> y <code>test.io</code>. También configuraremos Apache para que sirva aplicaciones de PHP usando PHP-FPM, que ofrece un mejor rendimiento que <code>mod_php</code>.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para completar este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un nuevo servidor Ubuntu 18.04 configurado siguiendo la <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Configuración inicial del servidor con Ubuntu 18.04</a>, con un usuario sudo no root y un firewall.</li>
+<li>Cuatro nombres de dominio completos configurados para apuntar a la dirección IP de su servidor. Consulte el Paso 3 sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-host-name-with-digitalocean">Cómo configurar un nombre de host con DigitalOcean</a> para obtener un ejemplo sobre cómo hacerlo. Si alberga los DNS de sus dominios en otras ubicaciones, deberá crear los registros A pertinentes allí en su lugar.</li>
+</ul>
+
+<h2 id="paso-1-instalación-de-apache-y-php-fpm">Paso 1: instalación de Apache y PHP-FPM</h2>
+
+<p>Vamos a comenzar por instalar Apache y PHP-FPM.</p>
+
+<p>Además de Apache y PHP-FPM, también instalaremos el módulo PHP FastCGI de Apache, <code>libpache2-mod-fastcgi</code>, para admitir aplicaciones web FastCGI.</p>
+
+<p>Primero, actualice su lista de paquetes para asegurarse de tener los paquetes más recientes.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>A continuación, instale los paquetes de Apache y PHP-FPM:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install apache2 php-fpm
+</li></ul></code></pre>
+<p>El módulo FastCGI Apache no está disponible en el repositorio de Ubuntu, por lo que debe descargarlo desde <a href="https://kernel.org">kernel.org</a> e instalarlo usando el comando <code>dpkg</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://mirrors.edge.kernel.org/ubuntu/pool/multiverse/liba/libapache-mod-fastcgi/libapache2-mod-fastcgi_2.4.7~0910052141-1.2_amd64.deb
+</li><li class="line" prefix="$">sudo dpkg -i libapache2-mod-fastcgi_2.4.7~0910052141-1.2_amd64.deb
+</li></ul></code></pre>
+<p>Luego, cambiemos la configuración predeterminada de Apache para usar PHP-FPM.</p>
+
+<h2 id="paso-2-configuración-de-apache-y-php-fpm">Paso 2: configuración de Apache y PHP-FPM</h2>
+
+<p>En este paso, cambiaremos el número de puerto de Apache a <code>8080</code> y lo configuraremos para que funcione con PHP-FPM usando el módulo <code>mod_fastcgi</code>. Renombre al archivo de configuración <code>ports.conf</code> de Apache:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv /etc/apache2/ports.conf /etc/apache2/ports.conf.default
+</li></ul></code></pre>
+<p>Cree un archivo <code>ports.conf</code> nuevo con el puerto establecido en <code>8080</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "Listen <span class="highlight">8080</span>" | sudo tee /etc/apache2/ports.conf
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> en general, los servidores web se establecen para escuchar en <code>127.0.0.1:8080</code> al configurar un proxy inverso, pero al hacerlo, el valor de la variable de entorno <strong>SERVER_ADDR</strong> de PHP se establece en la dirección IP de bucle invertido en lugar de establecerse en la IP pública del servidor. Nuestro objetivo es configurar Apache de manera tal que sus sitios web no visualicen un proxy inverso delante suyo. Por lo tanto, lo configuraremos para escuchar en <code>8080</code> todas las direcciones IP.<br></span></p>
+
+<p>A continuación, crearemos un archivo de host virtual para Apache. La <code>&lt;VirtualHost&gt;</code> directiva en este archivo se establecerá para servir sitios únicamente en el puerto <code>8080</code>.</p>
+
+<p>Desactive el host virtual predeterminado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2dissite 000-default
+</li></ul></code></pre>
+<p>A continuación, cree un nuevo archivo de host virtual usando el sitio predeterminado existente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/001-default.conf
+</li></ul></code></pre>
+<p>Ahora, abra el nuevo archivo de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/001-default.conf
+</li></ul></code></pre>
+<p>Cambie el puerto de escucha a <code>8080</code>:</p>
+<div class="code-label " title="/etc/apache2/sites-available/000-default.conf">/etc/apache2/sites-available/000-default.conf</div><pre class="code-pre "><code class="code-highlight language-apache">&lt;VirtualHost *:<span class="highlight">8080</span>&gt;
+    ServerAdmin webmaster@localhost
+    DocumentRoot /var/www/html
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+&lt;/VirtualHost&gt;
+</code></pre>
+<p>Guarde el archivo y active el nuevo archivo de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2ensite 001-default
+</li></ul></code></pre>
+<p>Luego, vuelva a cargar Apache:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload apache2
+</li></ul></code></pre>
+<p>Verifique que, ahora,  Apache escuche en <code>8080</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo netstat -tlpn
+</li></ul></code></pre>
+<p>El resultado debería verse como el siguiente ejemplo, con <code>apache2</code> escuchando en <code>8080</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address     Foreign Address      State    PID/Program name
+tcp        0      0 0.0.0.0:22        0.0.0.0:*            LISTEN   1086/sshd
+<span class="highlight">tcp6       0      0 :::8080           :::*                 LISTEN   4678/apache2</span>
+tcp6       0      0 :::22             :::*                 LISTEN   1086/sshd
+</code></pre>
+<p>Una vez verifique que Apache está escuchando en el puerto correcto, puede configurar la compatibilidad con PHP y FastCGI.</p>
+
+<h2 id="paso-3-configuración-de-apache-para-usar-mod_fastcgi">Paso 3: configuración de Apache para usar mod_fastcgi</h2>
+
+<p>Apache sirve páginas de PHP usando <code>mod_php</code> por defecto, pero requiere de configuración adicional para funcionar con PHP-FPM.</p>
+
+<p><span class='nota '>Nota: <strong>si está probando este tutorial en una instalación de LAMP con mod_php, primero, desactívela con <code>sudo a2dismod php7.2</code>.</span></strong></p>
+
+<p>Vamos a añadir un bloque de configuración para <code>mod_fastcgi</code> que depende de <code>mod_action</code>. <code>mod_action</code> está desactivado por defecto, por lo que, primero, debemos habilitarlo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod actions
+</li></ul></code></pre>
+<p>Cambie el nombre del archivo de configuración FastCGI:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv /etc/apache2/mods-enabled/fastcgi.conf /etc/apache2/mods-enabled/fastcgi.conf.default
+</li></ul></code></pre>
+<p>Cree un nuevo archivo de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/mods-enabled/fastcgi.conf
+</li></ul></code></pre>
+<p>Añada las siguientes directivas al archivo para transmitir solicitudes de archivos <code>.php</code> al socket PHP-FPM UNIX:</p>
+<div class="code-label " title="/etc/apache2/mods-enabled/fastcgi.conf">/etc/apache2/mods-enabled/fastcgi.conf</div><pre class="code-pre "><code class="code-highlight language-apache">&lt;IfModule mod_fastcgi.c&gt;
+  AddHandler fastcgi-script .fcgi
+  FastCgiIpcDir /var/lib/apache2/fastcgi
+  AddType application/x-httpd-fastphp .php
+  Action application/x-httpd-fastphp /php-fcgi
+  Alias /php-fcgi /usr/lib/cgi-bin/php-fcgi
+  FastCgiExternalServer /usr/lib/cgi-bin/php-fcgi -socket /run/php/php7.2-fpm.sock -pass-header Authorization
+  &lt;Directory /usr/lib/cgi-bin&gt;
+    Require all granted
+  &lt;/Directory&gt;
+&lt;/IfModule&gt;
+</code></pre>
+<p>Guarde los cambios y realice una prueba de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl -t
+</li></ul></code></pre>
+<p>Vuelva a cargar Apache si aparece el mensaje <strong>Syntax OK</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload apache2
+</li></ul></code></pre>
+<p>Si ve la advertencia <code>Could not reliably determine the server's fully qualified domain name, using 127.0.1.1. Set the 'ServerName' directive globally to suppress this message.</code>, puede ignorarlo de forma segura por ahora. Configuraremos los nombres de servidor más adelante.</p>
+
+<p>Ahora, asegúrese de que podamos servir PHP desde Apache.</p>
+
+<h2 id="paso-4-verificación-de-la-funcionalidad-de-php">Paso 4: verificación de la funcionalidad de PHP</h2>
+
+<p>Vamos a asegurarnos de que PHP funcione al crear un archivo <code>phpinfo()</code> y acceder a él desde un navegador.</p>
+
+<p>Cree el archivo <code>/var/www/html/info.php</code> que contiene una llamada a la función <code>phpinfo</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "&lt;?php phpinfo(); ?&gt;" | sudo tee /var/www/html/info.php
+</li></ul></code></pre>
+<p>Para ver el archivo en un navegador, vaya a <code>http://<span class="highlight">your_server_ip</span>:8080/info.php</code>. Esto le dará una lista de los ajustes de configuración que PHP está usando. Visualizará un resultado similar a esto:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/qQcGNe8.png" alt="phpinfo Servidor API"></p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/eBuDnVU.png" alt="phpinfo Variables PHP"></p>
+
+<p>En la parte superior de la página, verifique que <strong>Server API</strong> diga <strong>FPM/FastCGI</strong>. A los dos tercios de la página, aproximadamente, la sección <strong>PHP Variables</strong> le indicará que *<em>SERVER_SOFTWARE *</em>es Apache en Ubuntu. Esto confirma que <code>mod_fastcgi</code> está activo y que Apache está usando PHP-FPM para procesar archivos PHP.</p>
+
+<h2 id="paso-5-creación-de-hosts-virtuales-para-apache">Paso 5: creación de hosts virtuales para Apache</h2>
+
+<p>Vamos a crear archivos de host virtuales de Apache para los dominios <code>foobar.net</code> y <code>test.io</code>. Para hacerlo, primero, crearemos directorios root de documentos para ambos sitios y colocaremos algunos archivos predeterminados en ellos para poder probar nuestra configuración fácilmente.</p>
+
+<p>Primero, cree los directorios root de documentos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -v /var/www/<span class="highlight">foobar.net</span> /var/www/<span class="highlight">test.io</span>
+</li></ul></code></pre>
+<p>A continuación, cree un archivo de <code>índice</code> para cada sitio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "&lt;h1 style='color: green;'&gt;Foo Bar&lt;/h1&gt;" | sudo tee /var/www/<span class="highlight">foobar.net</span>/index.html
+</li><li class="line" prefix="$">echo "&lt;h1 style='color: red;'&gt;Test IO&lt;/h1&gt;" | sudo tee /var/www/<span class="highlight">test.io</span>/index.html
+</li></ul></code></pre>
+<p>Luego, cree un archivo <code>phpinfo()</code> para cada sitio para que podamos comprobar que PHP esté configurado correctamente.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "&lt;?php phpinfo(); ?&gt;" | sudo tee /var/www/<span class="highlight">foobar.net</span>/info.php
+</li><li class="line" prefix="$">echo "&lt;?php phpinfo(); ?&gt;" | sudo tee /var/www/<span class="highlight">test.io</span>/info.php
+</li></ul></code></pre>
+<p>Ahora, cree el archivo de host virtual para el dominio <code>foobar.net</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/foobar.net.conf
+</li></ul></code></pre>
+<p>Añada el siguiente código al archivo para definir el host:</p>
+<div class="code-label " title="/etc/apache2/sites-available/foobar.net.conf">/etc/apache2/sites-available/foobar.net.conf</div><pre class="code-pre "><code class="code-highlight language-apache">    &lt;VirtualHost *:8080&gt;
+        ServerName <span class="highlight">foobar.net</span>
+        ServerAlias www.<span class="highlight">foobar.net</span>
+        DocumentRoot /var/www/<span class="highlight">foobar.net</span>
+        &lt;Directory /var/www/<span class="highlight">foobar.net</span>&gt;
+            AllowOverride All
+        &lt;/Directory&gt;
+    &lt;/VirtualHost&gt;
+</code></pre>
+<p>La línea <code>AllowOverride All</code> habilita la compatibilidad con <code>.htaccess</code>.</p>
+
+<p>Estas son solo las directivas más básicas. Para obtener una guía completa sobre la configuración de hosts virtuales en Apache, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-apache-virtual-hosts-on-ubuntu-16-04">Cómo configurar hosts virtuales de Apache en Ubuntu 16.04</a>.</p>
+
+<p>Guarde y cierre el archivo. A continuación, cree una configuración similar para <code>test.io</code>. Primero, cree el archivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/test.io.conf
+</li></ul></code></pre>
+<p>A continuación, añada la configuración al archivo:</p>
+<div class="code-label " title="/etc/apache2/sites-available/test.io.conf">/etc/apache2/sites-available/test.io.conf</div><pre class="code-pre "><code class="code-highlight language-apache">    &lt;VirtualHost *:8080&gt;
+        ServerName <span class="highlight">test.io</span>
+        ServerAlias www.<span class="highlight">test.io</span>
+        DocumentRoot /var/www/<span class="highlight">test.io</span>
+        &lt;Directory /var/www/<span class="highlight">test.io</span>&gt;
+            AllowOverride All
+        &lt;/Directory&gt;
+    &lt;/VirtualHost&gt;
+</code></pre>
+<p>Guarde el archivo y salga del editor.</p>
+
+<p>Ahora que ambos hosts virtuales de Apache están configurados, habilite los sitios usando el comando <code>a2ensite</code>. Esto crea un enlace simbólico al archivo de host virtual en el directorio <code>sites-enabled</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2ensite <span class="highlight">foobar.net</span>
+</li><li class="line" prefix="$">sudo a2ensite <span class="highlight">test.io</span>
+</li></ul></code></pre>
+<p>Revise Apache para verificar que no haya errores de configuración nuevamente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl -t
+</li></ul></code></pre>
+<p>Visualizará el mensaje *<em>Syntax OK *</em>si no hay errores. Si ve algo distinto, revise la configuración y vuelva a intentarlo.</p>
+
+<p>Vuelva a cargar Apache para aplicar los cambios una vez que su configuración esté libre de errores:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload apache2
+</li></ul></code></pre>
+<p>Para confirmar que los sitios están funcionando, abra <code>http://<span class="highlight">foobar.net</span>:8080</code> y <code>http://<span class="highlight">test.io</span>:8080</code> en su navegador y verifique que cada sitio muestre su archivo <strong>index.html</strong>.</p>
+
+<p>Visualizará los siguientes resultados:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/2y1R8Zd.png" alt="Página de índice de foobar.net"></p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/wr1pzEj.png" alt="Página de índice de test.io"></p>
+
+<p>Además, asegúrese de que PHP está funcionando al acceder a los archivos *<em>info.php *</em>de cada sitio. Visite <code>http://<span class="highlight">foobar.net</span>:8080/info.php</code> y <code>http://<span class="highlight">test.io</span>:8080/info.php</code> en su navegador.</p>
+
+<p>Visualizará la misma lista de especificaciones de configuración de PHP en cada sitio que vio en el Paso 4.</p>
+
+<p>Ahora, tenemos dos sitios web albergados en Apache en el puerto <code>8080</code>. Procedamos a configurar Nginx a continuación.</p>
+
+<h2 id="paso-6-instalación-y-configuración-de-nginx">Paso 6: instalación y configuración de Nginx</h2>
+
+<p>En este paso, instalaremos Nginx y configuraremos los dominios <code>exemple.com</code> y <code>sample.com</code> como hosts virtuales de Nginx. Para obtener una guía completa sobre la configuración de hosts virtuales en Nginx, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04#step-5-%E2%80%93-setting-up-server-blocks-(recommended)">Cómo configurar bloques de servidor Nginx (hosts virtuales) en Ubuntu 18.04</a>.</p>
+
+<p>Instale Nginx usando el gestor de paquetes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install nginx
+</li></ul></code></pre>
+<p>A continuación, elimine el enlace simbólico del host virtual predeterminado, dado que no lo usaremos más:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo rm /etc/nginx/sites-enabled/default
+</li></ul></code></pre>
+<p>Crearemos nuestro propio sitio predeterminado más adelante (<code>example.com</code>).</p>
+
+<p>Ahora, crearemos hosts virtuales para Nginx usando el mismo procedimiento que usamos para Apache. Primero, cree directorios root de documentos para ambos sitios web:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -v /usr/share/nginx/<span class="highlight">example.com</span> /usr/share/nginx/<span class="highlight">sample.org</span>
+</li></ul></code></pre>
+<p>Mantendremos los sitios web de Nginx en <code>/usr/share/nginx</code>, que es donde Nginx los quiere por defecto. Podría ponerlos en <code>/var/www/html</code> con los sitios de Apache, pero esta separación puede ayudarlo a asociar sitios con Nginx.</p>
+
+<p>Tal como hizo con los hosts virtuales de Apache, cree archivos <code>index</code> y <code>phpinfo()</code> para probar después de completar la configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "&lt;h1 style='color: green;'&gt;Example.com&lt;/h1&gt;" | sudo tee /usr/share/nginx/<span class="highlight">example.com</span>/index.html
+</li><li class="line" prefix="$">echo "&lt;h1 style='color: red;'&gt;Sample.org&lt;/h1&gt;" | sudo tee /usr/share/nginx/<span class="highlight">sample.org</span>/index.html
+</li><li class="line" prefix="$">echo "&lt;?php phpinfo(); ?&gt;" | sudo tee /usr/share/nginx/<span class="highlight">example.com</span>/info.php
+</li><li class="line" prefix="$">echo "&lt;?php phpinfo(); ?&gt;" | sudo tee /usr/share/nginx/<span class="highlight">sample.org</span>/info.php
+</li></ul></code></pre>
+<p>Ahora, cree un archivo de host virtual para el dominio <code>example.com</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Nginx llama a áreas <code>server {. . .}</code> de *<em>bloques de servidor *</em>de un archivo de configuración. Cree un bloque de servidor para el host virtual primario, <code><span class="highlight">example.com</span></code>. La directiva de configuración <code>default_server</code> lo convierte en el host virtual predeterminado que procesa solicitudes HTTP que no coinciden con ningún otro host virtual.</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code class="code-highlight language-nginx">server {
+    listen 80 default_server;
+
+    root /usr/share/nginx/<span class="highlight">example.com</span>;
+    index index.php index.html index.htm;
+
+    server_name <span class="highlight">example.com www.example.com</span>;
+    location / {
+        try_files $uri $uri/ /index.php;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/php7.2-fpm.sock;
+        include snippets/fastcgi-php.conf;
+    }
+}
+</code></pre>
+<p>Guarde y cierre el archivo. Ahora, cree un archivo de host virtual para el segundo dominio de Nginx, <code>sample.org</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano etc/nginx/sites-available/<span class="highlight">sample.org</span>
+</li></ul></code></pre>
+<p>Añada lo siguiente al archivo:</p>
+<div class="code-label " title="/etc/nginx/sites-available/sample.org">/etc/nginx/sites-available/sample.org</div><pre class="code-pre "><code class="code-highlight language-nginx">server {
+    root /usr/share/nginx/<span class="highlight">sample.org</span>;
+    index index.php index.html index.htm;
+
+    server_name <span class="highlight">sample.org www.sample.org</span>;
+    location / {
+        try_files $uri $uri/ /index.php;
+    }
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/php7.2-fpm.sock;
+        include snippets/fastcgi-php.conf;
+    }
+}
+</code></pre>
+<p>Guarde y cierre el archivo.</p>
+
+<p>A continuación, habilite ambos sitios creando enlaces simbólicos al directorio <code>sites-enabled</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">example.com</span> /etc/nginx/sites-enabled/<span class="highlight">example.com</span>
+</li><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">sample.org</span> /etc/nginx/sites-enabled/<span class="highlight">sample.org</span>
+</li></ul></code></pre>
+<p>A continuación, pruebe la configuración de Nginx para asegurarse de que no haya problemas de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Luego, si no hay errores, vuelva a cargar Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload nginx
+</li></ul></code></pre>
+<p>Ahora, acceda al archivo <code>phpinfo()</code> de sus hosts virtuales de Nginx en un navegador web al visitar los sitios <a href="http://example.com/info.php">http://example.com/info.php</a> y <a href="http://sample.org/info.php">http://sample.org/info.php</a>. Vuelva a buscar en las secciones de PHP Variables.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/1FZeLUe.png" alt="Variables PHP de Nginx"></p>
+
+<p><strong>[&ldquo;SERVER_SOFTWARE&rdquo; ]</strong>debe decir <code>nginx</code>, lo que indica que Nginx sirvió directamente los archivos.<strong>[ &ldquo;DOCUMENT_ROOT&rdquo; ]</strong>debe apuntar al directorio que creó anteriormente en este paso para cada sitio de Nginx.</p>
+
+<p>En este momento, ya instalamos Nginx y creamos dos hosts virtuales. A continuación, configuraremos Nginx para las solicitudes de proxy destinadas a dominios albergados en Apache.</p>
+
+<h2 id="paso-7-configuración-de-nginx-para-hosts-virtuales-de-apache">Paso 7: configuración de Nginx para hosts virtuales de Apache.</h2>
+
+<p>Vamos a crear un host virtual de Nginx adicional con múltiples nombres de dominio en las directivas de <code>server_name</code>. Las solicitudes de estos nombres de dominio se redirigirán mediante proxy a Apache.</p>
+
+<p>Cree un archivo de host virtual de Nginx nuevo para reenviar solicitudes a Apache:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">apache</span>
+</li></ul></code></pre>
+<p>Añada el siguiente bloque de código que especifica los nombres de ambos dominios de host virtuales de Apache y redirige sus solicitudes a Apache mediante proxy. Recuerde usar la dirección IP pública en <code>proxy_pass</code>:</p>
+<div class="code-label " title="/etc/nginx/sites-available/apache">/etc/nginx/sites-available/apache</div><pre class="code-pre "><code class="code-highlight language-nginx">server {
+    listen 80;
+    server_name <span class="highlight">foobar.net www.foobar.net test.io www.test.io</span>;
+
+    location / {
+        proxy_pass http://<span class="highlight">your_server_ip</span>:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+</code></pre>
+<p>Guarde el archivo y habilite este host virtual nuevo al crear un enlace simbólico:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/apache /etc/nginx/sites-enabled/apache
+</li></ul></code></pre>
+<p>Pruebe la configuración para asegurarse de que no haya errores:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Si no hay errores, vuelva a cargar Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload nginx
+</li></ul></code></pre>
+<p>Abra el navegador y acceda a la URL <code>http://<span class="highlight">foobar.net</span>/info.php</code>. Desplácese hacia abajo a la sección de *<em>PHP Variables *</em>y verifique los valores mostrados.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/1XQi5kl.png" alt="phpinfo de Apache a través de Nginx"></p>
+
+<p>Las variables <strong>SERVER_SOFTWARE *<em>y *</em>DOCUMENT_ROOT *<em>confirman que Apache gestionó esta solicitud. Nginx añadió las variables *</em>HTTP_X_REAL_IP</strong> y <strong>HTTP_X_FORWARDED_FOR</strong>, y deben mostrar la dirección IP pública del equipo que está utilizando para acceder a la URL.</p>
+
+<p>Configuramos Nginx correctamente para que redirija solicitudes de dominios específicos a Apache mediante proxy. A continuación, configuremos Apache para establecer la variable <code>REMOTE_ADDR</code> como si estuviera gestionando directamente estas solicitudes.</p>
+
+<h2 id="paso-8-instalación-y-configuración-de-mod_rpaf">Paso 8: instalación y configuración de mod_rpaf</h2>
+
+<p>En este paso, instalará un módulo de Apache llamado <code>mod\_rpaf</code> que reescribe los valores de <strong>REMOTE_ADDR</strong>, <strong>HTTPS</strong> y <strong>HTTP_PORT</strong> en función de los valores proporcionados por un proxy inverso. Sin este módulo, algunas aplicaciones de PHP requerirían cambios de código para funcionar sin problemas detrás de un proxy. Este módulo está presente en el repositorio de Ubuntu como <code>libpache2-mod-rpaf</code>, pero está obsoleto y no admite ciertas directivas de configuración. En su lugar, lo instalaremos desde la fuente.</p>
+
+<p>Instale los paquetes necesarios para crear el módulo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install unzip build-essential apache2-dev
+</li></ul></code></pre>
+<p>Descargue la última versión estable de GitHub:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://github.com/gnif/mod_rpaf/archive/stable.zip
+</li></ul></code></pre>
+<p>Extraiga el archivo descargado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">unzip stable.zip
+</li></ul></code></pre>
+<p>Cambie al directorio nuevo que contiene los archivos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd mod_rpaf-stable
+</li></ul></code></pre>
+<p>Compile e instale el módulo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">make
+</li><li class="line" prefix="$">sudo make install
+</li></ul></code></pre>
+<p>A continuación, cree un archivo en el directorio <code>mods-available</code> que cargará el módulo <code>rpaf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/mods-available/rpaf.load
+</li></ul></code></pre>
+<p>Añada el siguiente código al archivo para cargar el módulo:</p>
+<div class="code-label " title="/etc/apache2/mods-available/rpaf.load">/etc/apache2/mods-available/rpaf.load</div><pre class="code-pre "><code class="code-highlight language-apache">LoadModule rpaf_module /usr/lib/apache2/modules/mod_rpaf.so
+</code></pre>
+<p>Guarde el archivo y salga del editor.</p>
+
+<p>Cree otro archivo en este directorio llamado <code>rpaf.conf</code> que contendrá las directivas de configuración para <code>mod_rpaf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/mods-available/rpaf.conf
+</li></ul></code></pre>
+<p>Añada el siguiente bloque de código para configurar <code>mod_rpaf</code>, asegurándose de especificar la dirección IP de su servidor:</p>
+<div class="code-label " title="/etc/apache2/mods-available/rpaf.conf">/etc/apache2/mods-available/rpaf.conf</div><pre class="code-pre "><code class="code-highlight language-apache">    &lt;IfModule mod_rpaf.c&gt;
+        RPAF_Enable             On
+        RPAF_Header             X-Real-Ip
+        RPAF_ProxyIPs           <span class="highlight">your_server_ip</span> 
+        RPAF_SetHostName        On
+        RPAF_SetHTTPS           On
+        RPAF_SetPort            On
+    &lt;/IfModule&gt;
+</code></pre>
+<p>Esta es una breve descripción de cada directiva. Consulte el archivo <a href="https://github.com/gnif/mod_rpaf/blob/stable/README.md#configuration-directives">README de <code>mod_rpaf</code></a> para obtener más información.</p>
+
+<ul>
+<li><strong>RPAF_Header</strong>: el encabezado que se utilizará para la dirección IP real del cliente.</li>
+<li><strong>RPAF_ProxyIPs</strong>: la IP de proxy para ajustar las solicitudes HTTP.</li>
+<li><strong>RPAF_SetHostName</strong>: actualiza el nombre de vhost para que <code>ServerName</code> y <code>ServerAlias</code> funcionen.</li>
+<li><strong>RPAF_SetHTTPS</strong>: establece la variable de entorno <code>HTTPS</code> en función del valor contenido en <code>X-Forwarded-Proto</code>.</li>
+<li><strong>RPAF_SetPort</strong>: establece la variable de entorno <code>SERVER_PORT</code>. Es útil para cuando Apache está detrás de un proxy SSL.</li>
+</ul>
+
+<p>Guarde <code>rpaf.conf</code> y habilite el módulo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod rpaf
+</li></ul></code></pre>
+<p>Esto crea enlaces simbólicos de los archivos <code>rpaf.load</code> y <code>rpaf.conf</code> en el directorio <code>mods-enabled</code>. Ahora, realice una prueba de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apachectl -t
+</li></ul></code></pre>
+<p>Vuelva a cargar Apache si no hay errores:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload apache2
+</li></ul></code></pre>
+<p>Acceda a las páginas <code>phpinfo()</code> <code>http://<span class="highlight">foobar.net</span>/info.php</code> y <code>http://<span class="highlight">test.io</span>/info.php</code> en su navegador y verifique la sección <strong>PHP Variables</strong>. La variable <strong>REMOTE_ADDR</strong>, ahora, también corresponderá a la de la dirección IP pública de su equipo local.`</p>
+
+<p>Ahora, configuremos el cifrado TLS/SSL para cada sitio.</p>
+
+<h2 id="paso-9-creación-de-sitios-web-https-con-let-39-s-encrypt-opcional">Paso 9: creación de sitios web HTTPS con Let&rsquo;s Encrypt (Opcional)</h2>
+
+<p>En este paso, configuraremos certificados TLS/SSL para ambos dominios albergados en Apache. Obtendremos los certificados a través de <a href="https://letsencrypt.org">Let&rsquo;s Encrypt</a>. Nginx admite la terminación SSL, por lo que podemos configurar SSL sin modificar los archivos de configuración de Apache. El módulo <code>mod_rpaf</code> se asegura de que las variables de entorno requeridas estén establecidas en Apache para que las aplicaciones funcionen sin problemas detrás de un proxy inverso SSL.</p>
+
+<p>Primero,  separaremos los bloques <code>server {...}</code> de ambos dominios para que cada uno de ellos pueda tener sus propios certificados SSL. Abra el archivo <code>/etc/nginx/sites-available/apache</code> en su editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/apache
+</li></ul></code></pre>
+<p>Modifique el archivo para que se vea de la siguiente manera, con <code>foobar.net</code> y <code>test.io</code> en sus propios bloques <code>server</code>:</p>
+<div class="code-label " title="/etc/nginx/sites-available/apache">/etc/nginx/sites-available/apache</div><pre class="code-pre "><code class="code-highlight language-nginx">    server {
+        listen 80;
+        server_name <span class="highlight">foobar.net www.foobar.net</span>;
+
+        location / {
+            proxy_pass http://<span class="highlight">your_server_ip</span>:8080;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+    server {
+        listen 80;
+        server_name <span class="highlight">test.io www.test.io</span>;
+
+        location / {
+            proxy_pass http://<span class="highlight">your_server_ip</span>:8080;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+</code></pre>
+<p>Utilizaremos <a href="https://certbot.eff.org">Certbot</a> para generar nuestros certificados TLS/SSL. Su complemento de Nginx se encargará de reconfigurar Nginx y volver a cargar la configuración cuando sea necesario.</p>
+
+<p>Primero, añada el repositorio oficial de Certbot:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository ppa:certbot/certbot
+</li></ul></code></pre>
+<p>Presione <code>ENTER</code> cuando se le indique para confirmar que desea añadir el repositorio nuevo. A continuación, actualice la lista de paquetes para obtener la información de paquetes del repositorio nuevo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>A continuación, instale el paquete Nginx de Certbot con <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python-certbot-nginx
+</li></ul></code></pre>
+<p>Una vez instalado, utilice el comando <code>certbot</code> para generar los certificados para <code>foobar.net</code> y <code>www.foobar.net</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --nginx -d <span class="highlight">foobar.net</span> -d <span class="highlight">www.foobar.net</span>
+</li></ul></code></pre>
+<p>Este comando le indica a Certbot que use el complemento <code>nginx</code>, utilizando <code>-d</code> para especificar los nombres para los que deseamos que el certificado sea válido.</p>
+
+<p>Si es la primera vez que ejecuta <code>certbot</code>, se le pedirá que ingrese una dirección de correo electrónico y que acepte las condiciones de servicio. A continuación, <code>certbot</code> se comunicará con el servidor de Let&rsquo;s Encrypt, y, luego, realizará una comprobación para verificar que usted controle el dominio para el que está solicitando un certificado.</p>
+
+<p>Luego, Certbot le preguntará cómo desea configurar sus ajustes de HTTPS:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Please choose whether or not to redirect HTTP traffic to HTTPS, removing HTTP access.
+-------------------------------------------------------------------------------
+1: No redirect - Make no further changes to the webserver configuration.
+2: Redirect - Make all requests redirect to secure HTTPS access. Choose this for
+new sites, or if you're confident your site works on HTTPS. You can undo this
+change by editing your web server's configuration.
+-------------------------------------------------------------------------------
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel):
+</code></pre>
+<p>Seleccione su elección y presione <code>ENTER</code>. La configuración se actualizará y Nginx se volverá a cargar para recopilar los ajustes nuevos.</p>
+
+<p>Ahora, ejecute el comando para el segundo dominio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --nginx -d <span class="highlight">test.io</span> -d <span class="highlight">www.test.io</span>
+</li></ul></code></pre>
+<p>Acceda a uno de los dominios de Apache en su navegador utilizando <code>https://</code> prefix; visite <code>https://<span class="highlight">foobar.net</span>/info.php</code> y verá esto:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_apache_ubuntu_1804/KK6AmWV.png" alt="phpinfo ssl"></p>
+
+<p>Busque en la sección <strong>PHP Variables</strong>. La variable <strong>SERVER_PORT</strong> se estableció en <strong>443</strong> y <strong>HTTPS</strong>, en <strong>on</strong>, como si se hubiese accedido a Apache directamente desde HTTPS. Con estas variables establecidas, las aplicaciones de PHP no requieren una configuración especial para funcionar detrás de un proxy inverso.</p>
+
+<p>Ahora, desactive el acceso directo a Apache.</p>
+
+<h2 id="paso-10-bloqueo-del-acceso-directo-a-apache-opcional">Paso 10: bloqueo del acceso directo a Apache (opcional)</h2>
+
+<p>Dado que Apache está escuchando en el puerto <code>8080</code>, en la dirección IP pública, es accesible para todos. Puede bloquearse al utilizar el siguiente comando IPtables en su conjunto de reglas de firewall.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo iptables -I INPUT -p tcp --dport 8080 ! -s <span class="highlight">your_server_ip</span> -j REJECT --reject-with tcp-reset
+</li></ul></code></pre>
+<p>Asegúrese de usar la dirección IP de su servidor en lugar del ejemplo en rojo. Una vez que el puerto <code>8080</code> esté bloqueado en su firewall, compruebe que sea imposible acceder a Apache desde este. Abra su navegador web e intente acceder a uno de los nombres de dominio de Apache en el puerto <code>8080</code>. Por ejemplo, http://<span class="highlight">example.com</span>:8080</p>
+
+<p>El navegador debería mostrar el mensaje de error &ldquo;Unable to connect&rdquo; o &ldquo;Webpage is not available&rdquo;. Con la opción IPtables <code>tcp-reset</code> implementada, una persona externa no vería ninguna diferencia entre el puerto <code>8080</code> y un puerto que no tiene ningún servicio.</p>
+
+<p><span class='note'><strong>Nota:</strong> por defecto, las reglas de IPtables no se mantienen al reiniciar el sistema. Hay varias formas de preservar las reglas de IPtables, pero lo más fácil es usar <code>iptables-persistent</code> en el repositorio de Ubuntu. Estudie <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-firewall-using-iptables-on-ubuntu-14-04">este artículo</a> para obtener más información sobre cómo configurar IPTables.<br></span></p>
+
+<p>Ahora, configuremos Nginx para servir archivos estáticos para los sitios de Apache.</p>
+
+<h2 id="paso-11-servir-archivos-estáticos-utilizando-nginx-opcional">Paso 11: servir archivos estáticos utilizando Nginx (opcional)</h2>
+
+<p>Cuando Nginx redirige solicitudes de dominios de Apache mediante proxy, envía cada solicitud de archivo de esos dominios a Apache. Nginx es más rápido que Apache en servir archivos estáticos como imágenes, JavaScript y hojas de estilo. Por lo tanto, procederemos a configurar el archivo de host virtual <code>apache</code> de Nginx para servir directamente archivos estáticos, pero enviar solicitudes de PHP a Apache.</p>
+
+<p>Abra el archivo <code>/etc/nginx/sites-available/apache</code> en su editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/apache
+</li></ul></code></pre>
+<p>Deberá añadir dos bloques de <code>location</code> adicionales a cada bloque de servidor, y modificar las secciones de <code>location</code> existentes. Además, deberá indicarle a Nginx dónde encontrar los archivos estáticos de cada sitio.</p>
+
+<p>Si decidió no usar certificados SSL y TLS, modifique su archivo para que se vea así:</p>
+<div class="code-label " title="/etc/nginx/sites-available/apache">/etc/nginx/sites-available/apache</div><pre class="code-pre "><code class="code-highlight language-nginx">server {
+    listen 80;
+    server_name <span class="highlight">test.io www.test.io</span>;
+    root /var/www/<span class="highlight">test.io</span>;
+    index index.php index.htm index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php;
+    }
+
+    location ~ \.php$ {
+        proxy_pass http://<span class="highlight">your_server_ip</span>:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+
+server {
+    listen 80;
+    server_name <span class="highlight">foobar.net www.foobar.net</span>;
+    root /var/www/<span class="highlight">foobar.net</span>;
+    index index.php index.htm index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php;
+    }
+
+    location ~ \.php$ {
+        proxy_pass http://<span class="highlight">your_ip_address</span>:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+</code></pre>
+<p>Si también desea que esté disponible HTTPS, utilice la siguiente configuración en su lugar:</p>
+<div class="code-label " title="/etc/nginx/sites-available/apache">/etc/nginx/sites-available/apache</div><pre class="code-pre "><code class="code-highlight language-nginx">server {
+    listen 80;
+    server_name <span class="highlight">test.io www.test.io</span>;
+    root /var/www/<span class="highlight">test.io</span>;
+    index index.php index.htm index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php;
+    }
+
+    location ~ \.php$ {
+        proxy_pass http://<span class="highlight">your_server_ip</span>:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/<span class="highlight">test.io</span>/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/<span class="highlight">test.io</span>/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+
+server {
+    listen 80;
+    server_name <span class="highlight">foobar.net www.foobar.net</span>;
+    root /var/www/<span class="highlight">foobar.net</span>;
+    index index.php index.htm index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php;
+    }
+
+    location ~ \.php$ {
+        proxy_pass http://<span class="highlight">your_ip_address</span>:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/<span class="highlight">foobar.net</span>/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/<span class="highlight">foobar.net</span>/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+</code></pre>
+<p>La directiva <code>try_files</code> hace que Nginx busque archivos en el root de documentos y los sirva directamente. Si el archivo tiene una extensión <code>.php</code>, la solicitud se transmite a Apache. Aunque el archivo no se encuentre en el root de documentos, la solicitud se transmite a Apache para que características de la aplicación, como permalinks, funcionen sin problemas.</p>
+
+<p><span class='warning'><strong>Advertencia:</strong> la directiva <code>location ~ /\.ht</code> es muy importante; impide que Nginx sirva los contenidos de los archivos de configuración de Apache, como<code>.htaccess</code> y <code>.htpasswd</code>, que contienen información sensible.<br></span></p>
+
+<p>Guarde el archivo y realice una prueba de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Vuelva a cargar Nginx si la prueba resulta exitosa:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service nginx reload
+</li></ul></code></pre>
+<p>Para verificar que todo funcione, puede examinar los archivos de registro de Apache en <code>/var/log/apache2</code> y consultar las solicitudes <code>GET</code> de los archivos <code>info.php</code> de <code>test.io</code> y <code>foobar.net</code>. Utilice el comando <code>tail</code> para ver las últimas líneas del archivo, y use el botón <code>-f</code> para ver si hay cambios en el archivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo tail -f /var/log/apache2/other_vhosts_access.log
+</li></ul></code></pre>
+<p>Ahora, visite <code>http://test.io/info.php</code> en su navegador y, luego, verifique la salida del registro. Verá que Apache está contestando:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>    <span class="highlight">test.io:80 your_server_ip</span> - - [01/Jul/2016:18:18:34 -0400] "GET /info.php HTTP/1.0" 200 20414 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.111 Safari/537.36"
+</code></pre>
+<p>A continuación, visite la página <code>index.html</code> de cada sitio y no verá entradas de registro de Apache. Nginx las está sirviendo.</p>
+
+<p>Cuando haya terminado de observar el archivo de registro, presione <code>CTRL+C</code> para dejar de seguirlo.</p>
+
+<p>Con esta configuración, Apache no podrá restringir el acceso a archivos estáticos. El control de acceso de los archivos estáticos deberá configurarse en el archivo de host virtual <code>apache</code> de Nginx, pero eso va más allá del alcance de este tutorial.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Ahora, tiene un servidor Ubuntu con Nginx sirviendo <code>example.com</code> y <code>sample.org</code>, y Apache sirviendo <code>foobar.net</code> y <code>test.io</code>. Aunque Nginx está actuando como proxy inverso de Apache, el servicio de proxy de Nginx es transparente y las conexiones a los dominios de Apache parecen servirse directamente desde Apache. Puede usar este método para servir sitios seguros y estáticos.</p>

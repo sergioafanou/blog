@@ -1,0 +1,218 @@
+---
+layout: post
+title: Cómo configurar un firewall con UFW en Debian 9
+network: digitalocean
+date: December 05, 2019 at 07:35PM
+url: https://www.digitalocean.com/community/tutorials/como-configurar-un-firewall-con-ufw-en-debian-9-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>UFW o Uncomplicated Firewall es una interfaz para <code>iptables</code> orientada a simplificar el proceso de configuración de un firewall. Aunque <code>iptables</code> es una herramienta sólida y flexible, puede resultar difícil para los principiantes aprender a usarlo para configurar correctamente un firewall. Si está desea comenzar a proteger su red y no está seguro de qué herramienta utilizar, UFW puede ser la mejor opción .</p>
+
+<p>En este tutorial verá la forma de configurar un firewall con UFW en Debian 9.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para completar este tutorial, necesitará un servidor de Debian 9 con un usuario sudo no root que puede configurar siguiendo los pasos 1 a 3 del <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">tutorial Configuración inicial para servidores de Debian 9</a>.</p>
+
+<h2 id="paso-1-instalar-ufw">Paso 1: Instalar UFW</h2>
+
+<p>Debian no instala UFW por defecto. Si completó el <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">tutorial de configuración inicial para servidores</a>, ya habrá instalado y habilitado UFW. De lo contrario, realice la instalación ahora usando <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install ufw
+</li></ul></code></pre>
+<p>Crearemos UFW y lo habilitaremos en los siguientes pasos.</p>
+
+<h2 id="paso-2-usar-ipv6-con-ufw-opcional">Paso 2: Usar IPv6 con UFW (opcional)</h2>
+
+<p>Este tutorial se redactó teniendo en cuenta IPv4, pero funcionará para IPv6 siempre que lo habilite. Si su servidor de Debian tiene IPv6 habilitado, compruebe que UFW esté configurado para que admitir IPv6 de modo que administre las reglas de firewall para IPv6 además de IPv4. Para hacerlo, abra la configuración de UFW con <code>nano</code> o su editor favorito.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/default/ufw
+</li></ul></code></pre>
+<p>A continuación, asegúrese de que el valor de <code>IPV6</code> sea <code>yes</code>. Debería tener el siguiente aspecto:</p>
+<div class="code-label " title="/etc/default/ufw excerpt">/etc/default/ufw excerpt</div><pre class="code-pre "><code langs="">IPV6=<span class="highlight">yes</span>
+</code></pre>
+<p>Guarde y cierre el archivo. Cuando UFW esté habilitado, se configurará para escribir reglas de firewall de IPv4 y IPv6. Sin embargo, antes de habilitar UFW, nos convendrá comprobar que su firewall esté configurado para que pueda conectarse a través de SSH. Empezaremos con la configuración de las políticas predeterminadas.</p>
+
+<h2 id="paso-3-configurar-políticas-predeterminadas">Paso 3: Configurar políticas predeterminadas</h2>
+
+<p>Si acaba de empezar con su firewall, las primeras reglas que debe definir son sus políticas predeterminadas. Estas reglas controlan la administración del tráfico que no coincida de forma explícita con otras reglas. Por defecto, UFW está configurado para denegar todas las conexiones entrantes y permitir todas las conexiones salientes. Esto significa que quien intente llegar a su servidor no podrá conectarse, mientras que cualquier aplicación dentro del servidor podría llegar al mundo exterior.</p>
+
+<p>Restableceremos los valores predeterminados de sus reglas de UFW para garantizar que podamos seguir con este tutorial. Para fijar los valores predeterminados utilizados por UFW, emplee estos comandos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw default deny incoming
+</li><li class="line" prefix="$">sudo ufw default allow outgoing
+</li></ul></code></pre>
+<p>Establecen los valores predeterminados para denegar las conexiones entrantes y permitir las salientes. Con solo estos valores predeterminados de firewall podría bastar para una computadora personal, pero normalmente los servidores deben responder a las solicitudes de usuarios externos. Lo veremos a continuación.</p>
+
+<h2 id="paso-4-habilitar-conexiones-ssh">Paso 4: Habilitar conexiones SSH</h2>
+
+<p>Si habilitamos nuestro firewall de UFW ahora, denegaría todas las conexiones entrantes. Esto significa que deberemos crear reglas que permitan explícitamente las conexiones entrantes legítimas (SSH o HTTP, por ejemplo) si queremos que nuestro servidor responda a estos tipos de solicitudes. Si utiliza un servidor en nube, probablemente le convenga permitir las conexiones SSH entrantes para poder conectarse y administrar su servidor.</p>
+
+<p>Para configurar su servidor de modo que permita las conexiones SSH entrantes, puede utilizar este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow ssh
+</li></ul></code></pre>
+<p>Esto creará reglas de firewall que permitirán todas las conexiones en el puerto <code>22</code>, que es el que escucha el demonio SSH por defecto. UFW registra el significado del puerto <code>allow ssh</code> porque está enumerado como servicio en el archivo <code>/etc/services</code>.</p>
+
+<p>Sin embargo, realmente podemos escribir la regla equivalente especificando el puerto en vez del nombre de servicio. Por ejemplo, este comando funciona como el anterior:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 22
+</li></ul></code></pre>
+<p>Si configuró su demonio SSH para utilizar un puerto diferente, deberá especificar el puerto apropiado. Por ejemplo, si su servidor SSH escucha en el puerto <code>2222</code> puede utilizar este comando para permitir las conexiones en ese puerto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow <span class="highlight">2222</span>
+</li></ul></code></pre>
+<p>Ahora que su firewall está configurado para permitir las conexiones SSH entrantes, podemos habilitarlo.</p>
+
+<h2 id="paso-5-habilitar-ufw">Paso 5: Habilitar UFW</h2>
+
+<p>Para habilitar UFW, utilice este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>Recibirá una advertencia que indicará que el comando puede interrumpir las conexiones SSH existentes. Ya configuramos una regla de firewall que permite conexiones SSH. Debería ser posible continuar sin inconvenientes. Responda a la solicitud con <code>y</code> y presione <code>ENTER</code>.</p>
+
+<p>Con esto, el firewall quedará activo. Ejecute el comando <code>sudo ufw status verbose</code> para ver las reglas que se configuran. En el resto de este tutorial se abarca en mayor profundidad la forma de utilizar UFW. Se analizarán opciones como las de permitir o denegar diferentes tipos de conexiones.</p>
+
+<h2 id="paso-6-habilitar-otras-conexiones">Paso 6: Habilitar otras conexiones</h2>
+
+<p>En este momento, debería permitir el resto de las conexiones a las que su servidor debe responder. Las conexiones que debería permitir dependen de sus necesidades específicas. Afortunadamente, ya sabe cómo escribir reglas que permiten las conexiones basadas en un nombre de servicio o un puerto; ya lo hicimos para SSH en el puerto <code>22</code>. También puede hacerlo para:</p>
+
+<ul>
+<li>HTTP en el puerto 80, que es lo que utilizan los servidores web no cifrados, con <code>sudo ufw allow http</code> o <code>sudo ufw allow 80</code></li>
+<li>HTTPS en el puerto 443, que es lo que utilizan los servidores web cifrados, con <code>sudo ufw allow https</code> o <code>sudo ufw allow 443</code></li>
+</ul>
+
+<p>Existen varias maneras de permitir otras conexiones, aparte de especificar un puerto o un servicio conocido.</p>
+
+<h3 id="intervalos-de-puerto-específicos">Intervalos de puerto específicos</h3>
+
+<p>Puede especificar intervalos de puerto con UFW. Algunas aplicaciones utilizan varios puertos en vez de uno solo.</p>
+
+<p>Por ejemplo, para permitir las conexiones de X11 que utilizan los puertos <code>6000</code>-<code>6007</code>, emplee estos comandos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow <span class="highlight">6000</span>:<span class="highlight">6007</span>/tcp
+</li><li class="line" prefix="$">sudo ufw allow <span class="highlight">6000</span>:<span class="highlight">6007</span>/udp
+</li></ul></code></pre>
+<p>Cuando se especifiquen intervalos de puerto con UFW, debe especificar el protocolo (<code>tcp</code> o <code>udp</code>) a los que deberían aplicarse las reglas. No lo mencionamos antes porque cuando no se especifica el protocolo se permiten ambos de forma automática, lo cual está bien en la mayoría de los casos.</p>
+
+<h3 id="direcciones-ip-específicas">Direcciones IP específicas</h3>
+
+<p>Al trabajar con UFW, también puede especificar direcciones IP. Por ejemplo, si desea permitir las conexiones desde una dirección IP específica, como una dirección IP de trabajo o doméstica <code>203.0.113.4</code>, debe especificar <code>from</code> y luego la dirección IP:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow from <span class="highlight">203.0.113.4</span>
+</li></ul></code></pre>
+<p>También puede especificar un puerto concreto al que la dirección IP pueda conectarse agregando <code>to any port</code> seguido del número de este. Por ejemplo, si desea permitir que <code>203.0.113.4</code> se conecte al puerto <code>22</code> (SSH), utilice este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow from <span class="highlight">203.0.113.4</span> to any port <span class="highlight">22</span>
+</li></ul></code></pre>
+<h3 id="subredes">Subredes</h3>
+
+<p>Si desea permitir una subred de direcciones IP, puede hacerlo utilizando la notación CIDR para especificar una máscara de red. Por ejemplo, si desea permitir todas las direcciones IP de la <code>203.0.113.1</code> a la <code>203.0.113.254</code> podría utilizar este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow from <span class="highlight">203.0.113.0</span>/<span class="highlight">24</span>
+</li></ul></code></pre>
+<p>Del mismo modo, también puede especificar el puerto de destino al que puede conectarse la subred <code>203.013.0/24</code>. Una vez más, utilizaremos el puerto <code>22</code>(SSH) como ejemplo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow from <span class="highlight">203.0.113.0</span>/<span class="highlight">24</span> to any port 22
+</li></ul></code></pre>
+<h3 id="conexiones-a-una-interfaz-de-red-específica">Conexiones a una interfaz de red específica</h3>
+
+<p>Si desea crear una regla de firewall que solo se aplique a una interfaz de red específica, puede hacerlo especificando “allow in on” seguido del nombre de la interfaz de red.</p>
+
+<p>Tal vez le convenga revisar sus interfaces de red antes de continuar. Para hacerlo, utilice este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip addr
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output Excerpt">Output Excerpt</div>2: <span class="highlight">eth0</span>: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc pfifo_fast state
+. . .
+3: <span class="highlight">eth1</span>: &lt;BROADCAST,MULTICAST&gt; mtu 1500 qdisc noop state DOWN group default
+. . .
+</code></pre>
+<p>El resultado resaltado indica los nombres de la interfaz de red. Normalmente tienen nombres similares a <code>eth0</code> o <code>enp3s2</code>.</p>
+
+<p>Así, si su servidor tiene una interfaz de red pública llamada <code>eth0</code>, podría permitir el tráfico HTTP (puerto <code>80</code>) hacia él con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow in on <span class="highlight">eth0</span> to any port <span class="highlight">80</span>
+</li></ul></code></pre>
+<p>Hacerlo permitiría que su servidor recibiera solicitudes HTTP desde la Internet pública.</p>
+
+<p>O bien, si desea que su servidor de base de datos de MySQL (puerto <code>3306</code>) escuche las conexiones en la interfaz de red privada <code>eth1</code>, por ejemplo, podría utilizar este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow in on <span class="highlight">eth1</span> to any port <span class="highlight">3306</span>
+</li></ul></code></pre>
+<p>Esto permitiría que otros servidores de su red privada se conectaran a su base de datos de MySQL.</p>
+
+<h2 id="paso-7-denegar-conexiones">Paso 7: Denegar conexiones</h2>
+
+<p>Si no ha cambiado la política predeterminada para las conexiones entrantes, UFW está configurado para denegarlas a todas. Generalmente, esto simplifica el proceso de creación de una política de firewall segura al exigirle crear reglas que permitan de forma explícita el acceso de puertos específicos y direcciones IP.</p>
+
+<p>Sin embargo, a veces le convendrá denegar conexiones específicas basadas en la dirección IP o subred de origen, quizás por saber que su servidor recibe ataques desde ellas. Además, si desea cambiar su política entrante predeterminada para <strong>allow</strong> (no lo recomendamos), debería crear reglas <strong>deny</strong> para cualquier servicio o dirección IP cuyas conexiones no desee permitir.</p>
+
+<p>Para escribir reglas de <strong>deny</strong>, puede utilizar los comandos descritos anteriormente y sustituir <strong>allow</strong> por <strong>deny</strong>.</p>
+
+<p>Por ejemplo, para denegar conexiones HTTP, podría utilizar este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw deny http
+</li></ul></code></pre>
+<p>A su vez, si desea denegar todas las conexiones de <code>203.0.113.4</code> podría utilizar este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw deny from <span class="highlight">203.0.113.4</span>
+</li></ul></code></pre>
+<p>Ahora veremos la forma de eliminar reglas.</p>
+
+<h2 id="paso-8-eliminar-reglas">Paso 8: Eliminar reglas</h2>
+
+<p>Saber eliminar reglas de firewall es tan importante como saber crearlas. Existen dos maneras diferentes de especificar las reglas que se eliminarán: por número de regla o por regla real (se asemejan a la forma en que las reglas se especifican al crearse). Comenzaremos con el <strong>método de eliminación por el número de regla</strong> porque es más sencillo.</p>
+
+<h3 id="por-número-de-regla">Por número de regla</h3>
+
+<p>Si utiliza el número de regla para eliminar reglas de firewall, lo primero que le convendrá hacer es obtener una lista de reglas de firewall. El comando “UFW status” tiene una opción para mostrar números junto a cada regla, como se muestra aquí:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status numbered
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Numbered Output:">Numbered Output:</div>Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22                         ALLOW IN    15.15.15.0/24
+[ 2] 80                         ALLOW IN    Anywhere
+</code></pre>
+<p>Si decidimos eliminar la regla 2, que permite las conexiones del puerto 80 (HTTP), podemos especificarlo en un comando “UFW delete”como este:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete <span class="highlight">2</span>
+</li></ul></code></pre>
+<p>Esto mostraría un mensaje de confirmación y eliminaría la regla 2, que permite conexiones HTTP. Tenga en cuenta que si tiene IPv6 habilitado, le convendría eliminar también la regla IPv6 correspondiente.</p>
+
+<h3 id="por-regla-real">Por regla real</h3>
+
+<p>La alternativa a números de regla es especificar la regla real que se eliminará. Por ejemplo, si desea eliminar la regla <code>allow http</code>, podría escribir lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete <span class="highlight">allow http</span>
+</li></ul></code></pre>
+<p>También podría especificar la regla mediante <code>allow 80</code> en vez de hacerlo por nombre de servicio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete <span class="highlight">allow 80</span>
+</li></ul></code></pre>
+<p>Si existen reglas IPv4 y IPv6, este método las eliminará.</p>
+
+<h2 id="paso-9-comprobar-el-estado-y-las-reglas-de-ufw">Paso 9: Comprobar el estado y las reglas de UFW</h2>
+
+<p>En cualquier momento, puede verificar el estado de UFW con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status verbose
+</li></ul></code></pre>
+<p>Si UFW está desactivado, lo cual se aplica por defecto, verá algo como esto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: inactive
+</code></pre>
+<p>Si UFW está activo, lo cual debería suceder si siguió el paso 3, el resultado dirá que está activo y enumerará cualquier regla configurada. Por ejemplo, si el firewall está configurado para permitir conexiones SSH (puerto <code>22</code>) desde cualquier parte, el resultado podría ser parecido a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW IN    Anywhere
+</code></pre>
+<p>Utilice el comando <code>status</code> si desea verificar la configuración que UFW aplicó al firewall.</p>
+
+<h2 id="paso-10-deshabilitar-o-reiniciar-ufw-opcional">Paso 10: Deshabilitar o reiniciar UFW (opcional)</h2>
+
+<p>Si decide que no desea utilizar UFW, puede desactivarlo con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw disable
+</li></ul></code></pre>
+<p>Cualquier regla que haya creado con UFW dejará de estar activa. Siempre puede ejecutar <code>sudo ufw enable</code> si necesita activarla más adelante.</p>
+
+<p>Si ya tiene reglas de UFW configuradas y decide que desea empezar de nuevo, puede utilizar el comando “reset”:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw reset
+</li></ul></code></pre>
+<p>Esto desactivará UFW y eliminará cualquier regla definida anteriormente. Tenga en cuenta que los ajustes originales de las políticas predeterminadas no se restablecerán si las modificó en algún momento. Esto debería permitirle empezar de nuevo con UFW.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>De esta manera, su firewall quedará configurado para permitir conexiones SSH (al menos). Asegúrese de permitir cualquier otra conexión entrante de su servidor y, al mismo tiempo, limitar cualquier conexión innecesaria, de modo que su servidor funcione y sea seguro.</p>
+
+<p>Para obtener información sobre más configuraciones comunes de UFW, consulte el tutorial <a href="https://www.digitalocean.com/community/tutorials/ufw-essentials-common-firewall-rules-and-commands">Aspectos básicos de UFW: reglas y comandos comunes de firewall</a>.</p>

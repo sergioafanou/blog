@@ -1,0 +1,577 @@
+---
+layout: post
+title: Cómo configurar Laravel, Nginx y MySQL con Docker Compose
+network: digitalocean
+date: December 05, 2019 at 07:43PM
+url: https://www.digitalocean.com/community/tutorials/como-configurar-laravel-nginx-y-mysql-con-docker-compose-es
+image: https://assets.digitalocean.com/articles/laravel_docker/laravel_home.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>El autor seleccionó a <a href="https://www.brightfunds.org/organizations/the-freebsd-foundation">The FreeBSD Foundation</a> para recibir una donación como parte del programa <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p>Durante los últimos años, <a href="https://docs.docker.com/">Docker</a> se ha convertido en una solución de uso frecuente para implementar aplicaciones gracias a la forma en que simplifican el funcionamiento y la implementación de aplicaciones en <a href="https://www.docker.com/resources/what-container">contenedores</a> efímeros. Cuando se usa una pila de aplicación LEMP, por ejemplo, con <a href="https://php.net/docs.php">PHP</a>, <a href="https://nginx.org/en/">Nginx</a>, <a href="https://dev.mysql.com/doc/">MySQL</a> y el framework de <a href="https://laravel.com/docs/5.6">Laravel</a>, Docker puede simplificar considerablemente el proceso de configuración.</p>
+
+<p><a href="https://docs.docker.com/compose/">Docker Compose</a> ha simplificado aún más el proceso de desarrollo al permitir que los desarrolladores definan su infraestructura, incluidos los servicios de aplicación, las redes y los volúmenes, en un único archivo. Docker Compose ofrece una alternativa eficaz para ejecutar varios comandos <code>docker container create</code> y <code>docker container run</code>.</p>
+
+<p>A través de este tutorial, creará una aplicación web utilizando el marco Laravel con Nginx como servidor web y MySQL como base de datos; todo ello dentro de contenedores de Docker. Definirá toda la configuración de pila en un archivo <code>docker-compose</code>, junto con los archivos de configuración para PHP, MySQL y Nginx.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de comenzar, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un servidor de Ubuntu 18.04 y un usuario no root con privilegios <code>sudo</code>. Siga el tutorial <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Configuración inicial para servidores con Ubuntu 18.04</a> para preparar esto.</li>
+<li>Docker instalado siguiendo los pasos 1 y 2 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04">Cómo instalar y usar Docker en Ubuntu 18.04</a>.</li>
+<li>Docker Compose instalado siguiendo el paso 1 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">Cómo instalar Docker Compose en Ubuntu 18.04</a>.</li>
+</ul>
+
+<h2 id="paso-1-descargar-laravel-e-instalar-dependencias">Paso 1: Descargar Laravel e instalar dependencias</h2>
+
+<p>Como primer paso, obtendremos la versión más reciente de Laravel e instalaremos las dependencias del proyecto. Incluiremos <a href="https://github.com/composer/docker">Composer</a>, el administrador de paquetes de nivel de aplicación para PHP. Instalaremos estas dependencias con Docker para evitar la instalación de Composer a nivel global.</p>
+
+<p>Primero, compruebe que se encuentre en su directorio de inicio, clone la última versión de Laravel y dispóngala en un directorio llamado <code><span class="highlight">laravel-app</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">git clone https://github.com/laravel/laravel.git <span class="highlight">laravel-app</span>
+</li></ul></code></pre>
+<p>Posiciónese en el directorio <code><span class="highlight">laravel-app</span></code>:&ldquo;</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/<span class="highlight">laravel-app</span>
+</li></ul></code></pre>
+<p>A continuación, utilice la <a href="https://hub.docker.com/r/library/composer/">imagen de <code>composer</code></a> de Docker a fin de montar los directorios que necesitará para su proyecto de Laravel y evitar la sobrecarga que implica instalar Composer a nivel global:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker run --rm -v $(pwd):/app composer install
+</li></ul></code></pre>
+<p>Mediante los indicadores <code>-v</code> y <code>--rm</code> con <code>docker run</code> se crea un contenedor efímero para el cual se aplica un montaje “bind” a la lista de comandos actual antes de su eliminación. Con esto, se copiará el contenido de su directorio <code>~/<span class="highlight">laravel-app</span></code> al contenedor y también se garantizará que la carpeta <code>vendor</code> creada por Composer dentro del contenedor se copie a su directorio actual.</p>
+
+<p>Como paso final, establezca permisos en el directorio del proyecto para que sea propiedad de su usuario no <strong>root</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R $USER:$USER ~/laravel-app
+</li></ul></code></pre>
+<p>Esto será importante al escribir el Dockerfile para la imagen de su aplicación en el paso 4, ya que le permitirá trabajar con el código de la aplicación y ejecutar procesos en su contenedor como usuario no <strong>root</strong>.</p>
+
+<p>Una vez establecido el código de su aplicación, puede proceder a definir sus servicios con Docker Compose.</p>
+
+<h2 id="paso-2-crear-el-archivo-de-docker-compose">Paso 2: Crear el archivo de Docker Compose</h2>
+
+<p>Desarrollar sus aplicaciones con Docker Compose simplifica el proceso de configuración y control de versiones de su infraestructura. Para configurar nuestra aplicación de Laravel, escribiremos un archivo <code>docker-compose</code> que defina nuestro servidor web, nuestra base de datos y nuestros servicios de aplicación.</p>
+
+<p>Abra el archivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/laravel-app/docker-compose.yml
+</li></ul></code></pre>
+<p>En el archivo <code>docker-compose</code>, definirá tres servicios: <code>app</code>, <code>webserver</code> y <code>db</code>. Agregue el siguiente código al archivo, asegúrese de sustituir la contraseña <strong>root</strong> de <code>MySQL_ROOT_PASSWORD</code>, definida como una <a href="https://docs.docker.com/compose/compose-file/#environment">variable de entorno</a> bajo el servicio <code>db</code>, por una contraseña segura de su elección:</p>
+<div class="code-label " title="~/laravel-app/docker-compose.yml">~/laravel-app/docker-compose.yml</div><pre class="code-pre yml"><code langs="">version: '3'
+services:
+
+  #PHP Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: digitalocean.com/php
+    container_name: app
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+    working_dir: /var/www
+    networks:
+      - app-network
+
+  #Nginx Service
+  webserver:
+    image: nginx:alpine
+    container_name: webserver
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - app-network
+
+  #MySQL Service
+  db:
+    image: mysql:5.7.22
+    container_name: db
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: <span class="highlight">laravel</span>
+      MYSQL_ROOT_PASSWORD: <span class="highlight">your_mysql_root_password</span>
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    networks:
+      - app-network
+
+#Docker Networks
+networks:
+  app-network:
+    driver: bridge
+</code></pre>
+<p>Los servicios definidos aquí incluyen lo siguiente:</p>
+
+<ul>
+<li><code>app</code>: esta definición de servicio contiene la aplicación de Laravel y ejecuta una imagen personalizada de Docker, <code>digitalocean.com/php</code>, que usted definirá en el paso 4. También fija <code>/var/www</code> para <code>working_dir</code> en el contenedor.</li>
+<li><code>webserver</code>: esta definición de servicio obtiene la <a href="https://hub.docker.com/_/nginx/">imagen <code>nginx:alpine</code></a> de Docker y expone los puertos <code>80</code> y <code>443</code>.</li>
+<li><code>db</code>: esta definición de servicio obtiene la <a href="https://hub.docker.com/_/mysql/">imagen <code>mysql:5.7.22</code></a> de Docker y define algunas variables de entorno, incluida una base de datos llamada <code><span class="highlight">laravel</span></code> para su aplicación y la contraseña <strong>root</strong> para la base de datos. Puede nombrar la base de datos como lo desee y debe sustituir <code><span class="highlight">your_mysql_root_password</span></code> por su propia contraseña segura. Esta definición de servicio también asigna el puerto <code>3306</code> en el host al puerto <code>3306</code> en el contenedor.</li>
+</ul>
+
+<p>Cada propiedad <code>container_name</code> define un nombre para el contenedor, que corresponde al nombre del servicio. Si no define esta propiedad, Docker asignará un nombre a cada contenedor combinando el nombre de una persona históricamente famosa y una palabra al azar separada por un guión bajo.</p>
+
+<p>Para facilitar la comunicación entre contenedores, los servicios se conectan a una red de puente llamada <code>app-network</code>. Una red de puente utiliza un puente de software que permite que los contenedores conectados a la misma red de puente se comuniquen entre sí. El controlador de puente instala de forma automática reglas en la máquina host para que los contenedores de diferentes redes de puente no puedan comunicarse directamente entre sí. Esto crea un mayor nivel de seguridad para las aplicaciones y garantiza que solo los servicios relacionados puedan comunicarse entre sí. También implica que usted puede definir diferentes redes y servicios que se conectan a funciones relacionadas: los servicios de aplicaciones clientes pueden utilizar una red <code>frontend</code>, por ejemplo, y los servicios de servidor pueden usar una red <code>backend</code>.</p>
+
+<p>Veamos la forma de agregar volúmenes y montajes “bind” a sus definiciones de servicio para persistir los datos de su aplicación.</p>
+
+<h2 id="paso-3-persistir-datos">Paso 3: Persistir datos</h2>
+
+<p>Docker tiene características potentes y convenientes para la persistencia de datos. En nuestra aplicación, usaremos <a href="https://docs.docker.com/storage/volumes/"><em>volúmenes</em></a> y <a href="https://docs.docker.com/storage/bind-mounts/"><em>montajes bind</em></a> para persistir la base de datos y los archivos de aplicación y configuración. Los volúmenes ofrecen flexibilidad para los respaldos y la persistencia más allá del ciclo de vida de un contenedor, mientras que los montajes “bind” facilitan los cambios de código durante el desarrollo y realizan cambios en los archivos host o directorios disponibles de inmediato en sus contenedores. En nuestra configuración usaremos ambas opciones.</p>
+
+<p><span class='warning'><strong>Advertencia:</strong> Al usar de montajes “bind”, permite cambiar el sistema de archivos host a través de procesos que se ejecutan en un contenedor. Se incluye la creación, modificación o eliminación de archivos o directorios importantes del sistema. Esta es una poderosa capacidad que tiene consecuencias para la seguridad y podría afectar a los procesos no Docker del sistema host. Use los montajes “bind” con cuidado.<br></span></p>
+
+<p>En el archivo <code>docker-compose</code>, defina un volumen llamado <code>dbdata</code> bajo la definición de servicio <code>db</code> para persistir la base de datos de MySQL:</p>
+<div class="code-label " title="~/laravel-app/docker-compose.yml">~/laravel-app/docker-compose.yml</div><pre class="code-pre docker"><code langs="">...
+#MySQL Service
+db:
+  ...
+    <span class="highlight">volumes:</span>
+      <span class="highlight">- dbdata:/var/lib/mysql</span>
+    networks:
+      - app-network
+  ...
+</code></pre>
+<p>El volumen llamado <code>dbdata</code> persiste el contenido de la carpeta <code>/var/lib/mysql</code> situada dentro del contenedor. Esto le permite detener y reiniciar el servicio <code>db</code> sin perder datos.</p>
+
+<p>En la parte inferior del archivo, agregue la definición para el volumen <code>dbdata</code>:</p>
+<div class="code-label " title="~/laravel-app/docker-compose.yml">~/laravel-app/docker-compose.yml</div><pre class="code-pre docker"><code langs="">...
+#Volumes
+volumes:
+  dbdata:
+    driver: local
+</code></pre>
+<p>Una vez implementada esta definición, podrá utilizar este volumen en todos los servicios.</p>
+
+<p>A continuación, agregue un montaje “bind” al servicio <code>db</code> para los archivos de configuración de MySQL que creará en el paso 7:</p>
+<div class="code-label " title="~/laravel-app/docker-compose.yml">~/laravel-app/docker-compose.yml</div><pre class="code-pre docker"><code langs="">...
+#MySQL Service
+db:
+  ...
+    volumes:
+      - dbdata:/var/lib/mysql
+      <span class="highlight">- ./mysql/my.cnf:/etc/mysql/my.cnf</span>
+  ...
+</code></pre>
+<p>Este montaje “bind” vincula <code>~/laravel-app/mysql/my.cnf</code> a <code>/etc/mysql/my.cnf</code> en el contenedor.</p>
+
+<p>A continuación, agregue montajes “bind” al servicio <code>webserver</code>. Habrá dos: uno para el código de su aplicación y otro para la definición de configuración de Nginx que creará en el paso 6:</p>
+<div class="code-label " title="~/laravel-app/docker-compose.yml">~/laravel-app/docker-compose.yml</div><pre class="code-pre docker"><code langs="">#Nginx Service
+webserver:
+  ...
+  <span class="highlight">volumes:</span>
+      <span class="highlight">- ./:/var/www</span>
+      <span class="highlight">- ./nginx/conf.d/:/etc/nginx/conf.d/</span>
+  networks:
+      - app-network
+</code></pre>
+<p>El primer montaje “bind” vincula el código de la aplicación situado en el directorio <code>~/laravel-app</code> al directorio <code>/var/www dentro</code> del contenedor. El archivo de configuración que agregará a <code>~/laravel-app/nginx/conf.d/</code> también se montará a <code>/etc/nginx/conf.d/</code> en el contenedor, lo que le permitirá agregar o modificar el contenido del directorio de configuración cuando sea necesario.</p>
+
+<p>Por último, agregue los siguientes montajes “bind” al servicio <code>app</code> para el código de la aplicación y los archivos de configuración:</p>
+<div class="code-label " title="~/laravel-app/docker-compose.yml">~/laravel-app/docker-compose.yml</div><pre class="code-pre docker"><code langs="">#PHP Service
+app:
+  ...
+  <span class="highlight">volumes:</span>
+       <span class="highlight">- ./:/var/www</span>
+       <span class="highlight">- ./php/local.ini:/usr/local/etc/php/conf.d/local.ini</span>
+  networks:
+      - app-network
+</code></pre>
+<p>El servicio <code>app</code> vincula mediante montaje “bind” la carpeta <code>~/laravel-app</code>, que contiene el código de la aplicación, a la carpeta <code>/var/www</code> en el contenedor. Esto acelerará el proceso de desarrollo, ya que los cambios realizados en el directorio de su aplicación local se reflejarán de inmediato dentro del contenedor. También vinculará su archivo de configuración PHP, <code>~/laravel-app/php/local.ini</code>, a <code>/usr/local/etc/php/conf.d/local.ini</code>, dentro del contenedor. Creará el archivo de configuración de PHP local en el paso 5.</p>
+
+<p>Ahora, su archivo <code>docker-compose</code> tendrá el siguiente aspecto:</p>
+<div class="code-label " title="~/laravel-app/docker-compose.yml">~/laravel-app/docker-compose.yml</div><pre class="code-pre yml"><code langs="">version: '3'
+services:
+
+  #PHP Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: digitalocean.com/php
+    container_name: app
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - ./php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - app-network
+
+  #Nginx Service
+  webserver:
+    image: nginx:alpine
+    container_name: webserver
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./:/var/www
+      - ./nginx/conf.d/:/etc/nginx/conf.d/
+    networks:
+      - app-network
+
+  #MySQL Service
+  db:
+    image: mysql:5.7.22
+    container_name: db
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: <span class="highlight">laravel</span>
+      MYSQL_ROOT_PASSWORD: <span class="highlight">your_mysql_root_password</span>
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    volumes:
+      - dbdata:/var/lib/mysql/
+      - ./mysql/my.cnf:/etc/mysql/my.cnf
+    networks:
+      - app-network
+
+#Docker Networks
+networks:
+  app-network:
+    driver: bridge
+#Volumes
+volumes:
+  dbdata:
+    driver: local
+</code></pre>
+<p>Guarde el archivo y cierre su editor cuando termine de realizar cambios.</p>
+
+<p>Ahora que su archivo <code>docker-compose</code> está escrito, podrá crear la imagen personalizada para su aplicación.</p>
+
+<h2 id="paso-4-crear-el-dockerfile">Paso 4: Crear el Dockerfile</h2>
+
+<p>Docker le permite especificar el entorno dentro de contenedores individuales con un <em>Dockerfile</em>. Un Dockerfile le permite crear imágenes personalizadas que puede emplear para instalar el software requerido por su aplicación y configurar los ajustes según sus requisitos. Puede introducir en <a href="https://hub.docker.com/">Docker Hub</a> o en cualquier registro privado las imágenes personalizadas que cree.</p>
+
+<p>Nuestro <code>Dockerfile</code> se ubicará en nuestro directorio <code>~/laravel-app</code>. Cree el archivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/laravel-app/Dockerfile
+</li></ul></code></pre>
+<p>Este <code>Dockerfile</code> establecerá la imagen de base y especificará los comandos y las instrucciones que se necesitan para crear la imagen de aplicación de Laravel. Agregue el siguiente código al archivo:</p>
+<div class="code-label " title="~/laravel-app/php/Dockerfile">~/laravel-app/php/Dockerfile</div><pre class="code-pre docker"><code langs="">FROM php:7.2-fpm
+
+# Copy composer.lock and composer.json
+COPY composer.lock composer.json /var/www/
+
+# Set working directory
+WORKDIR /var/www
+
+# Install dependencies
+RUN apt-get update &amp;&amp; apt-get install -y \
+    build-essential \
+    mysql-client \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    locales \
+    zip \
+    jpegoptim optipng pngquant gifsicle \
+    vim \
+    unzip \
+    git \
+    curl
+
+# Clear cache
+RUN apt-get clean &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+# Install extensions
+RUN docker-php-ext-install pdo_mysql mbstring zip exif pcntl
+RUN docker-php-ext-configure gd --with-gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ --with-png-dir=/usr/include/
+RUN docker-php-ext-install gd
+
+# Install composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Add user for laravel application
+RUN groupadd -g 1000 www
+RUN useradd -u 1000 -ms /bin/bash -g www www
+
+# Copy existing application directory contents
+COPY . /var/www
+
+# Copy existing application directory permissions
+COPY --chown=www:www . /var/www
+
+# Change current user to www
+USER www
+
+# Expose port 9000 and start php-fpm server
+EXPOSE 9000
+CMD ["php-fpm"]
+</code></pre>
+<p>Primero, el Dockerfile crea una imagen en la parte superior de la <a href="https://hub.docker.com/_/php/">imagen de <code>php:7.2-fpm</code></a> Docker. Esta es una imagen basada en Debian que tiene instalada la implementación <a href="https://php-fpm.org/">PHP-FPM</a> de PHP FastCGI. El archivo también instala con <code>composer</code> los paquetes previos para Laravel: <code>mcrypt</code>, <code>pdo_mysql</code>, <code>mbstring</code> e <code>imagick</code>.</p>
+
+<p>La directiva <code>RUN</code> especifica los comandos para actualizar, instalar y configurar los ajustes dentro del contenedor. Esto incluye la creación de un usuario dedicado y un grupo llamado <strong>www</strong>. La instrucción <code>WORKDIR</code> especifica el directorio <code>/var/www</code> como directorio de trabajo para la aplicación.</p>
+
+<p>Crear un usuario dedicado y un grupo con permisos restringidos mitiga la vulnerabilidad inherente al ejecutar contenedores de Docker, que se funcionan por defecto como <strong>root</strong>. En lugar de ejecutar este contenedor como <strong>root</strong>, creamos el usuario** www**, que tiene acceso de lectura y escritura a la carpeta <code>/var/www</code> gracias a la instrucción <code>COPY</code> que usaremos con el indicador <code>--chown</code> para copiar los permisos de la carpeta de la aplicación.</p>
+
+<p>Por último, el comando <code>EXPOSE</code> expone un puerto del contenedor, el <code>9000</code>, para el servidor <code>php-fpm</code>. <code>CMD</code> especifica el comando que debe ejecutarse una vez que se cree el contenedor. Aquí, el <code>CMD</code> especifica <code>“php-fpm”</code>, que iniciará el servidor.</p>
+
+<p>Guarde el archivo y cierre su editor cuando termine de realizar cambios.</p>
+
+<p>Ahora podrá definir su configuración de PHP.</p>
+
+<h2 id="paso-5-configurar-php">Paso 5: Configurar PHP</h2>
+
+<p>Ahora que definió su infraestructura en el archivo <code>docker-compose</code>, puede configurar el servicio PHP para que funciones como procesador PHP para solicitudes entrantes de Nginx.</p>
+
+<p>Para configurar PHP, creará el archivo <code>local.ini</code> dentro de la carpeta <code>php</code>. Este es el archivo que vinculó mediante montaje “bind” a <code>/usr/local/etc/php/conf.d/local.ini</code> dentro del contenedor en el paso 2. Crear este archivo le permitirá anular el archivo <code>php.ini</code> predeterminado que PHP lee al iniciarse.</p>
+
+<p>Cree el directorio <code>php</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/laravel-app/php
+</li></ul></code></pre>
+<p>A continuación, abra el archivo <code>local.ini</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/laravel-app/php/local.ini
+</li></ul></code></pre>
+<p>Con el propósito de demostrar cómo configurar PHP, agregaremos el siguiente código para establecer limitaciones de tamaño para archivos cargados:</p>
+<div class="code-label " title="~/laravel-app/php/local.ini">~/laravel-app/php/local.ini</div><pre class="code-pre "><code class="code-highlight language-ini">upload_max_filesize=40M
+post_max_size=40M
+</code></pre>
+<p>Las directivas <code>upload_max_filesize</code> y <code>post_max_size</code> establecen el tamaño máximo permitido para los archivos cargados y demuestran la forma en que puede configurar parámetros <code>php.ini</code> desde su archivo <code>local.ini</code>. Puede disponer cualquier configuración específica de PHP que desee anular en el archivo <code>local.ini</code>.</p>
+
+<p>Guarde el archivo y cierre el editor.</p>
+
+<p>Una vez preparado su archivo PHP <code>local.ini</code>, podrá configurar Nginx.</p>
+
+<h2 id="paso-6-configurar-nginx">Paso 6: Configurar Nginx</h2>
+
+<p>Una vez configurado el servicio PHP, podrá modificar el servicio Nginx para usar PHP-FPM como servidor de FastCGI para proporcionar contenido dinámico. El servidor FastCGI se basa en un protocolo binario para interconectar programas interactivos con un servidor web. Para obtener más información, consulte este artículo sobre <a href="https://www.digitalocean.com/community/tutorials/understanding-and-implementing-fastcgi-proxying-in-nginx">Comprensión e implementación de proxy de FastCGI en Nginx</a>.</p>
+
+<p>Para configurar Nginx, creará un archivo <code>app.conf</code> con la configuración del servicio en la carpeta <code>~/laravel-app/nginx/conf.d/</code>.</p>
+
+<p>Primero, cree el directorio <code>nginx/conf.d/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/laravel-app/nginx/conf.d
+</li></ul></code></pre>
+<p>Luego, cree el archivo de configuración <code>app.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/laravel-app/nginx/conf.d/app.conf
+</li></ul></code></pre>
+<p>Agregue el siguiente código al archivo para especificar su configuración de Nginx:</p>
+<div class="code-label " title="~/laravel-app/nginx/conf.d/app.conf">~/laravel-app/nginx/conf.d/app.conf</div><pre class="code-pre "><code class="code-highlight language-nginx">server {
+    listen 80;
+    index index.php index.html;
+    error_log  /var/log/nginx/error.log;
+    access_log /var/log/nginx/access.log;
+    root /var/www/public;
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass app:9000;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+    }
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+        gzip_static on;
+    }
+}
+</code></pre>
+<p>El bloque <a href="https://www.digitalocean.com/community/tutorials/understanding-nginx-server-and-location-block-selection-algorithms">de servidor</a> define la configuración para el servidor web de Nginx con las siguientes directivas:</p>
+
+<ul>
+<li><code>listen</code>: esta directiva define el puerto en el cual el servidor escuchará las solicitudes entrantes.</li>
+<li><code>error_log</code> y <code>access_log</code>: estas directivas definen los archivos para escribir registros.</li>
+<li><code>root</code>: esta directiva establece la ruta de la carpeta root y forma la ruta para cualquier archivo solicitado en el sistema de archivos local.</li>
+</ul>
+
+<p>En el bloque de ubicación <code>php</code>, la directiva <code>fastcgi_pass</code> especifica que el servicio de <code>app</code> escuchando en un socket TCP del puerto <code>9000</code>. Esto hace que el servidor PHP-FPM escuche a través de la red en lugar de hacerlo en un socket de Unix. Aunque un socket de Unix tiene una ligera ventaja de velocidad con respecto a un socket de TCP, no cuenta con un protocolo de red y, por lo tanto, omite la pila de red. Para los casos en los cuales los hosts están ubicados en una máquina, puede tener sentido la presencia de un socket de Unix. Sin embargo, en los casos en los que tenga servicios ejecutándose en diferentes hosts, un socket de TCP le ofrece la ventaja de permitirle conectarse a servicios distribuidos. Debido a que nuestro contenedor <code>app</code> se ejecuta en un host diferente del de nuestro contenedor <code>webserver</code>, un socket de TCP es la opción que más sentido tiene para nuestro tipo de configuración.</p>
+
+<p>Guarde el archivo y cierre su editor cuando termine de realizar cambios.</p>
+
+<p>Gracias al montaje “bind” mount que creó en el paso 2, cualquier cambio que realice dentro de la carpeta <code>nginx/conf.d/</code> se reflejará directamente dentro del contenedor <code>webserver</code>.</p>
+
+<p>A continuación, observaremos nuestras configuraciones de MySQL.</p>
+
+<h2 id="paso-7-configurar-mysql">Paso 7: Configurar MySQL</h2>
+
+<p>Una vez configurados PHP y Nginx, podrá habilitar MySQL para que actúe como base de datos para su aplicación.</p>
+
+<p>Para configurar MySQL, creará el archivo <code>my.cnf</code> en la carpeta <code>mysql</code>. Este es el archivo que vinculó mediante montaje “bind” a <code>/etc/mysql/my.cnf</code> dentro del contenedor en el paso 2. Este montaje “bind” le permite anular los ajustes de <code>my.cnf</code> según sea necesario.</p>
+
+<p>Para demostrar cómo funciona esto, agregaremos al archivo <code>my.cnf</code> ajustes que habiliten el registro general de consulta y especifiquen el archivo de registro.</p>
+
+<p>Primero, cree el directorio <code>mysql</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/laravel-app/mysql
+</li></ul></code></pre>
+<p>A continuación, cree el archivo <code>my.cnf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/laravel-app/mysql/my.cnf
+</li></ul></code></pre>
+<p>En el archivo, agregue el siguiente código para habilitar el registro de consulta y establecer la ubicación del archivo de registro:</p>
+<div class="code-label " title="~/laravel-app/mysql/my.cnf">~/laravel-app/mysql/my.cnf</div><pre class="code-pre "><code class="code-highlight language-ini">[mysqld]
+general_log = 1
+general_log_file = /var/lib/mysql/general.log
+</code></pre>
+<p>Este archivo <code>my.cnf</code> habilita los registros y define la configuración de <code>general_log</code> con el valor <code>1</code> para permitir registros generales. La configuración <code>general_log_file</code> especifica dónde se almacenarán los registros.</p>
+
+<p>Guarde el archivo y cierre el editor.</p>
+
+<p>Nuestro siguiente paso será iniciar los contenedores.</p>
+
+<h2 id="paso-8-ejecutar-los-contenedores-y-modificar-las-preferencias-de-entorno">Paso 8: Ejecutar los contenedores y modificar las preferencias de entorno</h2>
+
+<p>Ahora que definió todos sus servicios en su archivo <code>docker-compose</code> y creó los archivos de configuración para estos servicios, puede iniciar los contenedores. Sin embargo, como paso final, crearemos una copia del archivo <code>.env.example</code> que Laravel incluye por defecto y daremos a la copia el nombre <code>.env</code>, que corresponde al archivo que Laravel prevé que definirá su entorno:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp .env.example .env
+</li></ul></code></pre>
+<p>Configuraremos los detalles específicos de nuestros ajustes en este archivo una vez que iniciemos los contenedores.</p>
+
+<p>Una vez definidos todos sus servicios en su archivo <code>docker-compose</code>, solo deberá emitir un comando para iniciar todos los contenedores, crear los volúmenes y configurar y conectar las redes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Cuando ejecute <code>docker-compose</code> por primera vez, descargará todas las imágenes de Docker necesarias, lo cual podría tardar un tiempo. Una vez que las imágenes se descarguen y se almacenen en su máquina local, Compose creará sus contenedores. El indicador <code>-d</code> agrega un demonio al proceso y ejecuta sus contenedores en segundo plano.</p>
+
+<p>Una vez que el proceso esté completo, use el siguiente comando para enumerar todos los contenedores en ejecución:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps
+</li></ul></code></pre>
+<p>Verá el siguiente resultado con detalles sobre sus contenedores <code>app</code>, <code>webserver</code> y <code>db</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        NAMES               IMAGE                             STATUS              PORTS
+c31b7b3251e0        db                  mysql:5.7.22                      Up 2 seconds        0.0.0.0:3306-&gt;3306/tcp
+ed5a69704580        app                 digitalocean.com/php              Up 2 seconds        9000/tcp
+5ce4ee31d7c0        webserver           nginx:alpine                      Up 2 seconds        0.0.0.0:80-&gt;80/tcp, 0.0.0.0:443-&gt;443/tcp
+</code></pre>
+<p><code>CONTAINER ID</code> en este resultado es un identificador único para cada contenedor, mientras que <code>NAMES</code> enumera el nombre de servicio asociado con cada una. Puede usar ambos identificadores para acceder a los contenedores. <code>IMAGE</code> define el nombre de imagen para cada contenedor, mientras que <code>STATUS</code> proporciona información sobre el su estado: en ejecución, en proceso de reinicio o detenido.</p>
+
+<p>Ahora puede modificar el archivo <code>.env</code> en el contenedor <code>app</code> para incluir detalles específicos sobre su configuración.</p>
+
+<p>Abra el archivo usando <code>docker-compose</code> exec, que permite ejecutar comandos específicos en contenedores. En este caso, abrirá el archivo para editar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec <span class="highlight">app</span> nano .env
+</li></ul></code></pre>
+<p>Busque el bloque que especifica <code>DB_CONNECTION</code> y actualícelo para reflejar los detalles de su configuración. Cambiará los siguientes campos:</p>
+
+<ul>
+<li><code>DB_HOST</code> será su contenedor de base de datos <code>db</code>.</li>
+<li>`<code>DB_DATABASE</code> será la base de datos <code><span class="highlight">laravel</span></code>.</li>
+<li>`<code>DB_USERNAME</code> será el nombre de usuario que usará para su base de datos. En este caso, usaremos <code><span class="highlight">laraveluser</span></code>.</li>
+<li><code>DB_PASSWORD</code> será la contraseña segura que desee utilizar para esta cuenta de usuario.</li>
+</ul>
+<div class="code-label " title="/var/www/.env">/var/www/.env</div><pre class="code-pre "><code langs="">DB_CONNECTION=mysql
+DB_HOST=<span class="highlight">db</span>
+DB_PORT=3306
+DB_DATABASE=<span class="highlight">laravel</span>
+DB_USERNAME=<span class="highlight">laraveluser</span>
+DB_PASSWORD=<span class="highlight">your_laravel_db_password</span>
+</code></pre>
+<p>Guarde sus cambios y cierre el editor.</p>
+
+<p>A continuación, establezca la clave de aplicación para la aplicación de Laravel con el comando <code>php artisan key:generate</code>. Este comando generará una clave, dispondrá una copia de esta en su archivo <code>.env</code> y se asegurará de que las sesiones y los datos cifrados de sus usuarios permanezcan seguros:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec <span class="highlight">app</span> php artisan key:generate
+</li></ul></code></pre>
+<p>Con esto, dispondrá de los ajustes de entorno necesarios para ejecutar su aplicación. Para almacenar en caché estos ajustes en un archivo, lo cual aumentará la velocidad de carga de su aplicación, ejecute lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec <span class="highlight">app</span> php artisan config:cache
+</li></ul></code></pre>
+<p>Sus ajustes de configuración se cargarán en <code>/var/www/bootstrap/cache/config.php</code> en el contenedor.</p>
+
+<p>Como paso final, visite <code>http://<span class="highlight">your_server_ip</span></code> en el navegador. Verá la siguiente página de inicio para su aplicación Laravel:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/laravel_docker/laravel_home.png" alt="Página de inicio de Laravel"></p>
+
+<p>Con sus contenedores en ejecución y la información de su configuración lista, podrá configurar la información de usuario para la base de datos <code><span class="highlight">laravel</span></code> en el contenedor <code>db</code>.</p>
+
+<h2 id="paso-9-crear-un-usuario-para-mysql">Paso 9: Crear un usuario para MySQL</h2>
+
+<p>La instalación predeterminada de MySQL solo crea la cuenta administrativa <strong>root</strong>, que tiene privilegios ilimitados en el servidor de base de datos. Por lo general, es mejor evitar el uso de la cuenta administrativa <strong>root</strong> al interactuar con la base de datos. En su lugar, crearemos un usuario de base de datos dedicado para la base de datos de nuestra aplicación de Laravel.</p>
+
+<p>Para crear un nuevo usuario, ejecute un shell bash interactivo en el contenedor <code>db</code> con <code>docker-compose exec</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec <span class="highlight">db</span> bash
+</li></ul></code></pre>
+<p>Dentro del contenedor, inicie sesión en la cuenta administrativa <strong>root</strong> de MySQL:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@c31b7b3251e0:/#">mysql -u root -p
+</li></ul></code></pre>
+<p>Se le solicitará la contraseña que estableció para la cuenta <strong>root</strong> de MySQL durante la instalación en su archivo <code>docker-compose</code>.</p>
+
+<p>Comience revisando la base de datos llamada <code><span class="highlight">laravel</span></code>, que definió en su archivo <code>docker-compose</code>. Ejecute el comando <code>show databases</code> para verificar las bases de datos existentes:&rdquo;&ldquo;&rdquo;</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">show databases;
+</li></ul></code></pre>
+<p>Verá la base de datos <code><span class="highlight">laravel</span></code> en el resultado:&ldquo;</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>+--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| <span class="highlight">laravel</span>            |
+| mysql              |
+| performance_schema |
+| sys                |
++--------------------+
+5 rows in set (0.00 sec)
+</code></pre>
+<p>A continuación, cree la cuenta de usuario que tendrá permisos de acceso a esta base de datos. Nuestro nombre de usuario será <code><span class="highlight">laraveluser</span></code>, aunque puede cambiarlo por otro que prefiera. Asegúrese de que su nombre de usuario y contraseña aquí coincidan con la información que estableció en su archivo <code>.env</code> en el paso anterior:&rdquo;&ldquo;</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">GRANT ALL ON laravel.* TO '<span class="highlight">laraveluser</span>'@'%' IDENTIFIED BY '<span class="highlight">your_laravel_db_password</span>';
+</li></ul></code></pre>
+<p>Elimine los privilegios para notificar los cambios al servidor MySQL:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">FLUSH PRIVILEGES;
+</li></ul></code></pre>
+<p>Cierre MySQL:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">EXIT;
+</li></ul></code></pre>
+<p>Por último, cierre el contenedor:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@c31b7b3251e0:/#">exit
+</li></ul></code></pre>
+<p>Con esto, habrá configurado la cuenta de usuario para la base de datos de su aplicación de Laravel y estará listo para migrar sus datos y trabajar con la consola Tinker.</p>
+
+<h2 id="paso-10-migrar-datos-y-trabajar-con-la-consola-tinker">Paso 10: Migrar datos y trabajar con la consola Tinker</h2>
+
+<p>Con su aplicación en ejecución, podrá migrar sus datos y experimentar con el comando <code>tinker</code>, que iniciará una consola <a href="http://psysh.org/"><em>PsySH</em></a> con Laravel precargada. PsySH es una consola para desarrolladores de tiempo de ejecución y un depurador interactivo para PHP, y Tinker es un REPL específico para Laravel. Usar el comando <code>tinker</code> le permitirá interactuar con su aplicación de Laravel desde la línea de comandos en un shell interactivo.</p>
+
+<p>Primero, pruebe la conexión con MySQL ejecutando el comando Laravel <code>artisan migrate</code>, que crea una tabla <code>migrations</code> en la base de datos dentro del contenedor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec <span class="highlight">app</span> php artisan migrate
+</li></ul></code></pre>
+<p>Con este comando se migrarán las tablas predeterminadas de Laravel. El resultado que confirme la migración tendrá este aspecto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+Migration table created successfully.
+Migrating: 2014_10_12_000000_create_users_table
+Migrated:  2014_10_12_000000_create_users_table
+Migrating: 2014_10_12_100000_create_password_resets_table
+Migrated:  2014_10_12_100000_create_password_resets_table
+</code></pre>
+<p>Una vez que la migración esté completa, podrá ejecutar una consulta para verificar si su conexión a la base de datos es correcta usando el comando <code>tinker</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec <span class="highlight">app</span> php artisan tinker
+</li></ul></code></pre>
+<p>Pruebe la conexión de MySQL obteniendo los datos que acaba de migrar:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;&gt;&gt;">\DB::table('migrations')-&gt;get();
+</li></ul></code></pre>
+<p>Verá un resultado similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>=&gt; Illuminate\Support\Collection {#2856
+     all: [
+       {#2862
+         +"id": 1,
+         +"migration": "2014_10_12_000000_create_users_table",
+         +"batch": 1,
+       },
+       {#2865
+         +"id": 2,
+         +"migration": "2014_10_12_100000_create_password_resets_table",
+         +"batch": 1,
+       },
+     ],
+   }
+</code></pre>
+<p>Puede usar <code>tinker</code> para interactuar con sus bases de datos y experimentar con servicios y modelos.</p>
+
+<p>Una vez implementada su aplicación de Laravel, estará listo para seguir adelante con el desarrollo y la experimentación.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Con esto, dispondrá de una aplicación de pila LEMP en ejecución en su servidor, que probó accediendo a la página de bienvenida de Laravel y creando migraciones de base de datos de MySQL.</p>
+
+<p>La clave de la simplicidad en esta instalación es Docker Compose, que le permite crear un grupo de contenedores de Docker definidos en un solo archivo mediante un comando. Si desea obtener más información sobre cómo realizar una integración continua con Docker Compose, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-a-continuous-integration-testing-environment-with-docker-and-docker-compose-on-ubuntu-16-04">Cómo configurar un entorno de prueba de integración continua con Docker y Docker Compose en Ubuntu 16.04</a>. Si desea simplificar su proceso de implementación de la aplicación de Laravel, resultará pertinente el recurso <a href="https://www.digitalocean.com/community/tutorials/automatically-deploy-laravel-applications-deployer-ubuntu">Cómo implementar de forma automática aplicaciones de Laravel con Deployer en Ubuntu 16.04</a>.</p>

@@ -1,0 +1,184 @@
+---
+layout: post
+title: Cómo agregar espacio de intercambio en Ubuntu 18.04
+network: digitalocean
+date: December 05, 2019 at 06:37PM
+url: https://www.digitalocean.com/community/tutorials/como-agregar-espacio-de-intercambio-en-ubuntu-18-04-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em><a href="https://www.digitalocean.com/community/users/jellingwood">Justin Ellingwood</a> escribió una versión anterior de este tutorial.</em></p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p>Una de las formas más fáciles de protegerse contra errores de falta de memoria en aplicaciones es añadir espacio de intercambio a su servidor. En esta guía, abarcaremos cómo añadir un archivo de intercambio a un servidor Ubuntu 18.04.</p>
+
+<span class='warning'><p>
+<strong>Advertencia:</strong> si bien, en general, el espacio de intercambio  se recomienda para sistemas que utilizan discos duros giratorios tradicionales, utilizarlo con SSD puede causar problemas de degradación de hardware con el paso del tiempo. Debido a esta consideración, no recomendamos permitir el intercambio en DigitalOcean o en cualquier otro proveedor que utilice almacenamiento SSD. Hacerlo puede afectar la fiabilidad del hardware subyacente, tanto para usted como para sus vecinos. Esta guía se proporciona como referencia para usuarios que pueden tener sistemas de disco de giro en otro lugar.</p>
+
+<p>Si necesita mejorar el rendimiento de su servidor en DigitalOcean, le recomendamos actualizar su Droplet. Esto conducirá a mejores resultados en general y reducirá la probabilidad de contribuir a problemas de hardware que puedan afectar su servicio.<br></p></span>
+
+<h2 id="¿qué-es-swap">¿Qué es Swap?</h2>
+
+<p>El <em>espacio de intercambio</em> es un área del disco duro designada como ubicación en la que el sistema operativo puede almacenar temporalmente datos que ya no puede conservar en la RAM. Básicamente, esto le otorga la capacidad de aumentar la cantidad de información que su servidor puede mantener en su &ldquo;memoria&rdquo; funcional, con algunas reservas. El espacio de intercambio en el disco duro se utilizará principalmente cuando ya no haya espacio suficiente en la RAM para mantener datos de aplicación en uso.</p>
+
+<p>La información escrita en el disco será significativamente más lenta que la información conservada en la RAM, aunque el sistema operativo preferiría seguir ejecutando datos de aplicación en la memoria y utilizar el intercambio para los datos antiguos. En general, tener espacio de intercambio como una segunda opción para cuando la RAM de su sistema se agote puede ser una buena red de seguridad contra excepciones por falta de memoria en sistemas con almacenamiento no SSD disponible.</p>
+
+<h2 id="paso-1-comprobación-de-la-información-de-intercambio-del-sistema">Paso 1: Comprobación de la información de intercambio del sistema</h2>
+
+<p>Antes de empezar, podemos verificar si el sistema ya cuenta con un espacio de intercambio disponible. Es posible tener varios archivos de intercambio o intercambiar particiones, pero en general, debería bastar con una.</p>
+
+<p>Podemos ver si el sistema cuenta con algún intercambio configurado al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo swapon --show
+</li></ul></code></pre>
+<p>Si no obtiene ningún resultado, esto significa que su sistema no tiene espacio de intercambio disponible actualmente.</p>
+
+<p>Puede verificar que no haya intercambio activo con la utilidad <code>free</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">free -h
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>              total        used        free      shared  buff/cache   available
+Mem:           985M         84M        222M        680K        678M        721M
+<span class="highlight">Swap:            0B          0B          0B</span>
+</code></pre>
+<p>Como puede ver en <strong>la fila</strong> de Swap de los resultados, no existe intercambio activo en el sistema.</p>
+
+<h2 id="paso-2-comprobación-de-espacio-disponible-en-la-partición-de-la-unidad-de-disco-duro">Paso 2: Comprobación de espacio disponible en la partición de la unidad de disco duro</h2>
+
+<p>Antes de crear nuestro archivo de intercambio, comprobaremos la utilización actual de nuestro disco para asegurarnos de tener espacio suficiente. Realice esto ingresando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">df -h
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Filesystem      Size  Used Avail Use% Mounted on
+udev            481M     0  481M   0% /dev
+tmpfs            99M  656K   98M   1% /run
+<span class="highlight">/dev/vda1        25G  1.4G   23G   6% /</span>
+tmpfs           493M     0  493M   0% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+tmpfs           493M     0  493M   0% /sys/fs/cgroup
+/dev/vda15      105M  3.4M  102M   4% /boot/efi
+tmpfs            99M     0   99M   0% /run/user/1000
+</code></pre>
+<p>El dispositivo con <code>/</code> en la columna <code>Mounted on</code> es nuestro disco en este caso. En este ejemplo, contamos con bastante espacio disponible (solo 1.4G utilizados). Probablemente su uso será diferente.</p>
+
+<p>Aunque existen varias opiniones acerca de la dimensión adecuada de un espacio de intercambio, depende de sus preferencias personales y de sus requisitos de aplicación. En general, una cantidad igual o doble de la cantidad de RAM en su sistema es un buen punto de partida. Otra buena regla general es que cualquier cosa que supere los 4G de intercambio es probablemente innecesaria si lo está utilizando como una segunda opción al RAM.</p>
+
+<h2 id="paso-3-creación-de-un-archivo-de-intercambio">Paso 3: Creación de un archivo de intercambio</h2>
+
+<p>Ahora que conocemos nuestro espacio de disco duro disponible, podemos crear un archivo de intercambio en nuestro sistema de archivos. Asignaremos un archivo del tamaño de intercambio que deseamos al que llamaremos <code>swapfile</code> en nuestro directorio root (/).</p>
+
+<p>La mejor manera de crear un archivo de intercambio es con el programa <code>fallocate</code>. Este comando crea instantáneamente un archivo del tamaño especificado.</p>
+
+<p>Dado que el servidor de nuestro ejemplo tiene 1 G de RAM, crearemos un archivo de 1 G en esta guía. Ajuste esto para satisfacer las necesidades de su propio servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo fallocate -l <span class="highlight">1G</span> /swapfile
+</li></ul></code></pre>
+<p>Podemos verificar que la cantidad correcta de espacio estaba reservada al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -lh /swapfile
+</li></ul></code></pre><pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">-rw-r--r-- 1 root root 1.0G Apr 25 11:14 /swapfile
+</li></ul></code></pre>
+<p>Nuestro archivo se ha creado con la cantidad correcta de espacio reservado.</p>
+
+<h2 id="paso-4-habilitación-del-archivo-de-intercambio">Paso 4: Habilitación del archivo de intercambio</h2>
+
+<p>Ahora que tenemos un archivo del tamaño correcto disponible, debemos convertir esto en espacio de intercambio.</p>
+
+<p>Primero, debemos restringir los permisos del archivo para que solo los usuarios con <strong>privilegios</strong> de root puedan leer el contenido. Esto impide que usuarios comunes puedan acceder al archivo, lo que tendría implicaciones de seguridad significativas.</p>
+
+<p>Haga que el archivo solo sea accesible para <strong>root</strong> al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod 600 /swapfile
+</li></ul></code></pre>
+<p>Verifique el cambio de permisos al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -lh /swapfile
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">-rw-------</span> 1 root root 1.0G Apr 25 11:14 /swapfile
+</code></pre>
+<p>Como puede ver, solo el <strong>usuario</strong> root tiene las banderas de lectura y escritura habilitadas.</p>
+
+<p>Ahora podemos marcar el archivo como espacio de intercambio al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkswap /swapfile
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Setting up swapspace version 1, size = 1024 MiB (1073737728 bytes)
+no label, UUID=6e965805-2ab9-450f-aed6-577e74089dbf
+</code></pre>
+<p>Tras marcar el archivo, podemos habilitar el archivo de intercambio, lo que permite que nuestro sistema empiece a utilizarlo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo swapon /swapfile
+</li></ul></code></pre>
+<p>Verifique que el intercambio esté disponible al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo swapon --show
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      TYPE  SIZE USED PRIO
+/swapfile file 1024M   0B   -2
+</code></pre>
+<p>Podemos verificar los resultados de la utilidad <code>free</code> de nuevo para corroborar nuestros hallazgos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">free -h
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>              total        used        free      shared  buff/cache   available
+Mem:           985M         84M        220M        680K        680M        722M
+<span class="highlight">Swap:          1.0G          0B        1.0G</span>
+</code></pre>
+<p>Nuestro intercambio se ha configurado con éxito y nuestro sistema operativo comenzará a utilizarlo según sea necesario.</p>
+
+<h2 id="paso-5-lograr-que-el-archivo-de-intercambio-sea-permanente">Paso 5: Lograr que el archivo de intercambio sea permanente</h2>
+
+<p>Nuestros cambios recientes han habilitado el archivo de intercambio para la sesión en curso. Sin embargo, si reiniciamos, el servidor no conservará los ajustes de intercambio de forma automática. Podemos cambiar esto al añadir el archivo de intercambio en nuestro archivo <code>/etc/fstab</code>.</p>
+
+<p>Respalde el archivo <code>/etc/fstab</code> en caso de que algún imprevisto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /etc/fstab /etc/fstab.bak
+</li></ul></code></pre>
+<p>Añada la información del archivo de intercambio al final de su archivo <code>/etc/fstab</code> al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+</li></ul></code></pre>
+<p>A continuación, revisaremos algunos ajustes que podamos actualizar para afinar nuestro espacio de intercambio.</p>
+
+<h2 id="paso-6-afinación-de-sus-ajustes-de-intercambio">Paso 6: Afinación de sus ajustes de intercambio</h2>
+
+<p>Existen algunas opciones que puede configurar y que tendrán un impacto en el rendimiento de su sistema al lidiar con un intercambio.</p>
+
+<h3 id="ajuste-de-la-propiedad-de-swappiness">Ajuste de la propiedad de swappiness</h3>
+
+<p>El parámetro de <code>swappiness</code> configura con qué frecuencia su sistema intercambia datos de la RAM al espacio de intercambio. Este es un valor entre 0 y 100 que representa un porcentaje.</p>
+
+<p>Con valores cercanos a cero, el núcleo no intercambiará datos en el disco a menos que sea absolutamente necesario. Recuerde, las interacciones con el archivo de intercambio son &ldquo;extensas&rdquo; puesto que tardan mucho más que las interacciones con la RAM y pueden causar una reducción significativa en el rendimiento. Indicar al sistema que no dependa del intercambio en demasía hará que su sistema sea más rápido.</p>
+
+<p>Los valores cercanos a 100 intentarán poner más datos en un esfuerzo por mantener más espacio de RAM libre. Dependiendo del perfil de memoria de sus aplicaciones o para qué está utilizando su servidor, esto podría ser mejor en algunos casos.</p>
+
+<p>Podemos ver el valor de intercambiabilidad actual al ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /proc/sys/vm/swappiness
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>60
+</code></pre>
+<p>Para un escritorio, un ajuste de intercambiabilidad de 60 no es un mal valor. Para un servidor, podría querer desplazarlo más cerca de 0.</p>
+
+<p>Podemos establecer la intercambiabilidad en un valor diferente al utilizar el comando <code>sysctl</code>.</p>
+
+<p>Por ejemplo, para establecer la intercambiabilidad en 10, podríamos ingresar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl vm.swappiness=10
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>vm.swappiness = 10
+</code></pre>
+<p>Esta configuración persistirá hasta el próximo reinicio. Podemos establecer este valor automáticamente al reiniciar añadiendo la línea en nuestro archivo <code>/etc/sysctl.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysctl.conf
+</li></ul></code></pre>
+<p>En la parte inferior, puede añadir:</p>
+<div class="code-label " title="/etc/sysctl.conf">/etc/sysctl.conf</div><pre class="code-pre "><code langs="">vm.swappiness=10
+</code></pre>
+<p>Guarde y cierre el archivo cuando haya terminado.</p>
+
+<h3 id="ajustar-configuración-de-presión-de-cache">Ajustar configuración de presión de Cache</h3>
+
+<p>Otro valor relacionado que podría querer modificar es el <code>vfs_cache_pressure</code>. Esta ajuste determina en qué medida el sistema elegirá almacenar en caché información de <em>inodos</em> y <em>entradas de directorio</em> en lugar de otros datos.</p>
+
+<p>Básicamente, estos son datos de acceso sobre el sistema de archivos. Generalmente, esto resulta muy costoso de consultar y con mucha frecuencia se le solicita, por lo que es algo excelente para el almacenamiento caché de su sistema. Puede ver el valor actual al consultar el sistema de archivos de <code>proc</code> nuevamente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /proc/sys/vm/vfs_cache_pressure
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>100
+</code></pre>
+<p>Dado que está configurado actualmente, nuestro sistema elimina la información de inodo de la memoria caché demasiado rápido. Podemos establecer esto en un parámetro más conservador como 50 al ingresar:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl vm.vfs_cache_pressure=50
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>vm.vfs_cache_pressure = 50
+</code></pre>
+<p>Una vez más, esto solo es válido para nuestra sesión actual. Podemos cambiar eso al añadirlo en nuestro archivo de configuración como hicimos con nuestro ajuste de intercambiabilidad:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysctl.conf
+</li></ul></code></pre>
+<p>En la parte inferior, añada la línea que especifique su nuevo valor:</p>
+<div class="code-label " title="/etc/sysctl.conf">/etc/sysctl.conf</div><pre class="code-pre "><code langs="">vm.vfs_cache_pressure=50
+</code></pre>
+<p>Guarde y cierre el archivo cuando haya terminado.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Seguir los pasos de esta guía le brindará un respiro en casos donde podrían generarse excepciones por falta de memoria. El espacio de intercambio puede ser increíblemente útil para evitar algunos de estos problemas comunes.</p>
+
+<p>Si se encuentra con errores  de falta de memoria (OOM) u observa que su sistema no puede utilizar las aplicaciones que necesita, la mejor solución es optimizar sus configuraciones de aplicaciones o actualizar su servidor.</p>

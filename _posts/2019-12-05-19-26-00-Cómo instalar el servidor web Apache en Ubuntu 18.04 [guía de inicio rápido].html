@@ -1,0 +1,152 @@
+---
+layout: post
+title: Cómo instalar el servidor web Apache en Ubuntu 18.04 [guía de inicio rápido]
+network: digitalocean
+date: December 05, 2019 at 07:26PM
+url: https://www.digitalocean.com/community/tutorials/como-instalar-el-servidor-web-apache-en-ubuntu-18-04-guia-de-inicio-rapido-es
+image: https://assets.digitalocean.com/articles/how-to-install-lamp-ubuntu-16/small_apache_default.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>El servidor HTTP Apache es el más usado del mundo. Ofrece muchas características potentes, entre las que se incluyen módulos que se cargan de forma dinámica, sólida compatibilidad con medios y amplia integración con otras herramientas de software populares.</p>
+
+<p>En esta guía, explicaremos la forma de instalar el servidor web Apache en su servidor de Ubuntu 18.04. Para acceder a una versión más detallada de este tutorial, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04">Cómo instalar el servidor web Apache en Ubuntu 18.04</a>.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de comenzar a usar esta guía, debería contar con lo siguiente:</p>
+
+<ul>
+<li>Un servidor de Ubuntu 18.04 y un usuario regular no root con privilegios sudo. Además, deberá habilitar un firewall básico para que bloquee los puertos que no sean esenciales. Para aprender a configurar una cuenta normal de usuario e instalar un firewall para su servidor, siga nuestra <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guía de configuración inicial para servidores de Ubuntu 18.04</a>.</li>
+</ul>
+
+<p>Cuando disponga de una cuenta, inicie sesión como usuario no root para comenzar.</p>
+
+<h2 id="paso-1-instalación-de-apache">Paso 1: Instalación de Apache</h2>
+
+<p>Apache se encuentra dentro de los repositorios de software predeterminados de Ubuntu, por lo que puede instalarlo utilizando las herramientas convencionales de administración de paquetes.</p>
+
+<p>Actualice su índice local de paquetes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Instale el paquete <code>apache2</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install apache2
+</li></ul></code></pre>
+<h2 id="paso-2-ajuste-del-firewall">Paso 2: Ajuste del firewall</h2>
+
+<p>Compruebe los perfiles de aplicación <code>ufw</code> disponibles:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw app list
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Available applications:
+  Apache
+  Apache Full
+  Apache Secure
+  OpenSSH
+</code></pre>
+<p>Active el perfil más restrictivo para que admita el tráfico que haya configurado  y lo permita en el puerto <code>80</code> (tráfico web normal no encriptado):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Apache'
+</li></ul></code></pre>
+<p>Verifique el cambio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+Apache                     ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)             
+Apache (v6)                ALLOW       Anywhere (v6)
+</code></pre>
+<h2 id="paso-3-comprobación-de-su-servidor-web">Paso 3: Comprobación de su servidor web</h2>
+
+<p>Realice una verificación con el sistema <code>systemd</code> init para saber si se encuentra en ejecución el servicio escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status apache2
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● apache2.service - The Apache HTTP Server
+   Loaded: loaded (/lib/systemd/system/apache2.service; enabled; vendor preset: enabled)
+  Drop-In: /lib/systemd/system/apache2.service.d
+           └─apache2-systemd.conf
+   Active: <span class="highlight">active (running)</span> since Tue 2018-04-24 20:14:39 UTC; 9min ago
+ Main PID: 2583 (apache2)
+    Tasks: 55 (limit: 1153)
+   CGroup: /system.slice/apache2.service
+           ├─2583 /usr/sbin/apache2 -k start
+           ├─2585 /usr/sbin/apache2 -k start
+           └─2586 /usr/sbin/apache2 -k start
+</code></pre>
+<p>Acceda a la página de inicio predeterminada de Apache para confirmar que el software se esté ejecutando correctamente mediante su dirección IP:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>
+</code></pre>
+<p>Debería ver la página web predeterminada de Apache de Ubuntu 18.04:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/how-to-install-lamp-ubuntu-16/small_apache_default.png" alt="Página predeterminada de Apache"></p>
+
+<h2 id="paso-4-configuración-de-hosts-virtuales-recomendado">Paso 4: Configuración de hosts virtuales (recomendado)</h2>
+
+<p>Al emplear el servidor web Apache, puede utilizar <em>hosts virtuales</em> (similares a bloques de servidor en Nginx) para encapsular detalles de configuración y alojar más de un dominio desde un único servidor. Configuraremos un dominio llamado <strong>your_domain</strong>, pero debería <strong>cambiarlo por su propio nombre de dominio</strong>. Consulte nuestra <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">introducción a DNS de DigitalOcean</a> para hallar más información sobre la configuración de un nombre de dominio con DigitalOcean.</p>
+
+<p>Cree el directorio para <code><span class="highlight">your_domain</span></code>:</p>
+<pre class="code-pre commmand"><code langs="">sudo mkdir /var/www/<span class="highlight">your_domain</span>
+</code></pre>
+<p>Asigne la propiedad del directorio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R $USER:$USER /var/www/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Los permisos de sus root web deberían ser correctos si no ha modificado su valor <code>unmask</code>, pero puede comprobarlo escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod -R 755 /var/www/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Cree una página modelo <code>index.html</code> usando <code>nano</code> o su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/<span class="highlight">your_domain</span>/index.html
+</li></ul></code></pre>
+<p>Dentro de ella, agregue el siguiente ejemplo de HTML:</p>
+<div class="code-label " title="/var/www/your_domain/index.html">/var/www/your_domain/index.html</div><pre class="code-pre "><code langs="">&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;Welcome to <span class="highlight">Your_domain</span>!&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;h1&gt;Success!  The <span class="highlight">your_domain</span> virtual host is working!&lt;/h1&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<p>Cree un nuevo archivo de host virtual en <code>/etc/apache2/sites-available/<span class="highlight">your_domain</span>.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/<span class="highlight">your_domain</span>.conf
+</li></ul></code></pre>
+<p>Péguelo en el siguiente bloque de configuración, actualizado para nuestro nuevo directorio y nombre de dominio:</p>
+<div class="code-label " title="/etc/apache2/sites-available/your_domain.conf">/etc/apache2/sites-available/your_domain.conf</div><pre class="code-pre "><code langs="">&lt;VirtualHost *:80&gt;
+    ServerAdmin webmaster@localhost
+    ServerName <span class="highlight">your_domain</span>
+    ServerAlias <span class="highlight">your_domain</span>
+    DocumentRoot /var/www/<span class="highlight">your_domain</span>
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+&lt;/VirtualHost&gt;
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<p>Habilite el archivo con <code>a2ensite</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2ensite <span class="highlight">your_domain</span>.conf
+</li></ul></code></pre>
+<p>Desactive el sitio predeterminado definido en <code>000-default.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2dissite 000-default.conf
+</li></ul></code></pre>
+<p>Verifique que no haya errores de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>El resultado debería ser este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Syntax OK
+</code></pre>
+<p>Reinicie Apache para implementar sus cambios:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>Ahora Apache debería ser el servidor de su nombre de dominio. Puede comprobar esto visitando <code>http://<span class="highlight">your_domain</span></code>, donde debería ver algo como lo siguiente:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/apache_virtual_hosts_ubuntu/vhost_your_domain.png" alt="Ejemplo de host virtual de Apache"></p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Una vez instalado su servidor web, tiene muchas opciones respecto del tipo de contenido que ofrecerá y de las tecnologías que quiera usar para crear una experiencia más completa.</p>
+
+<p>Si desea construir una pila de aplicación más completa, consulte este artículo sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">cómo configurar una pila LAMP en Ubuntu 18.04</a>.</p>

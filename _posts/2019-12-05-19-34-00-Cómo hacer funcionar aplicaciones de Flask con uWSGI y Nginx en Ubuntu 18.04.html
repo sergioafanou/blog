@@ -1,0 +1,401 @@
+---
+layout: post
+title: Cómo hacer funcionar aplicaciones de Flask con uWSGI y Nginx en Ubuntu 18.04
+network: digitalocean
+date: December 05, 2019 at 07:34PM
+url: https://www.digitalocean.com/community/tutorials/como-hacer-funcionar-aplicaciones-de-flask-con-uwsgi-y-nginx-en-ubuntu-18-04-es
+image: https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>A través de esta guía, creará una aplicación de Python utilizando el microframework de Flask en Ubuntu 18.04. En la mayor parte de este artículo se abordarán la configuración del <a href="http://uwsgi-docs.readthedocs.io/en/latest/">servidor de la aplicación uWSGI</a> y la forma de iniciar la aplicación y configurar <a href="https://www.nginx.com/">Nginx</a> para que funcione como un proxy inverso de cliente.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de comenzar con esta guía, deberá contar con lo siguiente:</p>
+
+<ul>
+<li>Un servidor con Ubuntu 18.04 instalado y un usuario no root con privilegios sudo. Siga nuestra <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guía de configuración inicial para servidores</a> a modo de orientación.</li>
+<li>Nginx instalado conforme a los pasos 1 y 2 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">Cómo instalar Nginx en Ubuntu 18.04</a>.</li>
+<li><p>Un nombre de dominio configurado para que apunte a su servidor. Puede adquirir uno en <a href="https://namecheap.com">Namecheap</a>  obtener uno de forma gratuita en <a href="http://www.freenom.com/en/index.html">Freenom</a>. Puede aprender a apuntar dominios a DigitalOcean siguiendo la <a href="https://www.digitalocean.com/docs/networking/dns/">documentación sobre dominios y DNS</a> pertinente. Asegúrese de crear los siguientes registros DNS:</p>
+
+<ul>
+<li>Un registro A con <code><span class="highlight">your_domain</span></code> orientado a la dirección IP pública de su servidor.</li>
+<li>Un registro A con <code>www.<span class="highlight">your_domain</span></code> orientado a la dirección IP pública de su servidor.</li>
+</ul></li>
+<li><p>Conocimientos sobre uWSGI, nuestro servidor de aplicaciones y la especificación WSGI. <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-uwsgi-and-nginx-to-serve-python-apps-on-ubuntu-14-04#definitions-and-concepts">En esta discusión</a> de definiciones y conceptos se abordan ambos en profundidad.</p></li>
+</ul>
+
+<h2 id="paso-1-instalar-los-componentes-desde-los-repositorios-de-ubuntu">Paso 1: Instalar los componentes desde los repositorios de Ubuntu</h2>
+
+<p>Nuestro primer paso será instalar todo lo que necesitamos desde los repositorios de Ubuntu. Instalaremos <code>pip</code>, el administrador de paquetes de Python, para administrar nuestros componentes de Python. También obtendremos los archivos de desarrollo de Python necesarios para crear uWSGI.</p>
+
+<p>Primero, actualizaremos el índice de paquetes locales e instalaremos los paquetes que nos permitirán crear nuestro entorno de Python. Entre ellos está <code>phyton3-pip</code>, junto con paquetes y herramientas de desarrollo adicionales que se necesitan para un entorno de programación sólido:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install python3-pip python3-dev build-essential libssl-dev libffi-dev python3-setuptools
+</li></ul></code></pre>
+<p>Una vez implementados estos paquetes, crearemos un entorno virtual para nuestro proyecto.</p>
+
+<h2 id="paso-2-crear-un-entorno-virtual-de-python">Paso 2: Crear un entorno virtual de Python</h2>
+
+<p>A continuación, configuraremos un entorno virtual para aislar nuestra aplicación de Flask de los otros archivos de Python del sistema.</p>
+
+<p>Comience instalando el paquete <code>phyton3-venv</code>, que instalará el módulo <code>venv</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-venv
+</li></ul></code></pre>
+<p>Luego, crearemos un directorio principal para nuestro proyecto de Flask. Después de crearlo, posiciónese en él:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/<span class="highlight">myproject</span>
+</li><li class="line" prefix="$">cd ~/<span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Cree un entorno virtual para almacenar los requisitos de Python de su proyecto de Flask escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3.6 -m venv <span class="highlight">myprojectenv</span>
+</li></ul></code></pre>
+<p>Con esto se instalará una copia local de Python y <code>pip</code> en un directorio llamado <code><span class="highlight">myprojectenv</span></code> dentro del directorio de su proyecto.</p>
+
+<p>Antes de instalar aplicaciones dentro del entorno virtual, deberá activarlo. Hágalo escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">myprojectenv</span>/bin/activate
+</li></ul></code></pre>
+<p>Su mensaje cambiará para indicar que ahora realiza operaciones dentro del entorno virtual. Se parecerá a esto: <code>(<span class="highlight">myprojectenv</span>)<span class="highlight">user</span>@<span class="highlight">host</span>:~/<span class="highlight">myproject</span>$</code>.</p>
+
+<h2 id="paso-3-configurar-una-aplicación-de-flask">Paso 3: Configurar una aplicación de Flask</h2>
+
+<p>Ahora que se encuentra en su entorno virtual, podrá instalar Flask y uWSGI y comenzar a diseñar su aplicación.</p>
+
+<p>Primero, instalaremos <code>wheel</code> con la instancia local de <code>pip</code> para asegurarnos de que nuestros paquetes se instalen aunque falten archivos de wheel:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pip install wheel
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Independientemente de la versión de Phyton que use, cuando se active el entorno virtual deberá utilizar el comando <code>pip</code> (no <code>pip3</code>).<br></span></p>
+
+<p>A continuación, instalaremos Flask y uWSGI:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">pip install uwsgi flask
+</li></ul></code></pre>
+<h3 id="creación-de-una-aplicación-de-ejemplo">Creación de una aplicación de ejemplo</h3>
+
+<p>Ahora que dispone de Flask, puede crear una aplicación sencilla. Flask es un microframework. No cuenta con muchas de las herramientas que podrían incluirse en frameworks con más características y existe sobre todo como un módulo que puede importar a sus proyectos para que pueda inicializar una aplicación web.</p>
+
+<p>Aunque la complejidad podría ser mayor, crearemos nuestra aplicación de Flask en un único archivo, llamado &ldquo;myproject.py:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">nano ~/<span class="highlight">myproject</span>/<span class="highlight">myproject</span>.py
+</li></ul></code></pre>
+<p>El código de aplicación residirá en este archivo. Importará Flask y creará una instancia de un objeto de Flask. Puede utilizarlo para definir las funciones que deberían ejecutarse cuando se solicita una ruta específica:</p>
+<div class="code-label " title="~/myproject/myproject.py">~/myproject/myproject.py</div><pre class="code-pre "><code class="code-highlight language-python">from flask import Flask
+app = Flask(__name__)
+
+@app.route("/")
+def hello():
+    return "&lt;h1 style='color:blue'&gt;Hello There!&lt;/h1&gt;"
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0')
+</code></pre>
+<p>Esto define básicamente el contenido que se presentará al acceder al dominio root. Guarde y cierre el archivo cuando termine.</p>
+
+<p>Si siguió la guía de configuración inicial para servidores, debería tener activado un firewall UFW. Para probar la aplicación, debe permitir el acceso al puerto <code>5000</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">sudo ufw allow 5000
+</li></ul></code></pre>
+<p>Ahora podrá probar su aplicación de Flask escribiendo lo siguiente:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">python <span class="highlight">myproject</span>.py
+</li></ul></code></pre>
+<p>Verá un resultado como el siguiente, en el cual se incluirá una advertencia útil que le recordará no utilizar esta configuración de servidor en la producción:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>* Serving Flask app "myproject" (lazy loading)
+ * Environment: production
+   WARNING: Do not use the development server in a production environment.
+   Use a production WSGI server instead.
+ * Debug mode: off
+ * Running on http://0.0.0.0:5000/ (Press CTRL+C to quit)
+</code></pre>
+<p>Agregue <code>:5000</code> al final de la dirección IP de su servidor en su navegador web y visítela:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>:5000
+</code></pre>
+<p>Debería ver algo como esto:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png" alt="Aplicación de ejemplo de Flask"></p>
+
+<p>Cuanto termine, pulse <code>CTRL-C</code> en la ventana de su terminal para detener el servidor de desarrollo Flask.</p>
+
+<h3 id="creación-de-un-punto-de-entrada-de-wsgi">Creación de un punto de entrada de WSGI</h3>
+
+<p>A continuación, crearemos un archivo que servirá como punto de entrada para nuestra aplicación. Esto le indicará a nuestro servidor de uWSGI cómo interactuar con él.</p>
+
+<p>Llamaremos al archivo <code>wsgi.py</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">nano ~/<span class="highlight">myproject</span>/wsgi.py
+</li></ul></code></pre>
+<p>En él, importaremos la instancia de Flask desde nuestra aplicación y luego la ejecutaremos:</p>
+<div class="code-label " title="~/myproject/wsgi.py">~/myproject/wsgi.py</div><pre class="code-pre "><code class="code-highlight language-python">from myproject import app
+
+if __name__ == "__main__":
+    app.run()
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<h2 id="paso-4-configurar-uwsgi">Paso 4: Configurar uWSGI</h2>
+
+<p>Su aplicación quedará, así, escrita con un punto de entrada establecido. Ahora, podemos continuar con la configuración de uWSGI.</p>
+
+<h3 id="prueba-del-servicio-de-uwsgi">Prueba del servicio de uWSGI</h3>
+
+<p>Haremos una prueba para comprobar que uWSGI pueda hacer funcionar nuestra aplicación.</p>
+
+<p>Lo haremos con solo pasarle el nombre de nuestro punto de entrada. Se construye como el nombre del módulo (menos la extensión <code>.py</code>) más el nombre del elemento invocable dentro de la aplicación. En nuestro caso, es <code>wsgi:app</code>.</p>
+
+<p>También especificaremos el socket, de modo que se inicie en una interfaz disponible de forma pública, además del protocolo, para que utilice HTTP en lugar del protocolo binario <code>uwsgi</code>. Utilizaremos el mismo número de puerto, <code>5000</code>, que abrimos antes:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">uwsgi --socket 0.0.0.0:5000 --protocol=http -w wsgi:app
+</li></ul></code></pre>
+<p>Visite de nuevo la dirección IP de su servidor con <code>:5000</code> agregado al final en su navegador web:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>:5000
+</code></pre>
+<p>Debería volver a ver el resultado de su aplicación:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png" alt="Aplicación de ejemplo de Flask"></p>
+
+<p>Cuando confirme que funciona correctamente, pulse <code>CTRL-C</code> en la ventana de su terminal.</p>
+
+<p>Ya completamos las tareas de nuestro entorno virtual, por lo que podemos desactivarlo:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">deactivate
+</li></ul></code></pre>
+<p>Ahora todos los comandos de Python usarán de nuevo el entorno de Phyton del sistema.</p>
+
+<h3 id="creación-de-un-archivo-de-configuración-de-uwsgi">Creación de un archivo de configuración de uWSGI</h3>
+
+<p>Ya comprobó que uWSGI puede hacer funcionar su aplicación. Sin embargo, en última instancia le convendrá algo más sólido para el uso a largo plazo. Puede crear un archivo de configuración de uWSGI con las opciones pertinentes para esto.</p>
+
+<p>Dispondremos ese archivo en nuestro directorio de proyectos y lo llamaremos <code>myproject.ini</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/<span class="highlight">myproject</span>/<span class="highlight">myproject</span>.ini
+</li></ul></code></pre>
+<p>En su interior, empezaremos con el encabezado de <code>[uwsgi]</code> a fin de que uWSGI esté al tanto para aplicar la configuración. Especificaremos dos cosas: el propio módulo, haciendo referencia al archivo <code>wsgi.py</code> menos la extensión, y el elemento invocable dentro del archivo, <code>app</code>:</p>
+<div class="code-label " title="~/myproject/myproject.ini">~/myproject/myproject.ini</div><pre class="code-pre "><code langs="">[uwsgi]
+module = wsgi:app
+</code></pre>
+<p>A continuación, le diremos a uWSGI que se inicie en el modo maestro y cree cinco procesos de trabajador para proporcionar solicitudes reales:</p>
+<div class="code-label " title="~/myproject/myproject.ini">~/myproject/myproject.ini</div><pre class="code-pre "><code langs="">[uwsgi]
+module = wsgi:app
+
+master = true
+processes = 5
+</code></pre>
+<p>Cuando hizo pruebas, expuso uWSGI en un puerto de red. Sin embargo, utilizará Nginx para gestionar las conexiones de clientes reales, que luego transmitirán solicitudes a uWSGI. Debido a que estos componentes funcionan en la misma computadora, es preferible un socket de Unix porque es más rápido y seguro. Llamaremos al socket <code><span class="highlight">myproject</span>.sock</code> y lo dispondremos en este directorio.</p>
+
+<p>También cambiaremos los permisos del socket. Más adelante, daremos al grupo de Nginx la propiedad del proceso de uWSGI, por lo que debemos verificar que el propietario de grupo del socket pueda leer información de él y enviarle texto. También eliminaremos el socket cuando se detenga el proceso agregando la opción <code>vacuum</code>:</p>
+<div class="code-label " title="~/myproject/myproject.ini">~/myproject/myproject.ini</div><pre class="code-pre "><code langs="">[uwsgi]
+module = wsgi:app
+
+master = true
+processes = 5
+
+socket = <span class="highlight">myproject</span>.sock
+chmod-socket = 660
+vacuum = true
+</code></pre>
+<p>Lo último que haremos será establecer la opción <code>die-on-term</code>. Esto puede ayudar a garantizar que el sistema init y uWSGI tengan los mismos supuestos sobre lo que significa cada señal de proceso. Al configurar esto se alinean los dos componentes del sistema y se implementa el comportamiento esperado:</p>
+<div class="code-label " title="~/myproject/myproject.ini">~/myproject/myproject.ini</div><pre class="code-pre "><code langs="">[uwsgi]
+module = wsgi:app
+
+master = true
+processes = 5
+
+socket = <span class="highlight">myproject</span>.sock
+chmod-socket = 660
+vacuum = true
+
+die-on-term = true
+</code></pre>
+<p>Posibleemente haya observado que no especificamos un protocolo como hicimos desde la línea de comandos. Esto se debe a que, de forma predeterminada, uWSGI se comunica usando el protocolo de <code>uwsgi</code>, un protocolo binario rápido diseñado para la comunicación con otros servidores. Nginx puede comunicarse a través de este protocolo de forma nativa, por lo que es mejor usarlo que forzar la comunicación por HTTP.</p>
+
+<p>Cuando termine, guarde y cierre el archivo.</p>
+
+<h2 id="paso-5-crear-un-archivo-de-unidad-systemd">Paso 5: Crear un archivo de unidad systemd</h2>
+
+<p>A continuación, crearemos el archivo de unidad de servicio systemd. Crear un archivo de unidad systemd permitirá que el sistema init de Ubuntu inicie automáticamente uWSGI y haga funcionar la aplicación de Flask cuando el servidor se cargue.</p>
+
+<p>Cree un archivo de unidad terminado en <code>.service</code> dentro del directorio <code>/etc/systemd/system</code> para empezar:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/<span class="highlight">myproject</span>.service
+</li></ul></code></pre>
+<p>En su interior, empezaremos con la sección <code>[Unit]</code> que se usa para especificar metadatos y dependencias. Aquí agregaremos una descripción de nuestro servicio e indicaremos al sistema init que lo inicie solo tras haber alcanzado el objetivo de red:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=uWSGI instance to serve <span class="highlight">myproject</span>
+After=network.target
+</code></pre>
+<p>A continuación, abriremos la sección <code>[Service]</code>. Esto especificará el usuario y el grupo con los cuales deseamos que se ejecute el proceso. Otorgaremos la propiedad del proceso a nuestra cuenta de usuario normal, ya que tiene la propiedad de todos los archivos pertinentes. También otorgaremos la propiedad del grupo al grupo <code>www-data</code> para que Nginx pueda comunicarse fácilmente con los procesos de Gunicorn. No se olvide de sustituir el nombre de usuario por el suyo:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=uWSGI instance to serve <span class="highlight">myproject</span>
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+</code></pre>
+<p>A continuación, planearemos los detalles del directorio de trabajo y estableceremos el entorno variable <code>PATH</code> para que el sistema init sepa que los ejecutables para el proceso están ubicados dentro de nuestro entorno virtual. También especificaremos el comando para iniciar el servicio. Systemd necesita que le proporcionemos la ruta completa al ejecutable de uWSGI, que se instala dentro de nuestro entorno virtual. Pasaremos el nombre del archivo de configuración <code>.ini</code> que creamos en el directorio de nuestro proyecto.</p>
+
+<p>No se olvide de sustituir el nombre del usuario y las rutas del proyecto por su propia información:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=uWSGI instance to serve <span class="highlight">myproject</span>
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+WorkingDirectory=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>
+Environment="PATH=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin"
+ExecStart=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin/uwsgi --ini <span class="highlight">myproject</span>.ini
+</code></pre>
+<p>Por último, vamos a añadiremos una sección <code>[Install]</code>. Esto indicará a systemd a qué deberá vincular este servicio si lo habilitamos para que se cargue en el inicio. Queremos que este servicio se inicie cuando el sistema multiusuario normal esté en funcionamiento:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=uWSGI instance to serve <span class="highlight">myproject</span>
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+WorkingDirectory=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>
+Environment="PATH=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin"
+ExecStart=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin/uwsgi --ini <span class="highlight">myproject</span>.ini
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>Con eso, nuestro archivo de servicio de systemd quedará completo. Guárdelo y ciérrelo ahora.</p>
+
+<p>Ya podemos iniciar el servicio uWSGI que creamos y activarlo para que se cargue en el inicio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start <span class="highlight">myproject</span>
+</li><li class="line" prefix="$">sudo systemctl enable <span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Comprobaremos el estado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status <span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● myproject.service - uWSGI instance to serve myproject
+   Loaded: loaded (/etc/systemd/system/myproject.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Fri 2018-07-13 14:28:39 UTC; 46s ago
+ Main PID: 30360 (uwsgi)
+    Tasks: 6 (limit: 1153)
+   CGroup: /system.slice/myproject.service
+           ├─30360 /home/sammy/myproject/myprojectenv/bin/uwsgi --ini myproject.ini
+           ├─30378 /home/sammy/myproject/myprojectenv/bin/uwsgi --ini myproject.ini
+           ├─30379 /home/sammy/myproject/myprojectenv/bin/uwsgi --ini myproject.ini
+           ├─30380 /home/sammy/myproject/myprojectenv/bin/uwsgi --ini myproject.ini
+           ├─30381 /home/sammy/myproject/myprojectenv/bin/uwsgi --ini myproject.ini
+           └─30382 /home/sammy/myproject/myprojectenv/bin/uwsgi --ini myproject.ini
+</code></pre>
+<p>Si detecta errores, asegúrese de resolverlos antes de continuar con el tutorial.</p>
+
+<h2 id="paso-6-configurar-nginx-para-solicitudes-de-proxy">Paso 6: Configurar Nginx para solicitudes de proxy</h2>
+
+<p>Ahora, nuestro servidor de aplicación uWSGI debería estar funcionando, esperando solicitudes en el archivo de socket del directorio del proyecto. Configuraremos Nginx para que transmita las solicitudes web a ese socket usando el protocolo <code>uwsgi</code>.</p>
+
+<p>Comencemos creando un nuevo archivo de configuración de bloque de servidor en el directorio <code>sites-available</code> de Nginx. Lo llamaremos <code><span class="highlight">myproject</span></code> para que se adecue al resto de esta guía:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Abra un bloque de servidor e indique a Nginx que escuche en el puerto predeterminado <code>80</code>. También le indicaremos que utilice este bloque para solicitudes para el nombre de dominio de nuestro servidor:</p>
+<div class="code-label " title="/etc/nginx/sites-available/myproject">/etc/nginx/sites-available/myproject</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    server_name <span class="highlight">your_domain</span> www.<span class="highlight">your_domain</span>;
+}
+</code></pre>
+<p>A continuación, agregaremos un bloque de ubicación que coincida con cada solicitud. Dentro de este bloque, incluiremos el archivo <code>proxy_params</code> que especifica algunos parámetros de proxy generales de uWSGI que deben configurarse. Luego, pasaremos las solicitudes al socket que definimos usando la directiva <code>proxy_pass</code>:</p>
+<div class="code-label " title="/etc/nginx/sites-available/myproject">/etc/nginx/sites-available/myproject</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    server_name <span class="highlight">your_domain</span> www.<span class="highlight">your_domain</span>;
+
+    location / {
+        include uwsgi_params;
+        uwsgi_pass unix:/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myproject</span>.sock;
+    }
+}
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<p>Para habilitar la configuración del bloque de servidor de Nginx que acaba de crear, vincule el archivo al directorio <code>sites-enabled​​​</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">myproject</span> /etc/nginx/sites-enabled
+</li></ul></code></pre>
+<p>Con el archivo en ese directorio, podemos probar si hay errores de sintaxis escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Si no se indican problemas, reinicie el proceso de Nginx para que lea la nueva configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Por último, ajustaremos el firewall de nuevo. Ya no necesitamos acceso a través del puerto <code>5000</code>, por lo que podemos eliminar esta regla. Luego podemos permitir el acceso al servidor de Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete allow 5000
+</li><li class="line" prefix="$">sudo ufw allow 'Nginx Full'
+</li></ul></code></pre>
+<p>Ahora debería poder visitar el nombre de dominio de su servidor en su navegador web:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_domain</span>
+</code></pre>
+<p>Debería ver el resultado de su aplicación:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png" alt="Aplicación de ejemplo de Flask"></p>
+
+<p>Si encuentra algún error, intente verificar lo siguiente:</p>
+
+<ul>
+<li><code>sudo less /var/log/nginx/error.log</code>: verifica los registros de error de Nginx.</li>
+<li><code>sudo less /var/log/nginx/access.log</code>: verifica los registros de acceso de Nginx.</li>
+<li><code>sudo journalctl -u nginx</code>: verifica los registros de proceso de Nginx.</li>
+<li><code>sudo journalctl -u <span class="highlight">myproject</span></code>: verifica los registros de uWSGI  de su aplicación de Flask.</li>
+</ul>
+
+<h2 id="paso-7-proteger-la-aplicación">Paso 7: Proteger la aplicación</h2>
+
+<p>Para asegurarse de que el tráfico hacia su servidor siga siendo seguro, obtendremos un certificado SSL para su dominio. Existen varias formas de hacerlo. Entre otras, obtener un certificado gratuito de <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a>, <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-nginx-in-ubuntu-18-04">generar un certificado autofirmado</a> o <a href="https://www.digitalocean.com/community/tutorials/how-to-install-an-ssl-certificate-from-a-commercial-certificate-authority">adquirir uno de otro proveedor</a> y configurar Nginx para que lo utilice siguiendo los pasos 2 a 6 de <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-nginx-in-ubuntu-18-04#step-2-%E2%80%93-configuring-nginx-to-use-ssl">Cómo crear un certificado SSL autofirmado para Nginx en Ubuntu 18.04</a>. Por motivos de conveniencia, elegiremos la primera opción.</p>
+
+<p>Primero, agregue el repositorio de Certbot de Ubuntu:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository ppa:certbot/certbot
+</li></ul></code></pre>
+<p>Deberá seleccionar <code>ENTER</code> para aceptar.</p>
+
+<p>Instale el paquete de Nginx de Certbot con <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python-certbot-nginx
+</li></ul></code></pre>
+<p>Certbot ofrece varias alternativas para obtener certificados SSL a través de complementos. El complemento de Nginx se encargará de reconfigurar Nginx y volver a cargar la configuración cuando sea necesario. Para utilizar este complemento, escriba lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --nginx -d <span class="highlight">your_domain</span> -d www.<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Con esto, se ejecuta <code>certbot</code> con el complemento <code>--nginx</code> usando <code>-d</code> para especificar los nombres para los cuales deseamos que el certificado tenga validez.</p>
+
+<p>Si es la primera vez que ejecuta <code>certbot</code>, se le solicitará introducir una dirección de correo electrónico y aceptar las condiciones de servicio. Después de esto, <code>certbot</code> se comunicará con el servidor de Let&rsquo;s Encrypt y realizará una comprobación a fin de verificar que usted controle el dominio para el cual solicite un certificado.</p>
+
+<p>Si la comprobación se realiza correctamente, <code>certbot</code> le preguntará cómo desea configurar sus ajustes de HTTPS:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Please choose whether or not to redirect HTTP traffic to HTTPS, removing HTTP access.
+-------------------------------------------------------------------------------
+1: No redirect - Make no further changes to the webserver configuration.
+2: Redirect - Make all requests redirect to secure HTTPS access. Choose this for
+new sites, or if you're confident your site works on HTTPS. You can undo this
+change by editing your web server's configuration.
+-------------------------------------------------------------------------------
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel):
+</code></pre>
+<p>Seleccione su elección y luego <code>ENTER</code>. La configuración se actualizará y Nginx se volverá a cargar para aplicar los ajustes nuevos. <code>certbot</code> concluirá con un mensaje que le indicará que el proceso tuvo éxito e indicará la ubicación de almacenamiento de sus certificados:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>IMPORTANT NOTES:
+ - Congratulations! Your certificate and chain have been saved at:
+   /etc/letsencrypt/live/<span class="highlight">your_domain</span>/fullchain.pem
+   Your key file has been saved at:
+   /etc/letsencrypt/live/<span class="highlight">your_domain</span>/privkey.pem
+   Your cert will expire on 2018-07-23. To obtain a new or tweaked
+   version of this certificate in the future, simply run certbot again
+   with the "certonly" option. To non-interactively renew *all* of
+   your certificates, run "certbot renew"
+ - Your account credentials have been saved in your Certbot
+   configuration directory at /etc/letsencrypt. You should make a
+   secure backup of this folder now. This configuration directory will
+   also contain certificates and private keys obtained by Certbot so
+   making regular backups of this folder is ideal.
+ - If you like Certbot, please consider supporting our work by:
+
+   Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+   Donating to EFF:                    https://eff.org/donate-le
+
+</code></pre>
+<p>Si siguió las instrucciones de instalación de Nginx en los requisitos previos, ya no necesitará la asignación de perfil HTTP redundante:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete allow 'Nginx HTTP'
+</li></ul></code></pre>
+<p>Para verificar la configuración, acceda una vez más a su dominio utilizando <code>https://</code>:</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">your_domain</span>
+</code></pre>
+<p>Una vez más, debería ver el resultado de su aplicación junto con el indicador de seguridad de su navegador, que debería indicar que el sitio está protegido.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A través de esta guía, creó y aseguró una aplicación de Flask simple dentro de un entorno virtual de Python. Creó un punto de entrada de WSGI para que cualquier servidor de aplicación con capacidad para WSGI pueda interactuar con él y configuró el servidor de aplicación de uWSGI para proporcionar esta función. Luego, creó un archivo de servicio systemd para iniciar automáticamente el servidor de aplicación en el inicio. También creó un bloque de servidor de Nginx que transmite el tráfico de clientes web al servidor de la aplicación, y reenvía solicitudes externas, y protegió el tráfico hacia su servidor con Let&rsquo;s Encrypt.</p>
+
+<p>Flask es un framework muy sencillo, pero extremadamente flexible, diseñado para proporcionar funcionalidad a sus aplicaciones sin ser demasiado restrictivo respecto de la estructura y del diseño. Puede utilizar la pila general descrita en esta guía para hacer funcionar las aplicaciones de Flask que diseñe.</p>

@@ -1,0 +1,269 @@
+---
+layout: post
+title: Cómo instalar WordPress con LAMP en Ubuntu 18.04
+network: digitalocean
+date: December 05, 2019 at 07:32PM
+url: https://www.digitalocean.com/community/tutorials/como-instalar-wordpress-con-lamp-en-ubuntu-18-04-es
+image: https://assets.digitalocean.com/articles/wordpress_lamp_1604/language_selection.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em><a href="https://www.digitalocean.com/community/users/jellingwood">Justin Ellingwood</a> escribió una versión anterior de este tutorial</em>.</p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p>WordPress es el sistema de gestión de contenido (CMS) más popular de Internet. Le permite configurar de forma sencilla blogs y sitios web flexibles sobre un backend de MySQL con procesamiento PHP. WordPress ha recibido una increíble acogida y es una excelente opción para dejar listo un sitio web de forma rápida. Después de la configuración, casi toda la administración puede hacerse a través del cliente web.</p>
+
+<p>En esta guía, nos centraremos en crear una instancia de WordPress configurada en una pila LAMP (Linux, Apache, MySQL y PHP) en un servidor de Ubuntu 18.04.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para completar este tutorial, necesitará acceso a un servidor de Ubuntu 18.04.</p>
+
+<p>Deberá realizar las siguientes tareas para poder comenzar con esta guía:</p>
+
+<ul>
+<li><strong>Cree un usuario <code>sudo</code> en su servidor</strong>: completaremos los pasos de esta guía usando un usuario no root con privilegios <code>sudo</code>. Puede crear un usuario con <code>privilegios</code> sudo siguiendo nuestra <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guía de configuración inicial para servidores de Ubuntu 18.04</a>.</li>
+<li><strong>Instale una pila LAMP</strong>: WordPress necesitará un servidor web, una base de datos y PHP para funcionar correctamente. La configuración de una pila LAMP (Linux, Apache, MySQL y PHP) cumple con todos estos requisitos. Siga <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">esta guía</a> para instalar y configurar este software.</li>
+<li><strong>Proteja su sitio con SSL</strong>: WordPress proporciona contenido dinámico y se ocupa de la autenticación y la autorización del usuario. TLS/SSL es la tecnología que le permite cifrar el tráfico de su sitio para que su conexión sea segura. La forma en que configure SSL dependerá de que disponga o no de un nombre de dominio para su sitio.
+
+<ul>
+<li><strong>Si tiene un nombre de dominio,</strong> la alternativa más sencilla para proteger su sitio es Let&rsquo;s Encrypt, que proporciona certificados de confianza gratuitos. Para la configuración, siga nuestra <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-ubuntu-18-04">guía de Let&rsquo;s Encrypt para Apache</a>.</li>
+<li><strong>Si no cuenta con un dominio</strong> y solo utiliza esta configuración para pruebas o cuestiones personales, puede emplear en su lugar un certificado autofirmado. Le proporciona el mismo tipo de cifrado, aunque sin la validación del dominio. Para la configuración, siga nuestra <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-apache-in-ubuntu-18-04">guía de SSL autofirmados para Apache</a>.</li>
+</ul></li>
+</ul>
+
+<p>Cuando complete los pasos de configuración, inicie sesión en su servidor como usuario <code>sudo</code> y continúe.</p>
+
+<h2 id="paso-1-crear-una-base-de-datos-y-un-usuario-de-mysql-para-wordpress">Paso 1: Crear una base de datos y un usuario de MySQL para WordPress</h2>
+
+<p>El primer paso que daremos es preparatorio. WordPress utiliza MySQL para administrar y almacenar información sobre el sitio y el usuario. Ya instalamos MySQL, pero debemos crear una base de datos y un usuario para que WordPress los utilice.</p>
+
+<p>Para comenzar, inicie sesión en la cuenta root (administrativa) de MySQL con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -u root -p
+</li></ul></code></pre>
+<p>Una vez instalado el software, se le solicitará la contraseña que estableció para la cuenta root de MySQL.</p>
+
+<p>Primero, podemos crear una base de datos separada que WordPress controlará. Puede darle el nombre que desee, pero en esta guía usaremos <strong>wordpress</strong> por cuestiones de simplicidad. Cree la base de datos para WordPress escribiendo lo siguiente:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">CREATE DATABASE <span class="highlight">wordpress</span> DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Cada instrucción de MySQL debe terminar en punto y coma (;). Asegúrese de que esto no falte si experimenta problemas.<br></span></p>
+
+<p>A continuación, crearemos una cuenta de usuario separada de MySQL que usaremos exclusivamente para realizar operaciones en nuestra nueva base de datos. Desde el punto de vista de la administración y la seguridad, crear bases de datos y cuentas de una función es una idea recomendable. En esta guía, usaremos el nombre <strong>wordpressuser</strong>. Puede cambiarlo si lo desea.</p>
+
+<p>Crearemos esta cuenta, estableceremos una contraseña y concederemos acceso a la base de datos que creamos. Podemos hacerlo escribiendo el comando que se muestra a continuación. Recuerde elegir una contraseña segura para el usuario de su base de datos:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">GRANT ALL ON <span class="highlight">wordpress</span>.* TO '<span class="highlight">wordpressuser</span>'@'localhost' IDENTIFIED BY '<span class="highlight">password</span>';
+</li></ul></code></pre>
+<p>Ahora tiene una base de datos y una cuenta de usuario, creadas específicamente para WordPress. Debemos eliminar los privilegios de modo que la instancia actual de MySQL registre los cambios recientes que realizamos:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">FLUSH PRIVILEGES;
+</li></ul></code></pre>
+<p>Cierre MySQL escribiendo lo siguiente:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">EXIT;
+</li></ul></code></pre>
+<h2 id="paso-2-instalar-extensiones-de-php-adicionales">Paso 2: Instalar extensiones de PHP adicionales</h2>
+
+<p>Cuando configuramos nuestra pila LAMP, solo necesitamos un conjunto de extensiones muy reducido para que PHP se comunicara con MySQL. WordPress y muchos de sus complementos aprovechan las extensiones de PHP adicionales.</p>
+
+<p>Podemos descargar e instalar algunas de las extensiones de PHP más populares para usarlas con WordPress escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install php-curl php-gd php-mbstring php-xml php-xmlrpc php-soap php-intl php-zip
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Cada complemento de WordPress tiene su propio conjunto de requisitos. Para algunos, posiblemente sea necesario instalar paquetes de PHP adicionales. Compruebe la documentación de sus complementos para ver sus requisitos de PHP. Si están disponibles, pueden instalarse con <code>apt</code> como ya se ha mostrado.<br></span></p>
+
+<p>Reiniciaremos Apache para cargar estas nuevas extensiones en la sección siguiente. Si vuelve aquí para instalar complementos adicionales, podrá reiniciar Apache escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<h2 id="paso-3-ajustar-la-configuración-de-apache-para-permitir-anulaciones-y-reescrituras-de-htaccess">Paso 3: Ajustar la configuración de Apache para permitir anulaciones y reescrituras de .htaccess</h2>
+
+<p>A continuación, realizaremos algunos ajustes de menor importancia en nuestra configuración de Apache. Conforme a los tutoriales de los requisitos previos, debe tener un archivo de configuración para su sitio en el directorio <code>/etc/apache2/sites-available/</code>. Como ejemplo, utilizare mos <code>/etc/apache2/sites-available/wordpress.conf</code>, pero debe sustituir la ruta a su archivo de configuración cuando proceda.</p>
+
+<p>Además, emplearemos <code>/var/www/wordpress</code> como el directorio root de nuestra instalación de WordPress. Debería usar el root web especificado en su propia configuración.</p>
+
+<p><span class='note'><strong>Nota:</strong> Es posible que utilice la configuración predeterminada <code>000-default.conf</code> (con <code>/var/www/html</code> como su root web). Se puede usar si solo piensa alojar un sitio web en este servidor. Si no piensa hacerlo, resulta mejor dividir la configuración necesaria en fragmentos lógicos, de un archivo por sitio.<br></span></p>
+
+<h3 id="habilitar-anulaciones-htaccess">Habilitar anulaciones .htaccess</h3>
+
+<p>Actualmente, el uso de archivos <code>.htaccess</code> está desactivado. WordPress y muchos de sus complementos utilizan estos archivos de forma exhaustiva para realizar ajustes de comportamiento del servidor web dentro del directorio.</p>
+
+<p>Abra el archivo de configuración de Apache para su sitio web:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/wordpress.conf
+</li></ul></code></pre>
+<p>Para permitir archivos <code>.htaccess</code>, debemos configurar la directiva <code>AllowOverride</code> dentro de un bloque <code>Directory</code> orientado a nuestro root de documentos. Agregue el siguiente bloque de texto dentro del bloque <code>VirtualHost</code> en su archivo de configuración. Asegúrese de utilizar el directorio root web correcto:</p>
+<div class="code-label " title="/etc/apache2/sites-available/wordpress.conf">/etc/apache2/sites-available/wordpress.conf</div><pre class="code-pre "><code langs="">&lt;Directory <span class="highlight">/var/www/wordpress/</span>&gt;
+    AllowOverride All
+&lt;/Directory&gt;
+</code></pre>
+<p>Cuando termine, guarde y cierre el archivo.</p>
+
+<h3 id="habilitar-el-módulo-de-reescritura">Habilitar el módulo de reescritura</h3>
+
+<p>A continuación, podemos habilitar <code>mod_rewrite</code> para usar la característica de permalink de WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod rewrite
+</li></ul></code></pre>
+<h3 id="habilitar-los-cambios">Habilitar los cambios</h3>
+
+<p>Antes de implementar los cambios que realizamos, compruebe que no se hayan cometido errores de sintaxis:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>El mensaje del resultado podría ser como el siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>AH00558: apache2: Could not reliably determine the server's fully qualified domain name, using 127.0.1.1. Set the 'ServerName' directive globally to suppress this message
+Syntax OK
+</code></pre>
+<p>Si desea eliminar la línea superior, simplemente agregue una directiva <code>ServerName</code> a su archivo de configuración principal (global) de Apache en <code>/etc/apache2/apache2.conf</code>. <code>ServerName</code> puede ser el dominio o la dirección IP de su servidor. Sin embargo, solo es un mensaje y no afecta a la funcionalidad de nuestro sitio. En tanto el resultado contenga <code>Syntax OK</code>, podrá continuar.</p>
+
+<p>Reinicie Apache para que se apliquen los cambios:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>A continuación, descargaremos y configuraremos el propio WordPress.</p>
+
+<h2 id="paso-4-descargar-wordpress">Paso 4: Descargar WordPress</h2>
+
+<p>Ahora que el software de nuestro servidor está configurado, podemos descargar y configurar WordPress. Preferentemente por motivos de seguridad, siempre se recomienda obtener la versión más reciente de WordPress del sitio del producto.</p>
+
+<p>Posiciónese en un directorio editable y luego descargue la versión comprimida escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li><li class="line" prefix="$">curl -O https://wordpress.org/latest.tar.gz
+</li></ul></code></pre>
+<p>Extraiga el archivo comprimido para crear la estructura de directorios de WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tar xzvf latest.tar.gz
+</li></ul></code></pre>
+<p>Moveremos estos archivos a nuestro root de documentos por ahora. Antes de hacerlo, podemos agregar un archivo ficticio <code>.htaccess</code> para que WordPress pueda usarlo más adelante.</p>
+
+<p>Cree el archivo escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">touch /tmp/wordpress/.htaccess
+</li></ul></code></pre>
+<p>También copiaremos el archivo de configuración de muestra al nombre de archivo que WordPress lee realmente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp /tmp/wordpress/wp-config-sample.php /tmp/wordpress/wp-config.php
+</li></ul></code></pre>
+<p>También podemos crear el directorio <code>upgrade</code>, de modo que WordPress no experimente problemas relacionados con permisos al intentar hacerlo por su cuenta después de una actualización de su software:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir /tmp/wordpress/wp-content/upgrade
+</li></ul></code></pre>
+<p>Ahora podemos copiar todo el contenido del directorio en nuestro root de documentos. Utilizaremos un punto al final de nuestro directorio de origen para indicar que todo lo que está dentro del directorio debe copiarse, incluidos los archivos ocultos (como el archivo <code>.htaccess</code> que creamos):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp -a /tmp/wordpress/. /var/www/<span class="highlight">wordpress</span>
+</li></ul></code></pre>
+<h2 id="paso-5-configurar-el-directorio-de-wordpress">Paso 5: Configurar el directorio de WordPress</h2>
+
+<p>Antes de realizar la configuración de WordPress basada en la Web, debemos ajustar algunos elementos en nuestro directorio de WordPress.</p>
+
+<h3 id="realizar-ajustes-de-propiedad-y-permisos">Realizar ajustes de propiedad y permisos</h3>
+
+<p>Una de las cosas más importantes que debemos hacer es configurar los permisos y la propiedad de archivos de forma razonable.</p>
+
+<p>Empezaremos por dar la propiedad de todos los archivos al usuario y al grupo <strong>www-data</strong>. Este es el usuario cuyo funcionamiento el servidor web de Apache simula y este último deberá poder leer y escribir archivos de WordPress para representar el sitio web y realizar actualizaciones automáticas.</p>
+
+<p>Actualice la propiedad con <code>chown</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R www-data:www-data /var/www/<span class="highlight">wordpress</span>
+</li></ul></code></pre>
+<p>A continuación, ejecutaremos dos comandos <code>find</code> para configurar los permisos correctos en los directorios y archivos de WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo find /var/www/<span class="highlight">wordpress</span>/ -type d -exec chmod 750 {} \;
+</li><li class="line" prefix="$">sudo find /var/www/<span class="highlight">wordpress</span>/ -type f -exec chmod 640 {} \;
+</li></ul></code></pre>
+<p>Deberían ser un conjunto de permisos razonables para empezar. Algunos complementos y procedimientos pueden requerir ajustes adicionales.</p>
+
+<h3 id="configurar-el-archivo-de-configuración-de-wordpress">Configurar el archivo de configuración de WordPress</h3>
+
+<p>Ahora, debemos realizar algunos cambios en el archivo de configuración principal de WordPress.</p>
+
+<p>Cuando abramos el archivo, nuestra primera tarea será ajustar algunas claves secretas para proporcionar seguridad a nuestra instalación. WordPress proporciona un generador seguro para estos valores, de modo que no tenga que crear valores buenos por su cuenta. Solo se utilizan de forma interna, de modo que tener valores complejos y seguros aquí no afectará de manera negativa la utilidad.</p>
+
+<p>Para obtener valores seguros del generador de claves secretas de WordPress, escriba lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -s https://api.wordpress.org/secret-key/1.1/salt/
+</li></ul></code></pre>
+<p>Obtendrá valores únicos como estos:</p>
+
+<p><span class='warning'><strong>Advertencia:</strong> Debe solicitar valores únicos en cada ocasión. <strong>NO</strong> copie los valores que se muestran a continuación.<br></span></p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>define('AUTH_KEY',         '1jl/vqfs&lt;XhdXoAPz9 <span class="highlight">DO NOT COPY THESE VALUES</span> c_j{iwqD^&lt;+c9.k&lt;J@4H');
+define('SECURE_AUTH_KEY',  'E2N-h2]Dcvp+aS/p7X <span class="highlight">DO NOT COPY THESE VALUES</span> {Ka(f;rv?Pxf})CgLi-3');
+define('LOGGED_IN_KEY',    'W(50,{W^,OPB%PB&lt;JF <span class="highlight">DO NOT COPY THESE VALUES</span> 2;y&amp;,2m%3]R6DUth[;88');
+define('NONCE_KEY',        'll,4UC)7ua+8&lt;!4VM+ <span class="highlight">DO NOT COPY THESE VALUES</span> #`DXF+[$atzM7 o^-C7g');
+define('AUTH_SALT',        'koMrurzOA+|L_lG}kf <span class="highlight">DO NOT COPY THESE VALUES</span>  07VC*Lj*lD&amp;?3w!BT#-');
+define('SECURE_AUTH_SALT', 'p32*p,]z%LZ+pAu:VY <span class="highlight">DO NOT COPY THESE VALUES</span> C-?y+K0DK_+F|0h{!_xY');
+define('LOGGED_IN_SALT',   'i^/G2W7!-1H2OQ+t$3 <span class="highlight">DO NOT COPY THESE VALUES</span> t6**bRVFSD[Hi])-qS`|');
+define('NONCE_SALT',       'Q6]U:K?j4L%Z]}h^q7 <span class="highlight">DO NOT COPY THESE VALUES</span> 1% ^qUswWgn+6&amp;xqHN&amp;%');
+</code></pre>
+<p>Son líneas de configuración que podemos pegar directamente en nuestro archivo de configuración para establecer claves seguras. Copie el resultado que obtuvo ahora.</p>
+
+<p>A continuación, abra el archivo de configuración de WordPress:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/<span class="highlight">wordpress</span>/wp-config.php
+</li></ul></code></pre>
+<p>Busque la sección que contiene los valores ficticios para esos ajustes. Se parecerá a esto:</p>
+<div class="code-label " title="/var/www/wordpress/wp-config.php">/var/www/wordpress/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('AUTH_KEY',         'put your unique phrase here');
+define('SECURE_AUTH_KEY',  'put your unique phrase here');
+define('LOGGED_IN_KEY',    'put your unique phrase here');
+define('NONCE_KEY',        'put your unique phrase here');
+define('AUTH_SALT',        'put your unique phrase here');
+define('SECURE_AUTH_SALT', 'put your unique phrase here');
+define('LOGGED_IN_SALT',   'put your unique phrase here');
+define('NONCE_SALT',       'put your unique phrase here');
+
+. . .
+</code></pre>
+<p>Elimine esas líneas y pegue los valores que copió de la línea de comandos:</p>
+<div class="code-label " title="/var/www/wordpress/wp-config.php">/var/www/wordpress/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('AUTH_KEY',         '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('SECURE_AUTH_KEY',  '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('LOGGED_IN_KEY',    '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('NONCE_KEY',        '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('AUTH_SALT',        '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('SECURE_AUTH_SALT', '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('LOGGED_IN_SALT',   '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+define('NONCE_SALT',       '<span class="highlight">VALUES COPIED FROM THE COMMAND LINE</span>');
+
+. . .
+</code></pre>
+<p>A continuación, debemos modificar algunos de los ajustes de conexión de la base de datos al inicio del archivo. Debe ajustar el nombre de la base de datos, su usuario y la contraseña asociada que configuramos dentro de MySQL.</p>
+
+<p>El otro cambio que debemos realizar es configurar el método que debe emplear WordPress para escribir el sistema de archivos. Debido a que hemos dado permiso al servidor web para escribir donde debe hacerlo, podemos fijar de forma explícita el método del sistema de archivos en “direct”. Si no lo configuramos con nuestros ajustes actuales, haría que WordPress solicitase las credenciales de FTP cuando realicemos algunas acciones.</p>
+
+<p>Este ajuste se puede agregar debajo de los ajustes de conexión de la base de datos o en cualquier otra parte del archivo:</p>
+<div class="code-label " title="/var/www/wordpress/wp-config.php">/var/www/wordpress/wp-config.php</div><pre class="code-pre "><code langs="">. . .
+
+define('DB_NAME', '<span class="highlight">wordpress</span>');
+
+/** MySQL database username */
+define('DB_USER', '<span class="highlight">wordpressuser</span>');
+
+/** MySQL database password */
+define('DB_PASSWORD', '<span class="highlight">password</span>');
+
+. . .
+
+<span class="highlight">define('FS_METHOD', 'direct');</span>
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<h2 id="paso-6-completar-la-instalación-a-través-de-la-interfaz-web">Paso 6: Completar la instalación a través de la interfaz web</h2>
+
+<p>Ahora que la configuración del servidor está completa, podemos finalizar la instalación a través de la interfaz web.</p>
+
+<p>En su navegador web, diríjase al nombre de dominio o a la dirección IP pública de su servidor:</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">server_domain_or_IP</span>
+</code></pre>
+<p>Seleccione el idioma que desee utilizar:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/language_selection.png" alt="Selección de idioma de WordPress"></p>
+
+<p>A continuación, accederá a la página principal de configuración.</p>
+
+<p>Seleccione un nombre para su sitio de WordPress y elija un nombre de usuario (por motivos de seguridad, se recomienda no elegir opciones como “admin”). De forma automática, se generará una contraseña segura. Guárdela o seleccione una contraseña segura alternativa.</p>
+
+<p>Introduzca su dirección de correo electrónico y defina si quiere que los motores de búsqueda no indexen su sitio:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/setup_installation.png" alt="Instalación de la configuración de WordPress"></p>
+
+<p>Cuando haga clic para seguir, accederá a una página que le solicitará registrarse:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/login_prompt.png" alt="Solicitud de inicio de sesión de WordPress"></p>
+
+<p>Tras iniciar sesión, accederá al panel de administración de WordPress:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/wordpress_lamp_1604/admin_screen.png" alt="Solicitud de inicio de sesión de WordPress"></p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Con esto, WordPress deberá quedar instalado y listo para utilizarse. Algunos pasos posteriores comunes son elegir el ajuste de los permalinks para sus publicaciones (puede encontrarse en <code>Settings &gt; Permalinks</code>) o  seleccionar un nuevo tema (en <code>Appearance &gt; Themes</code>). Si es la primera vez que utiliza WordPress, explore la interfaz un poco para conocer su nuevo CMS.</p>

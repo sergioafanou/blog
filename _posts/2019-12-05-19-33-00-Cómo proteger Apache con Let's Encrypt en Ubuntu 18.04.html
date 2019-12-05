@@ -1,0 +1,168 @@
+---
+layout: post
+title: Cómo proteger Apache con Let's Encrypt en Ubuntu 18.04
+network: digitalocean
+date: December 05, 2019 at 07:33PM
+url: https://www.digitalocean.com/community/tutorials/como-proteger-apache-con-let-s-encrypt-en-ubuntu-18-04-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Let&rsquo;s Encrypt es una entidad de certificación (CA) que proporciona una manera sencilla de obtener e instalar <a href="https://www.digitalocean.com/community/tutorials/openssl-essentials-working-with-ssl-certificates-private-keys-and-csrs">certificados de TLS/SSL</a> gratuitos, lo que permite usar HTTPS cifrado en servidores web. Simplifica el proceso al proporcionar un cliente de software, Certbot, que intenta automatizar la mayoría (cuando no todos) de los pasos requeridos. Actualmente, todo el proceso de obtención e instalación de un certificado está totalmente automatizado en Apache y Nginx.</p>
+
+<p>En este tutorial, utilizará Certbot para obtener un certificado de SSL gratuito para Apache en Ubuntu 18.04 y configurará su certificado para que se renueve de forma automática.</p>
+
+<p>En este tutorial se utilizará un archivo de host virtual de Apache por separado en lugar del archivo de configuración predeterminado. <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04#step-5-%E2%80%94-setting-up-virtual-hosts-(recommended)">Recomendamos</a> crear nuevos archivos de host virtual de Apache para cada dominio, ya que permite evitar errores comunes y mantiene los archivos predeterminados como una configuración de reserva.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li><p>Un servidor de Ubuntu 18.04 configurado conforme a este tutorial de <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">configuración inicial para servidores de Ubuntu 18.04</a>, incluido un usuario sudo no root y un firewall.</p></li>
+<li><p>Un nombre de dominio registrado por completo. En este tutorial, se utilizará <strong>your_domain</strong> como ejemplo. Puede adquirir un nombre de dominio en <a href="https://namecheap.com">Namecheap</a>, obtener uno gratuito en <a href="http://www.freenom.com/en/index.html">Freenom</a> o utilizar un registrador de dominios de su elección.</p></li>
+<li><p>Los dos registros DNS que se indican a continuación se han configurado para su servidor. Puede utilizar esta <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">introducción al DNS de DigitalOcean</a> para obtener más información sobre cómo agregarlos.</p>
+
+<ul>
+<li>Un registro A con <code><span class="highlight">your_domain</span></code> orientado a la dirección IP pública de su servidor.</li>
+<li>Un registro A con <code>www.<span class="highlight">your_domain </span></code>orientado a la dirección IP pública de su servidor.</li>
+</ul></li>
+<li><p>Apache instalado conforme a <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04">Cómo instalar Apache en Ubuntu 18.04</a>. Compruebe que tenga un <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04#step-5-%E2%80%94-setting-up-virtual-hosts-recommended">archivo de host virtual</a> para su dominio. En este tutorial, se utilizará <code>/etc/apche2/sites-available/<span class="highlight">your_domain</span>.conf</code> como ejemplo.</p></li>
+</ul>
+
+<h2 id="paso-1-instalar-certbot">Paso 1: Instalar Certbot</h2>
+
+<p>El primer paso para utilizar Let&rsquo;s Encrypt para obtener un certificado SSL es instalar el software Certbot en su servidor.</p>
+
+<p>Existe mucha actividad relacionada con el desarrollo de Certbot. Esto hace que sus paquetes proporcionados por Ubuntu suelan perder vigencia. Sin embargo, los desarrolladores de Certbot mantienen un repositorio de software de Ubuntu con versiones actualizadas, de modo que en su lugar usaremos ese repositorio.</p>
+
+<p>Primero, agregue el repositorio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository ppa:certbot/certbot
+</li></ul></code></pre>
+<p>Debe presionar <code>ENTER</code> para aceptar.</p>
+
+<p>Instale el paquete Apache de Certbot con <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python-certbot-apache
+</li></ul></code></pre>
+<p>Con esto, Certbot estará listo para utilizarse. Sin embargo, para que configure SSL para Apache debemos verificar parte de la configuración de Apache.</p>
+
+<h2 id="paso-2-configurar-el-certificado-ssl">Paso 2: Configurar el certificado SSL</h2>
+
+<p>Certbot debe poder encontrar el host virtual adecuado en su configuración de Apache para poder configurar SSL de forma automática. De forma específica, lo hace buscando una directiva <code>ServerName</code> que coincida con el dominio para el que usted solicite un certificado.</p>
+
+<p>Si siguió el <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04#step-5-%E2%80%94-setting-up-virtual-hosts-(recommended)">paso de configuración del host virtual en el tutorial de instalación de Apache</a>, debe disponer de un bloque VirtualHost para su dominio en <code>/etc/apache2/sites-available/<span class="highlight">your_domain.com</span>.conf</code> con la directiva <code>ServerName</code> ya establecida de forma adecuada.</p>
+
+<p>Para comprobarlo, abra el archivo de host virtual para su dominio utilizando <code>nano</code> o el editor de texto que prefiera:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/<span class="highlight">your_domain</span>.conf
+</li></ul></code></pre>
+<p>Busque la línea de <code>ServerName</code> existente. Debería tener el siguiente aspecto:</p>
+<div class="code-label " title="/etc/apache2/sites-available/your_domain.conf">/etc/apache2/sites-available/your_domain.conf</div><pre class="code-pre "><code class="code-highlight language-apache">...
+ServerName <span class="highlight">your_domain</span>;
+...
+</code></pre>
+<p>Si esto sucede, salga de su editor y continúe con el paso siguiente.</p>
+
+<p>De lo contrario, actualícelo para que coincida. A continuación, guarde el archivo, cierre el editor y verifique la sintaxis de las modificaciones de la configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>Si encuentra un mensaje de error, vuelva a abrir el archivo de host virtual y verifique que no haya errores ortográficos y que no falten caracteres. Una vez que la sintaxis de su archivo de configuración sea correcta, vuelva a abrir Apache para cargar la configuración nueva:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload apache2
+</li></ul></code></pre>
+<p>Ahora, Certbot podrá encontrar el bloque VirtualHost correcto y actualizarlo.</p>
+
+<p>A continuación, actualizaremos el firewall para permitir el tráfico de HTTPS.</p>
+
+<h2 id="paso-3-habilitar-https-a-través-del-firewall">Paso 3: Habilitar  HTTPS a través del firewall</h2>
+
+<p>Si tiene habilitado el firewall de <code>ufw</code>, como se recomienda en las guías de los requisitos previos, deberá ajustar la configuración para permitir el tráfico de HTTPS. Afortunadamente, Apache registra algunos perfiles con <code>ufw</code> después de la instalación.</p>
+
+<p>Puede ver la configuración actual escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre>
+<p>Probablemente tendrá este aspecto, lo cual significa que solo se permite el tráfico de HTTP al servidor web:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+Apache                     ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)             
+Apache (v6)                ALLOW       Anywhere (v6)
+</code></pre>
+<p>Para permitir de forma adicional el tráfico de HTTPS, habilite el perfil de Apache Full y borre el permiso del perfil redundante de Apache:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Apache Full'
+</li><li class="line" prefix="$">sudo ufw delete allow 'Apache'
+</li></ul></code></pre>
+<p>Ahora, su estado debería tener el siguiente aspecto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+Apache Full                ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)             
+Apache Full (v6)           ALLOW       Anywhere (v6)        
+</code></pre>
+<p>A continuación, ejecutaremos Certbot y buscaremos nuestros certificados.</p>
+
+<h2 id="paso-4-obtener-un-certificado-ssl">Paso 4: Obtener un certificado SSL</h2>
+
+<p>Certbot ofrece varias alternativas para obtener certificados SSL a través de complementos. El complemento de Apache se encargará de reconfigurar Apache y volver a cargar la configuración cuando sea necesario. Para utilizar este complemento, escriba lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --apache -d <span class="highlight">your_domain</span> -d www<span class="highlight">.your_domain</span>
+</li></ul></code></pre>
+<p>Con esto, se ejecuta <code>certbot</code> con el complemento <code>--apache</code>, usando <code>-d</code> a fin de especificar los nombres para los cuales desea que el certificado tenga validez.</p>
+
+<p>Si es la primera vez que ejecuta <code>certbot</code>, se le solicitará introducir una dirección de correo electrónico y aceptar las condiciones de servicio. A continuación, <code>certbot</code> se comunicará con el servidor de Let&rsquo;s Encrypt y, luego, realizará una comprobación para verificar que usted controle el dominio para el que solicita un certificado.</p>
+
+<p>Si la comprobación se realiza correctamente, <code>certbot</code> le preguntará cómo desea configurar sus ajustes de HTTPS:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Please choose whether or not to redirect HTTP traffic to HTTPS, removing HTTP access.
+-------------------------------------------------------------------------------
+1: No redirect - Make no further changes to the webserver configuration.
+2: Redirect - Make all requests redirect to secure HTTPS access. Choose this for
+new sites, or if you're confident your site works on HTTPS. You can undo this
+change by editing your web server's configuration.
+-------------------------------------------------------------------------------
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel):
+</code></pre>
+<p>Seleccione su elección y presione <code>ENTER</code>. La configuración se actualizará y Apache se volverá a cargar para aplicar los ajustes nuevos. <code>certbot</code> concluirá con un mensaje que le indicará que el proceso se realizó con éxito y le brindará información sobre la ubicación de sus certificados:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>IMPORTANT NOTES:
+ - Congratulations! Your certificate and chain have been saved at:
+   /etc/letsencrypt/live/<span class="highlight">your_domain</span>/fullchain.pem
+   Your key file has been saved at:
+   /etc/letsencrypt/live/<span class="highlight">your_domain</span>/privkey.pem
+   Your cert will expire on 2018-07-23. To obtain a new or tweaked
+   version of this certificate in the future, simply run certbot again
+   with the "certonly" option. To non-interactively renew *all* of
+   your certificates, run "certbot renew"
+ - Your account credentials have been saved in your Certbot
+   configuration directory at /etc/letsencrypt. You should make a
+   secure backup of this folder now. This configuration directory will
+   also contain certificates and private keys obtained by Certbot so
+   making regular backups of this folder is ideal.
+ - If you like Certbot, please consider supporting our work by:
+
+   Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+   Donating to EFF:                    https://eff.org/donate-le
+
+</code></pre>
+<p>Así, sus certificados se quedarán descargados, instalados y cargados. Intente volver a cargar su sitio web utilizando <code>https://</code> y observe el indicador de seguridad de su navegador. Debería indicar que el sitio cuenta con la protección correcta, en general, con un ícono de un candado verde. Si prueba su servidor utilizando <a href="https://www.ssllabs.com/ssltest/">SSL Labs Server Test</a>, obtendrá una calificación <strong>A</strong>.</p>
+
+<p>Terminaremos con una prueba del proceso de renovación.</p>
+
+<h2 id="paso-5-verificar-la-renovación-automática-de-certbot">Paso 5: Verificar la renovación automática de Certbot</h2>
+
+<p>Los certificados de Let&rsquo;s Encrypt son válidos únicamente por noventa días. El propósito de esto es incentivar a los usuarios a automatizar sus procesos de renovación de certificados. El paquete de <code>certbot</code> que instalamos se encargará de esto agregando una secuencia de comandos de renovación a <code>/etc/cron.d</code>. Esta secuencia de comandos se ejecuta dos veces al día y renovará de forma automática cualquier certificado que caduque en treinta o menos días.</p>
+
+<p>Para probar el proceso de renovación, puede hacer un simulacro con <code>certbot</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot renew --dry-run
+</li></ul></code></pre>
+<p>Si no ve errores, no habrá inconvenientes. Cuando sea necesario, Certbot renovará sus certificados y volverá a cargar Apache para registrar los cambios. Si el proceso de renovación automática falla, Let’s Encrypt enviará un mensaje a la dirección de correo electrónico que especificó en el que se le advertirá cuándo se aproxime la fecha de vencimiento de sus certificados.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>En este tutorial, instaló el <code>certbot</code> del cliente Let&rsquo;s Encrypt, descargó certificados SSL para su dominio, configuró Apache para utilizarlos y definió la renovación automática de certificados. Si tiene preguntas adicionales sobre la utilización de Certbot, <a href="https://certbot.eff.org/docs/">la documentación</a> es un buen punto de partida.</p>

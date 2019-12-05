@@ -1,0 +1,109 @@
+---
+layout: post
+title: Cómo instalar Anaconda en Ubuntu 18.04 [Quickstart]
+network: digitalocean
+date: December 05, 2019 at 06:48PM
+url: https://www.digitalocean.com/community/tutorials/como-instalar-anaconda-en-ubuntu-18-04-quickstart-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Diseñado para los flujos de trabajo de ciencia de los datos y aprendizaje automático, Anaconda es un gestor de paquetes de código abierto, gestor de entornos y distribución de los lenguajes de programación Python y R.</p>
+
+<p>Este tutorial lo guiará a través de la instalación de Anaconda en un servidor Ubuntu 18.04. Para obtener una versión más detallada de este tutorial, con mejores explicaciones de cada paso, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-anaconda-python-distribution-on-ubuntu-18-04">Cómo instalar la distribución de Python Anaconda en Ubuntu 18.04</a>.</p>
+
+<h2 id="paso-1-obtención-de-la-versión-más-reciente-de-anaconda">Paso 1: obtención de la versión más reciente de Anaconda</h2>
+
+<p>Desde un navegador web, vaya a la página de <a href="https://www.anaconda.com/distribution/">la distribución Anaconda</a>, disponible en el siguiente enlace:</p>
+<pre class="code-pre "><code langs="">https://www.anaconda.com/distribution/
+</code></pre>
+<p>Busque la versión más reciente para Linux y copie la secuencia de comandos bash del instalador.</p>
+
+<h2 id="paso-2-descarga-de-la-secuencia-de-comandos-bash-de-anaconda">Paso 2: descarga de la secuencia de comandos bash de Anaconda</h2>
+
+<p>Con sesión iniciada en su servidor Ubuntu 18.04 como usuario sudo no root, vaya al directorio <code>/tmp</code> y utilice <code>curl</code> para descargar el enlace que copió desde el sitio web de Anaconda.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li><li class="line" prefix="$">curl -O https://repo.anaconda.com/archive/Anaconda3-<span class="highlight">2019.03</span>-Linux-x86_64.sh
+</li></ul></code></pre>
+<h2 id="paso-3-verificación-de-la-integridad-de-los-datos-del-instalador">Paso 3: verificación de la integridad de los datos del instalador</h2>
+
+<p>Compruebe la integridad del instalador con una comprobación hash criptográfica mediante la suma de comprobación SHA-256:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sha256sum Anaconda3-<span class="highlight">2019.03</span>-Linux-x86_64.sh
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">45c851b7497cc14d5ca060064394569f724b67d9b5f98a926ed49b834a6bb73a  Anaconda3-2019.03-Linux-x86_64.sh</span>
+</code></pre>
+<h2 id="paso-4-ejecución-de-la-secuencia-de-comandos-de-anaconda">Paso 4: ejecución de la secuencia de comandos de Anaconda</h2>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">bash Anaconda3-<span class="highlight">2019.03</span>-Linux-x86_64.sh
+</li></ul></code></pre>
+<p>Recibirá el siguiente resultado para revisar el acuerdo de licencia pulsando <code>ENTER</code> hasta llegar al final.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+Welcome to Anaconda3 2019.03
+
+In order to continue the installation process, please review the license
+agreement.
+Please, press ENTER to continue
+&gt;&gt;&gt;
+...
+Do you approve the license terms? [yes|no]
+</code></pre>
+<p>Cuando llegue al final de la licencia, escriba <code>yes</code>, si acepta la licencia, para completar la instalación.</p>
+
+<h2 id="paso-5-finalización-del-proceso-de-instalación">Paso 5: finalización del proceso de instalación</h2>
+
+<p>Una vez que acepte la licencia, se le pedirá que seleccione la ubicación de la instalación. Puede pulsar <code>ENTER</code> para aceptar la ubicación predeterminada o especificar una ubicación diferente.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Anaconda3 will now be installed into this location:
+/home/<span class="highlight">sammy</span>/anaconda3
+
+  - Press ENTER to confirm the location
+  - Press CTRL-C to abort the installation
+  - Or specify a different location below
+
+[/home/<span class="highlight">sammy</span>/anaconda3] &gt;&gt;&gt;
+</code></pre>
+<p>En este momento, se procederá con la instalación. Tenga en cuenta que el proceso puede tardar un tiempo.</p>
+
+<h2 id="paso-6-selección-de-opciones">Paso 6: selección de opciones</h2>
+
+<p>Cuando se complete la instalación, recibirá el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+installation finished.
+Do you wish the installer to prepend the Anaconda3 install location
+to PATH in your /home/sammy/.bashrc ? [yes|no]
+[no] &gt;&gt;&gt; 
+</code></pre>
+<p>Se recomienda que escriba <code>yes</code> para usar el comando <code>conda</code>.</p>
+
+<h2 id="paso-7-activación-de-la-instalación">Paso 7: activación de la instalación</h2>
+
+<p>Ahora, puede activar la instalación con el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ~/.bashrc
+</li></ul></code></pre>
+<h2 id="paso-8-instalación-de-prueba">Paso 8: instalación de prueba</h2>
+
+<p>Utilice el comando <code>conda</code> para probar la instalación y la activación:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">conda list
+</li></ul></code></pre>
+<p>Recibirá el resultado de todos los paquetes que tiene disponibles a través de la instalación de Anaconda.</p>
+
+<h2 id="paso-9-configuración-de-los-entornos-de-anaconda">Paso 9: configuración de los entornos de Anaconda</h2>
+
+<p>Puede crear entornos de Anaconda con el comando <code>conda create</code>. Por ejemplo, se puede crear un entorno de Python 3 llamado <code><span class="highlight">my_env</span></code>con el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">conda create --name <span class="highlight">my_env</span> python=3
+</li></ul></code></pre>
+<p>Active el nuevo entorno de esta manera:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">conda activate <span class="highlight">my_env</span>
+</li></ul></code></pre>
+<p>El prefijo de instrucción de su comando cambiará para reflejar que está en un entorno de Anaconda activo, y que, ahora, está listo para empezar a trabajar en un proyecto.</p>
+
+<h2 id="tutoriales-relacionados">Tutoriales relacionados</h2>
+
+<p>Aquí tiene enlaces a tutoriales más detallados relacionados con esta guía:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-anaconda-python-distribution-on-ubuntu-18-04">Cómo instalar la distribución de Python Anaconda en Ubuntu 18.04</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-jupyter-notebook-for-python-3">Cómo configurar Jupyter Notebook para Python 3</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-pandas-package-and-work-with-data-structures-in-python-3">Cómo instalar el paquete pandas y trabajar con estructuras de datos en Python 3</a></li>
+</ul>

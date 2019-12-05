@@ -1,0 +1,294 @@
+---
+layout: post
+title: Cómo modificar atributos, clases y estilos en el DOM
+network: digitalocean
+date: December 05, 2019 at 07:33PM
+url: https://www.digitalocean.com/community/tutorials/como-modificar-atributos-clases-y-estilos-en-el-dom-es
+image: https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-shark.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>En el tutorial anterior de esta <a href="https://www.digitalocean.com/community/tutorial_series/understanding-the-dom-document-object-model">serie</a>, &ldquo;<a href="https://www.digitalocean.com/community/tutorials/how-to-make-changes-to-the-dom">Cómo realizar cambios en el DOM</a>&rdquo;, abordamos la forma de crear, insertar, sustituir y eliminar elementos del Document Object Model (DOM) con métodos incorporados. Al aumentar su competencia en el manejo del DOM, podrá usar mejor las capacidades interactivas de JavaScript y modificar elementos web.</p>
+
+<p>En este tutorial aprenderemos a cambiar más el DOM modificando estilos, clases y otros atributos de nodos de elementos HTML. Esto le permitirá comprender mejor la manera de manipular elementos esenciales dentro del DOM.</p>
+
+<h2 id="revisión-de-la-selección-de-elementos">Revisión de la selección de elementos</h2>
+
+<p>Hasta hace poco, una biblioteca popular de JavaScript llamada <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-jquery">jQuery</a> se usaba muy a menudo para seleccionar y modificar elementos del DOM. jQuery simplificó el proceso de selección de uno o varios elementos y aplicación de cambios en todos ellos al mismo tiempo. En <a href="https://www.digitalocean.com/community/tutorials/how-to-access-elements-in-the-dom">&ldquo;Cómo acceder a elementos del DOM&rdquo;</a>, revisamos los métodos del DOM para capturar nodos y trabajar con ellos en Vanilla JavaScript.</p>
+
+<p>Para la revisión, <code>document.querySelector()</code> y <code>document.getElementById()</code> son los métodos utilizados para acceder a un único elemento. Usando un <code>div</code> con un atributo <code>id</code> en el siguiente ejemplo, podemos acceder a ese elemento de cualquier forma.</p>
+<pre class="code-pre "><code class="code-highlight language-html">&lt;div id="demo-id"&gt;Demo ID&lt;/div&gt;
+</code></pre>
+<p>El método <code>querySelector()</code> es más sólido, ya que puede seleccionar un elemento en la página a través de cualquier tipo de selector.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Both methods will return a single element
+const demoId = document.querySelector('#demo-id');
+</code></pre>
+<p>Accediendo a un único elemento, podemos actualizar fácilmente una parte del elemento, como el texto interno.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Change the text of one element
+demoId.textContent = 'Demo ID text updated.';
+</code></pre>
+<p>Sin embargo, al acceder a varios elementos a través de un selector común, como una clase específica, debemos repetir todos los elementos de la lista. En el siguiente código, tenemos dos elementos <code>div</code> con un valor de clase común.</p>
+<pre class="code-pre "><code class="code-highlight language-html">&lt;div class="demo-class"&gt;Demo Class 1&lt;/div&gt;
+&lt;div class="demo-class"&gt;Demo Class 2&lt;/div&gt;
+</code></pre>
+<p>Utilizaremos <code>querySelectorAll()</code> para capturar todos los elementos con <code>demo-class</code> que se les aplicaron y <code>forEach()</code> para repetirlos y aplicar un cambio. También es posible acceder a un elemento específico con <code>querySelectorAll()</code> de la misma forma que con una matriz: usando una notación entre paréntesis.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Get a NodeList of all .demo elements
+const demoClasses = document.querySelectorAll('.demo-class');
+
+// Change the text of multiple elements with a loop
+demoClasses.forEach(element =&gt; {
+  element.textContent = 'All demo classes updated.';
+});
+
+// Access the first element in the NodeList
+demoClasses[0];
+</code></pre>
+<p>Es una de las diferencias más importantes que se deben tener en cuenta al pasar de jQuery a Vanilla JavaScript. Muchos ejemplos de modificación de elementos no explicarán el proceso de aplicación de esos métodos y propiedades a varios elementos.</p>
+
+<p>A menudo, las propiedades y los métodos de este artículo se adjuntarán a <a href="https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener">escuchas de eventos</a> para responder a clics, desplazamientos u otros activadores.</p>
+
+<p><span class='note'><strong>Nota:</strong> Los métodos <code>getElementsByClassName()</code> y <code>getElementsByTagName()</code> mostrarán colecciones HTML que no tienen acceso al método <code>forEach()</code> que <code>querySelectorAll()</code> tiene. En estos casos, deberá usar un bucle <a href="https://www.digitalocean.com/community/tutorials/how-to-construct-for-loops-in-javascript">estándar <code>for</code> la repetición en la colección</a>.<br></span></p>
+
+<h2 id="modificación-de-atributos">Modificación de atributos</h2>
+
+<p>Los atributos son valores que contienen información adicional sobre elementos HTML. Normalmente vienen en pares de <strong>nombre y valor</strong>, y pueden ser esenciales según elemento.</p>
+
+<p>Algunos de los atributos HTML más comunes son el atributo <code>src</code> de una etiqueta <code>img</code>, el <code>href</code> de una etiqueta <code>a</code>, <code>class</code>, <code>id</code> y <code>style.</code> Para obtener una lista completa de atributos HTML, consulte la <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes">lista de atributos</a> en la Mozilla Developer Network. Los elementos personalizados que no formen parte del estándar HTML se prefijarán con <code>data-</code>.</p>
+
+<p>En JavaScript, tenemos cuatro métodos para modificar atributos de elementos:</p>
+
+<table><thead>
+<tr>
+<th>Método</th>
+<th>Descripción</th>
+<th>Ejemplo</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><code>hasAttribute()</code></td>
+<td>Muestra un booleano <code>true</code> o <code>false</code>.</td>
+<td><code>element.hasAttribute('href');</code></td>
+</tr>
+<tr>
+<td><code>getAttribute()</code></td>
+<td>Muestra el valor de un atributo especificado o <code>null</code>.</td>
+<td><code>element.getAttribute('href');</code></td>
+</tr>
+<tr>
+<td><code>setAttribute()</code></td>
+<td>Agrega o actualiza el valor de un atributo especificado.</td>
+<td><code>element.setAttribute('href', 'index.html');</code></td>
+</tr>
+<tr>
+<td><code>removeAttribute()</code></td>
+<td>Elimina un atributo de un elemento.</td>
+<td><code>element.removeAttribute('href');</code></td>
+</tr>
+</tbody></table>
+
+<p>Crearemos un nuevo archivo HTML con una etiqueta <code>img</code> con un atributo. Estableceremos un vínculo a una imagen pública disponible a través de una URL, pero puede cambiarla por una imagen local alternativa si trabaja sin conexión.</p>
+<div class="code-label " title="attributes.html">attributes.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;body&gt;
+
+    &lt;img src="https://js-tutorials.nyc3.digitaloceanspaces.com/shark.png"&gt;
+
+&lt;/body&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>Cuando cargue el archivo HTML anterior en un navegador web moderno y abra la <a href="https://www.digitalocean.com/community/tutorials/how-to-use-the-javascript-developer-console">consola para desarrolladores</a> integrada, verá algo como lo siguiente:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-shark.png" alt="Primera representación de classes.html"></p>
+
+<p>Ahora podemos probar todos los métodos de atributos sobre la marcha.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Assign image element
+const img = document.querySelector('img');
+
+img.hasAttribute('src');                // returns true
+img.getAttribute('src');                // returns "...shark.png"
+img.removeAttribute('src');             // remove the src attribute and value
+</code></pre>
+<p>En este punto, habrá eliminado el atributo <code>src</code> y el valor asociado con <code>img</code>, pero puede reiniciar ese atributo y asignar el valor a una imagen alternativa con <code>img.setAttribute()</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-js">img.setAttribute('src', 'https://js-tutorials.nyc3.digitaloceanspaces.com/octopus.png');
+</code></pre>
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-octopus.png" alt="Segunda representación de classes.html"></p>
+
+<p>Por último, podemos modificar el atributo directamente asignándole un nuevo valor como una propiedad del elemento, haciendo que el <code>src</code> vuelva al archivo <code>shark.png</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">img.src = 'https://js-tutorials.nyc3.digitaloceanspaces.com/shark.png';
+</code></pre>
+<p>Cualquier atributo puede editarse de esta forma y también con los métodos anteriores.</p>
+
+<p>Los métodos <code>hasAttribute()</code> y <code>getAttribute()</code> se utilizan normalmente con <a href="https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-javascript">instrucciones condicionales</a> y los métodos <code>setAttribute()</code> y <code>removeAttribute()</code> se usan para modificar directamente el DOM.</p>
+
+<h2 id="modificación-de-clases">Modificación de clases</h2>
+
+<p>El atributo de <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/class"><code>class</code></a> corresponde a los <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/Class_selectors">selectores de clase de CSS</a>. No se debe confundir con las <a href="https://www.digitalocean.com/community/tutorials/understanding-classes-in-javascript">clases ES6</a>, un tipo especial de función de JavaScript.</p>
+
+<p>Las clases CSS se utilizan para aplicar estilos a varios elementos, a diferencia de los ID que solo pueden existir una vez por página. En JavaScript, contamos con las propied <a href="https://developer.mozilla.org/en-US/docs/Web/API/Element/className"><code>className</code></a> y <a href="https://developer.mozilla.org/en-US/docs/Web/API/Element/classList"><code>classList</code></a> para trabajar con el atributo de clase.</p>
+
+<table><thead>
+<tr>
+<th>Método/Propiedad</th>
+<th>Descripción</th>
+<th>Ejemplo</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><code>className</code></td>
+<td>Obtiene o establece un valor de clase.</td>
+<td><code>element.className;</code></td>
+</tr>
+<tr>
+<td><code>classList.add()</code></td>
+<td>Agrega uno o más valores de clase.</td>
+<td><code>element.classList.add('active');</code></td>
+</tr>
+<tr>
+<td><code>classList.toggle()</code></td>
+<td>Activa o desactiva una clase.</td>
+<td><code>element.classList.toggle('active');</code></td>
+</tr>
+<tr>
+<td><code>classList.contains()</code></td>
+<td>Comprueba si el valor de clase existe.</td>
+<td><code>element.classList.contains('active');</code></td>
+</tr>
+<tr>
+<td><code>classList.replace()</code></td>
+<td>Sustituye un valor de clase existente por uno nuevo.</td>
+<td><code>element.classList.replace('old', 'new');</code></td>
+</tr>
+<tr>
+<td><code>classList.remove()</code></td>
+<td>Elimina un valor de clase.</td>
+<td><code>element.classList.remove('active');</code></td>
+</tr>
+</tbody></table>
+
+<p>Crearemos otro archivo HTML para que funcione con los métodos de clase, con dos elementos y algunas clases.</p>
+<div class="code-label " title="classes.html">classes.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+
+&lt;style&gt;
+    body {
+        max-width: 600px;
+        margin: 0 auto;
+        font-family: sans-serif;
+    }
+    .active {
+        border: 2px solid blue;
+    }
+
+    .warning {
+        border: 2px solid red;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    div {
+        border: 2px dashed lightgray;
+        padding: 15px;
+        margin: 5px;
+    }
+&lt;/style&gt;
+
+&lt;body&gt;
+
+    &lt;div&gt;Div 1&lt;/div&gt;
+    &lt;div class="active"&gt;Div 2&lt;/div&gt;
+
+&lt;/body&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>Cuando abra el archivo <code>classes.html</code> en un navegador web, debería recibir una representación similar a la siguiente:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-classes-1.png" alt="Primera representación de classes.html"></p>
+
+<p>La propiedad <code>className</code> se introdujo para evitar conflictos con la palabra clave de <code>class</code> que se encuentra en JavaScript y otros lenguajes que tienen acceso al DOM. Puede utilizar <code>className</code> para asignar un valor directamente a la clase.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Select the first div
+const div = document.querySelector('div');
+
+// Assign the warning class to the first div
+div.className = 'warning';
+</code></pre>
+<p>Hemos asignado la clase <code>warning</code> definida en los valores CSS de <code>classes.html</code> al primer <code>div</code>. Obtendrá el siguiente resultado:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-classes-2.png" alt="Segunda representación de classes.html"></p>
+
+<p>Tenga en cuenta que si ya hay clases en el elemento, esto las anulará. Puede agregar varias clases delimitadas por espacios usando la propiedad <code>className</code> o usarla sin los operadores de asignación para obtener el valor de la clase en el elemento.</p>
+
+<p>La otra forma de modificar clases es a través de la propiedad <a href="https://developer.mozilla.org/en-US/docs/Web/API/Element/classList"><code>classList</code></a>, que incluye algunos métodos útiles. Dichos métodos son similares a los de <code>addClass</code>, <code>removeClass</code> y <code>toggleClass</code> de jQuery.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Select the second div by class name
+const activeDiv = document.querySelector('.active');
+
+activeDiv.classList.add('hidden');                // Add the hidden class
+activeDiv.classList.remove('hidden');             // Remove the hidden class
+activeDiv.classList.toggle('hidden');             // Switch between hidden true and false
+activeDiv.classList.replace('active', 'warning'); // Replace active class with warning class
+</code></pre>
+<p>Tras aplicar los métodos anteriores, su página web tendrá este aspecto:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-classes-3.png" alt="Renderización final de classes.html"></p>
+
+<p>A diferencia del ejemplo de <code>className</code>, al utilizarse <code>classList.add()</code> se añadirá una nueva clase a la lista existente. También puede agregar varias clases como cadenas separadas por comas. También es posible utilizar <code>setAttribute</code> para modificar la clase de un elemento.</p>
+
+<h2 id="modificación-de-estilos">Modificación de estilos</h2>
+
+<p>La propiedad de <a href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/style">estilo</a> representa los estilos incorporados en un elemento HTML. A menudo, se aplicarán estilos a elementos a través de una hoja de estilos como lo hemos hecho antes en este artículo, pero a veces debemos agregar o editar un estilo alineado directamente.</p>
+
+<p>Haremos un breve ejemplo para mostrar estilos de edición con JavaScript. A continuación, se muestra un nuevo archivo HTML con un <code>div</code> que tiene algunos estilos incorporados para mostrar un cuadrado.</p>
+<div class="code-label " title="styles.html">styles.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+
+&lt;body&gt;
+
+    &lt;div style="height: 100px;
+                width: 100px;
+                border: 2px solid black;"&gt;Div&lt;/div&gt;
+
+&lt;/body&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>Cuando se abra en un navegador web, <code>styles.html</code> tendrá este aspecto:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-style-1.png" alt="Primera representación de styles.html"></p>
+
+<p>Una opción para editar los estilos es <code>setAttribute()</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Select div
+const div = document.querySelector('div');
+
+// Apply style to div
+div.setAttribute('style', 'text-align: center');
+</code></pre>
+<p>Sin embargo, esto eliminará todos los estilos alineados existentes del elemento. Debido a que este probablemente no sea el efecto deseado, es mejor utilizar el atributo <code>style</code> directamente.</p>
+<pre class="code-pre "><code class="code-highlight language-js">div.style.height = '100px';
+div.style.width = '100px';
+div.style.border = '2px solid black';
+</code></pre>
+<p>Las propiedades de CSS se escriben en kebab-case, que son palabras minúsculas separadas por guiones. Tenga en cuenta que las propiedades de CSS de kebab-case no se pueden utilizar en la propiedad de estilo de JavaScript. Se sustituirán por su equivalente en camelCase, en el cual la primera palabra se escribe con minúscula y las siguientes con mayúsculas. En otras palabras, en vez de <code>text-align</code> utilizaremos <code>textAlign</code> para la propiedad de estilo de JavaScript.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Make div into a circle and vertically center the text
+div.style.borderRadius = '50%';
+div.style.display = 'flex';
+div.style.justifyContent = 'center';
+div.style.alignItems = 'center';
+</code></pre>
+<p>Tras completar las modificaciones de estilo anteriores, en su representación final de <code>styles.html</code> se mostrará un círculo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-style-2.png" alt="Representación final de styles.html"></p>
+
+<p>Si deben aplicarse muchos cambios estilísticos a un elemento, lo mejor es aplicar los estilos a una clase y agregar una nueva clase. Sin embargo, hay algunos casos en los que será necesario o más práctico modificar el atributo de estilo alineado.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Los elementos HTML a menudo tienen información adicional asignada en forma de atributos. Los atributos pueden incluir pares de nombre y valor, y algunos de los más comunes son <code>class</code> y <code>style</code>.</p>
+
+<p>En este tutorial, aprendió a acceder, modificar y eliminar atributos de un elemento HTML del DOM usando JavaScript simple. También aprendió a agregar, eliminar, activar y sustituir clases de CSS en un elemento y editar estilos de CSS alineados. Para obtener más información, consulte la documentación sobre <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes">atributos</a> en la Mozilla DeveloperNetwork.</p>

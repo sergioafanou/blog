@@ -1,0 +1,355 @@
+---
+layout: post
+title: How To Manage and Use MySQL Database Triggers on Ubuntu 18.04
+network: digitalocean
+date: December 09, 2019 at 07:20PM
+url: https://www.digitalocean.com/community/tutorials/how-to-manage-and-use-mysql-database-triggers-on-ubuntu-18-04
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/organizations/apache-software-foundation">the Apache Software Foundation</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p>In <a href="https://dev.mysql.com/">MySQL</a> a <a href="https://dev.mysql.com/doc/refman/8.0/en/triggers.html">trigger</a> is a user-defined SQL command that is invoked automatically during an <code>INSERT</code>, <code>DELETE</code>, or <code>UPDATE</code> operation. The trigger code is associated with a table and is destroyed once a table is dropped. You can specify a trigger action time and set whether it will be activated before or after the defined database event.</p>
+
+<p>Triggers have several advantages. For instance, you can use them to generate the value of a derived column during an <code>INSERT</code> statement. Another use case is enforcing referential integrity where you can use a trigger to save a record to multiple related tables. Other benefits include logging user actions to audit tables as well as live-copying data across different database schemas for redundancy purposes to prevent a single point of failure.</p>
+
+<p>You can also use triggers to keep validation rules at the database level. This helps in sharing the data source across multiple applications without breaking the business logic. This greatly reduces round-trips to the database server, which therefore improves the response time of your applications. Since the database server executes triggers, they can take advantage of improved server resources such as RAM and CPU.</p>
+
+<p>In this tutorial, you&rsquo;ll create, use, and delete different types of triggers on your MySQL database.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin, make sure you have the following:</p>
+
+<ul>
+<li>One Ubuntu 18.04 server set up by following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup with Ubuntu 18.04</a>, including a sudo non-root user.</li>
+<li>A MySQL database running on your server by following: <a href="https://www.digitalocean.com/community/tutorials/how-to-install-mysql-on-ubuntu-18-04">How To Install MySQL on Ubuntu 18.04</a></li>
+<li>Root user account credentials for your MySQL database.</li>
+</ul>
+
+<h2 id="step-1-—-creating-a-sample-database">Step 1 — Creating a Sample Database</h2>
+
+<p>In this step, you&rsquo;ll create a sample customer database with multiple tables for demonstrating how MySQL triggers work.</p>
+
+<p>To understand more about MySQL queries read our <a href="https://www.digitalocean.com/community/tutorials/introduction-to-queries-mysql">Introduction to Queries in MySQL</a>.</p>
+
+<p>First, log in to your MySQL server as root:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -u root -p
+</li></ul></code></pre>
+<p>Enter your MySQL root password when prompted and hit <code>ENTER</code> to continue. When you see the <code>mysql&gt;</code> prompt, run the following command to create a <code><span class="highlight">test_db</span></code> database:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Create database <span class="highlight">test_db</span>;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 1 row affected (0.00 sec)
+</code></pre>
+<p>Next, switch to the <code>test_db</code> with:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Use <span class="highlight">test_db</span>;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Database changed
+</code></pre>
+<p>You&rsquo;ll start by creating a <code>customers</code> table. This table will hold the customers&rsquo; records including the <code>customer_id</code>, <code>customer_name</code>, and <code>level</code>. There will be two customer levels: <code>BASIC</code> and <code>VIP</code>.</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Create table customers(customer_id BIGINT PRIMARY KEY, customer_name VARCHAR(50), level VARCHAR(50) ) ENGINE=INNODB;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 0 rows affected (0.01 sec)
+</code></pre>
+<p>Now, add a few records to the <code>customers</code> table. To do this, run the following commands one by one:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Insert into customers (customer_id, customer_name, level )values('1','JOHN DOE','BASIC');
+</li><li class="line" prefix="mysql&gt;">Insert into customers (customer_id, customer_name, level )values('2','MARY ROE','BASIC');
+</li><li class="line" prefix="mysql&gt;">Insert into customers (customer_id, customer_name, level )values('3','JOHN DOE','VIP');
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output after running each of the <code>INSERT</code> commands:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 1 row affected (0.01 sec)
+</code></pre>
+<p>To make sure that the sample records were inserted successfully, run the <code>SELECT</code> command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Select * from customers;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+-------------+---------------+-------+
+| customer_id | customer_name | level |
++-------------+---------------+-------+
+|           1 | JOHN DOE      | BASIC |
+|           2 | MARY ROE      | BASIC |
+|           3 | JOHN DOE      | VIP   |
++-------------+---------------+-------+
+3 rows in set (0.00 sec)
+</code></pre>
+<p>You&rsquo;ll also create another table for holding related information about the <code>customers</code> account. The table will have a <code>customer_id</code> and <code>status_notes</code> fields.</p>
+
+<p>Run the following command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Create table <span class="highlight">customer_status</span>(customer_id BIGINT PRIMARY KEY, status_notes VARCHAR(50)) ENGINE=INNODB;
+</li></ul></code></pre>
+<p>Next, you&rsquo;ll create a <code>sales</code> table. This table will hold sales data related to the different customers through the <code>customer_id</code> column:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Create table <span class="highlight">sales</span>(sales_id BIGINT PRIMARY KEY, customer_id BIGINT, sales_amount DOUBLE ) ENGINE=INNODB;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 0 rows affected (0.01 sec)
+</code></pre>
+<p>You&rsquo;ll add sample data to the <code>sales</code> data in the coming steps while testing the triggers. Next, create an <code>audit_log</code> table to log updates made to the <code>sales</code> table when you implement the <code>AFTER UPDATE</code> trigger in Step 5:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Create table <span class="highlight">audit_log</span>(log_id BIGINT PRIMARY KEY AUTO_INCREMENT, sales_id BIGINT, previous_amount DOUBLE, new_amount DOUBLE, updated_by VARCHAR(50), updated_on DATETIME ) ENGINE=INNODB;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 0 rows affected (0.02 sec)
+</code></pre>
+<p>With the  <code><span class="highlight">test_db</span></code> database and the four tables in place, you&rsquo;ll now move on to work with the different MySQL triggers in your database.</p>
+
+<h2 id="step-2-—-creating-a-before-insert-trigger">Step 2 — Creating a Before Insert Trigger</h2>
+
+<p>In this step, you&rsquo;ll examine the syntax of a MySQL trigger before applying this logic to create a <code>BEFORE INSERT</code> trigger that validates the <code>sales_amount</code> field when data is inserted into the <code>sales</code> table.</p>
+
+<p>The general syntax for creating a MySQL trigger is shown in the following example:</p>
+<pre class="code-pre "><code langs="">DELIMITER <span class="highlight">//</span>
+CREATE TRIGGER <span class="highlight">[TRIGGER_NAME]</span>
+<span class="highlight">[TRIGGER TIME]</span> <span class="highlight">[TRIGGER EVENT]</span>
+ON <span class="highlight">[TABLE]</span>
+FOR EACH ROW
+<span class="highlight">[TRIGGER BODY]//</span>
+DELIMITER <span class="highlight">;</span>
+</code></pre>
+<p>The structure of the trigger includes:</p>
+
+<p><code>DELIMITER //</code>: The default MySQL delimiter is <code>;</code>—it&rsquo;s necessary to change it to something else in order for MySQL to treat the following lines as one command until it hits your custom delimiter. In this example, the delimiter is changed to <code>//</code> and then the <code>;</code> delimiter is redefined at the end.</p>
+
+<p><code>[TRIGGER_NAME]</code>: A trigger must have a name and this is where you include the value.</p>
+
+<p><code>[TRIGGER TIME]</code>: A trigger can be invoked during different timings. MySQL allows you to define if the trigger will initiate before or after a database operation.</p>
+
+<p><code>[TRIGGER EVENT]</code>: Triggers are only invoked by <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> operations. You can use any value here depending on what you want to achieve.</p>
+
+<p><code>[TABLE]</code>: Any trigger that you create on your MySQL database must be associated with a table.</p>
+
+<p><code>FOR EACH ROW</code>: This statement tells MySQL to execute the trigger code for every row that the trigger affects.</p>
+
+<p><code>[TRIGGER BODY]</code>: The code that is executed when the trigger is invoked is called a <em>trigger body</em>. This can be a single SQL statement or multiple commands. Note that if you are executing multiple SQL statements on the trigger body, you must wrap them between a <code>BEGIN...END</code> block.</p>
+
+<p><span class='note'><strong>Note:</strong> When creating the trigger body, you can use the <code>OLD</code> and <code>NEW</code> keywords to access the old and new column values entered during an <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> operation. In a <code>DELETE</code> trigger, only the <code>OLD</code> keyword can be used (which you&rsquo;ll use in Step 4).<br></span></p>
+
+<p>Now you&rsquo;ll create your first <code>BEFORE INSERT</code> trigger. This trigger will be associated with the <code>sales</code> table and it will be invoked before a record is inserted to validate the <code>sales_amount</code>. The function of the trigger is to check if the <code>sales_amount</code> being inserted to the sales table is greater than <code>10000</code> and raise an error if this evaluates to true.</p>
+
+<p>Make sure you&rsquo;re logged in to the MySQL server. Then, enter the following MySQL commands one by one:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">DELIMITER //
+</li><li class="line" prefix="mysql&gt;">CREATE TRIGGER validate_sales_amount
+</li><li class="line" prefix="mysql&gt;">BEFORE INSERT
+</li><li class="line" prefix="mysql&gt;">ON sales
+</li><li class="line" prefix="mysql&gt;">FOR EACH ROW
+</li><li class="line" prefix="mysql&gt;">IF NEW.sales_amount&gt;10000 THEN
+</li><li class="line" prefix="mysql&gt;">SIGNAL SQLSTATE '45000'
+</li><li class="line" prefix="mysql&gt;">SET MESSAGE_TEXT = 'Sale has exceeded the allowed amount of 10000.';
+</li><li class="line" prefix="mysql&gt;">END IF//
+</li><li class="line" prefix="mysql&gt;">DELIMITER ;
+</li></ul></code></pre>
+<p>You&rsquo;re using the <code>IF...THEN...END IF</code> statement to evaluate if the amount being supplied during the <code>INSERT</code> statement is within your range. The trigger is able to extract the new <code>sales_amount</code> value being supplied by using the <code>NEW</code> keyword.</p>
+
+<p>To raise a generic error message, you use the following lines to inform the user about the error:</p>
+<pre class="code-pre "><code langs="">SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = <span class="highlight">'Sale has exceeded the allowed amount of 10000.'</span>;
+</code></pre>
+<p>Next, insert a record with a <code>sales_amount</code> of <code>11000</code> to the <code>sales</code> table to check if the trigger will stop the operation:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Insert into sales(sales_id, customer_id, sales_amount) values('1','1','11000');
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ERROR 1644 (45000): Sale has exceeded the allowed amount of 10000.
+</code></pre>
+<p>This error shows that the trigger code is working as expected.</p>
+
+<p>Now try a new record with a value of <code>7500</code> to check if the command will be successful:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Insert into  sales(sales_id, customer_id, sales_amount) values('1','1','7500');
+</li></ul></code></pre>
+<p>Since the value is within the recommended range, you&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 1 row affected (0.01 sec)
+</code></pre>
+<p>To confirm that the data was inserted run the following command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Select * from sales;
+</li></ul></code></pre>
+<p>The output confirms that the data is in the table:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+----------+-------------+--------------+
+| sales_id | customer_id | sales_amount |
++----------+-------------+--------------+
+|        1 |           1 |         7500 |
++----------+-------------+--------------+
+1 row in set (0.00 sec)
+</code></pre>
+<p>In this step you&rsquo;ve tested triggers to validate data before insertion into a database.</p>
+
+<p>Next, you&rsquo;ll work with the <code>AFTER INSERT</code> trigger to save related information into different tables.</p>
+
+<h2 id="step-3-—-creating-an-after-insert-trigger">Step 3 — Creating an After Insert Trigger</h2>
+
+<p><code>AFTER INSERT</code> triggers are executed when records are successfully inserted into a table. This functionality can be used to run other business-related logics automatically. For instance, in a bank application, an <code>AFTER INSERT</code> trigger can close a loan account when a customer finishes paying off the loan. The trigger can monitor all payments inserted to a transaction table and close the loan automatically once the loan balance is zero.</p>
+
+<p>In this step, you&rsquo;ll work with your <code>customer_status</code> table by using an <code>AFTER INSERT</code> trigger to enter related customer records.</p>
+
+<p>To create the <code>AFTER INSERT</code> trigger, enter the following commands:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">DELIMITER //
+</li><li class="line" prefix="mysql&gt;">CREATE TRIGGER customer_status_records
+</li><li class="line" prefix="mysql&gt;">AFTER INSERT
+</li><li class="line" prefix="mysql&gt;">ON customers
+</li><li class="line" prefix="mysql&gt;">FOR EACH ROW
+</li><li class="line" prefix="mysql&gt;">Insert into customer_status(customer_id, status_notes) VALUES(NEW.customer_id, 'ACCOUNT OPENED SUCCESSFULLY')//
+</li><li class="line" prefix="mysql&gt;">DELIMITER ;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 0 rows affected (0.00 sec)
+</code></pre>
+<p>Here you instruct MySQL to save another record to the <code>customer_status</code> table once a new customer record is inserted to the <code>customers</code> table.</p>
+
+<p>Now, insert a new record in the <code>customers</code> table to confirm your trigger code will be invoked:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Insert into customers (customer_id, customer_name, level )values('4','DAVID DOE','VIP');
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 1 row affected (0.01 sec)
+</code></pre>
+<p>Since the record was inserted successfully, check that a new status record was inserted into the <code>customer_status</code> table:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Select * from customer_status;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+-------------+-----------------------------+
+| customer_id | status_notes                |
++-------------+-----------------------------+
+|           4 | ACCOUNT OPENED SUCCESSFULLY |
++-------------+-----------------------------+
+1 row in set (0.00 sec)
+</code></pre>
+<p>The output confirms that the trigger ran successfully.</p>
+
+<p>The <code>AFTER INSERT</code> trigger is useful in monitoring the lifecycle of a customer. In a production environment, customers&rsquo; accounts may undergo different stages such as account opening, suspension, and closing.</p>
+
+<p>In the following steps you&rsquo;ll work with <code>UPDATE</code> triggers.</p>
+
+<h2 id="step-4-—-creating-a-before-update-trigger">Step 4 — Creating a Before Update Trigger</h2>
+
+<p>A <code>BEFORE UPDATE</code> trigger is similar to the <code>BEFORE INSERT</code> trigger—the difference is when they are invoked. You can use the <code>BEFORE UPDATE</code> trigger to check a business logic before a record is updated. To test this, you&rsquo;ll use the <code>customers</code> table in which you&rsquo;ve inserted some data already.</p>
+
+<p>You have two levels for your customers in the database. In this example, once a customer account is upgraded to the <code>VIP</code> level, the account can not be downgraded to the <code>BASIC</code> level. To enforce such a rule, you will create a <code>BEFORE UPDATE</code> trigger that will execute before the <code>UPDATE</code> statement as shown following. If a database user tries to downgrade a customer to the <code>BASIC</code> level from the <code>VIP</code> level, a user-defined exception will be triggered.</p>
+
+<p>Enter the following SQL commands one by one to create the <code>BEFORE UPDATE</code> trigger:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">DELIMITER //
+</li><li class="line" prefix="mysql&gt;">CREATE TRIGGER validate_customer_level
+</li><li class="line" prefix="mysql&gt;">BEFORE UPDATE
+</li><li class="line" prefix="mysql&gt;">ON customers
+</li><li class="line" prefix="mysql&gt;">FOR EACH ROW
+</li><li class="line" prefix="mysql&gt;">IF OLD.level='VIP' THEN
+</li><li class="line" prefix="mysql&gt;">SIGNAL SQLSTATE '45000'
+</li><li class="line" prefix="mysql&gt;">SET MESSAGE_TEXT = 'A VIP customer can not be downgraded.';
+</li><li class="line" prefix="mysql&gt;">END IF //
+</li><li class="line" prefix="mysql&gt;">DELIMITER ;
+</li></ul></code></pre>
+<p>You use the <code>OLD</code> keyword to capture the level that the user is supplying when running the <code>UPDATE</code> command. Again, you use the <code>IF...THEN...END IF</code> statement to signal a generic error statement to the user.</p>
+
+<p>Next, run the following SQL command that tries to downgrade a customer account associated with the <code>customer_id</code> of <code>3</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Update customers set level='BASIC' where customer_id='3';
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output providing the <code>SET MESSAGE_TEXT</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ERROR 1644 (45000): A VIP customer can not be downgraded.
+</code></pre>
+<p>If you run the same command to a <code>BASIC</code> level customer, and try to upgrade the account to the <code>VIP</code> level, the command will execute successfully:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Update customers set level='VIP' where customer_id='1';
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Rows matched: 1  Changed: 1  Warnings: 0
+</code></pre>
+<p>You&rsquo;ve used the <code>BEFORE UPDATE</code> trigger to enforce a business rule. Now you&rsquo;ll move on to use an <code>AFTER UPDATE</code> trigger for audit logging.</p>
+
+<h2 id="step-5-—-creating-an-after-update-trigger">Step 5 — Creating an After Update Trigger</h2>
+
+<p>An <code>AFTER UPDATE</code> trigger is invoked once a database record is updated successfully. This behavior makes the trigger suitable for audit logging. In a multi-user environment, the administrator may want to view a history of users updating records in a particular table for audit purposes.</p>
+
+<p>You&rsquo;ll create a trigger that logs the update activity of the <code>sales</code> table. Our <code>audit_log</code> table will contain information about the MySQL users updating the <code>sales</code> table, the <code>date</code> of the update, and the <code>new</code> and <code>old</code> <code>sales_amount</code> values.</p>
+
+<p>To create the trigger, run the following SQL commands:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">DELIMITER //
+</li><li class="line" prefix="mysql&gt;">CREATE TRIGGER log_sales_updates
+</li><li class="line" prefix="mysql&gt;">AFTER UPDATE
+</li><li class="line" prefix="mysql&gt;">ON sales
+</li><li class="line" prefix="mysql&gt;">FOR EACH ROW
+</li><li class="line" prefix="mysql&gt;">Insert into audit_log(sales_id, previous_amount, new_amount, updated_by, updated_on) VALUES (NEW.sales_id,OLD.sales_amount, NEW.sales_amount,(SELECT USER()), NOW() )//
+</li><li class="line" prefix="mysql&gt;">DELIMITER ;
+</li></ul></code></pre>
+<p>You insert a new record to the <code>audit_log</code> table. You use the <code>NEW</code> keyword to retrieve the value of the <code>sales_id</code> and the new <code>sales_amount</code>. Also, you use the <code>OLD</code> keyword to retrieve the previous <code>sales_amount</code> since you want to log both amounts for audit purposes.</p>
+
+<p>The command <code>SELECT USER()</code> retrieves the current user performing the operation and the <code>NOW()</code> statement retrieves the value of the current date and time from the MySQL server.</p>
+
+<p>Now if a user tries to update the value of any record in the <code>sales</code> table, the <code>log_sales_updates</code> trigger will insert a new record to the <code>audit_log</code> table.</p>
+
+<p>Let&rsquo;s create a new sales record with a random <code>sales_id</code> of <code>5</code> and try to update it. First, insert the sales record with:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Insert into sales(sales_id, customer_id, sales_amount) values('5', '2','8000');
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 1 row affected (0.00 sec)
+</code></pre>
+<p>Next, update the record:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Update sales set sales_amount='9000' where sales_id='5';
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Rows matched: 1  Changed: 1  Warnings: 0
+</code></pre>
+<p>Now run the following command to verify if the <code>AFTER UPDATE</code> trigger was able to register a new record into the <code>audit_log</code> table:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Select * from audit_log;
+</li></ul></code></pre>
+<p>The trigger logged the update. Your output shows the previous <code>sales_amount</code> and <code>new amount</code> registered with the user that updated the records:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+--------+----------+-----------------+------------+----------------+---------------------+
+| log_id | sales_id | previous_amount | new_amount | updated_by     | updated_on          |
++--------+----------+-----------------+------------+----------------+---------------------+
+|      1 |        5 |            8000 |       9000 | root@localhost | 2019-11-07 09:28:36 |
++--------+----------+-----------------+------------+----------------+---------------------+
+1 row in set (0.00 sec)
+</code></pre>
+<p>You also have the date and time the update was performed, which are valuable for audit purposes.</p>
+
+<p>Next you&rsquo;ll use the <code>DELETE</code> trigger to enforce referencing integrity at the database level.</p>
+
+<h2 id="step-6-—-creating-a-before-delete-trigger">Step 6 — Creating a Before Delete Trigger</h2>
+
+<p><code>BEFORE DELETE</code> triggers invoke before a <code>DELETE</code> statement executes on a table. These kinds of triggers are normally used to enforce referential integrity on different related tables. For example, each record on the <code>sales</code> table relates to a <code>customer_id</code> from the <code>customers</code> table. If a database user deleted a record from the <code>customers</code> table that has a related record in the <code>sales</code> table, you would have no way of knowing the customer associated with that record.</p>
+
+<p>To avoid this, you can create a <code>BEFORE DELETE</code> trigger to enforce your logic. Run the following SQL commands one by one:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">DELIMITER //
+</li><li class="line" prefix="mysql&gt;">CREATE TRIGGER validate_related_records
+</li><li class="line" prefix="mysql&gt;">BEFORE DELETE
+</li><li class="line" prefix="mysql&gt;">ON customers
+</li><li class="line" prefix="mysql&gt;">FOR EACH ROW
+</li><li class="line" prefix="mysql&gt;">IF OLD.customer_id in (select customer_id from sales) THEN
+</li><li class="line" prefix="mysql&gt;">SIGNAL SQLSTATE '45000'
+</li><li class="line" prefix="mysql&gt;">SET MESSAGE_TEXT = 'The customer has a related sales record.';
+</li><li class="line" prefix="mysql&gt;">END IF//
+</li><li class="line" prefix="mysql&gt;">DELIMITER ;
+</li></ul></code></pre>
+<p>Now, try to delete a customer that has a related sales record:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Delete from customers where customer_id='2';
+</li></ul></code></pre>
+<p>As a result you&rsquo;ll receive the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ERROR 1644 (45000): The customer has a related sales record.
+</code></pre>
+<p>The <code>BEFORE DELETE</code> trigger can prevent accidental deletion of related information in a database.</p>
+
+<p>However, in some situations, you may want to delete all the records associated with a particular record from the different related tables. In this situation you would use the <code>AFTER DELETE</code> trigger, which you&rsquo;ll test in the next step.</p>
+
+<h2 id="step-7-—-creating-an-after-delete-trigger">Step 7 — Creating an After Delete Trigger</h2>
+
+<p><code>AFTER DELETE</code> triggers are activated once a record has been deleted successfully. An example of how you can use an <code>AFTER DELETE</code> trigger is a situation in which the discount level a particular customer receives is determined by the number of sales made during a defined period. If some of the customer&rsquo;s records are deleted from the <code>sales</code> table, the customer discount level would need to be downgraded.</p>
+
+<p>Another use of the <code>AFTER DELETE</code> trigger is deleting related information from another table once a record from a base table is deleted. For instance, you&rsquo;ll set a trigger that deletes the customer record if the sales records with the related <code>customer_id</code> are deleted from the <code>sales</code> table. Run the following command to create your trigger:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">DELIMITER //
+</li><li class="line" prefix="mysql&gt;">CREATE TRIGGER delete_related_info
+</li><li class="line" prefix="mysql&gt;">AFTER DELETE
+</li><li class="line" prefix="mysql&gt;">ON sales
+</li><li class="line" prefix="mysql&gt;">FOR EACH ROW
+</li><li class="line" prefix="mysql&gt;">Delete from customers where customer_id=OLD.customer_id;//
+</li><li class="line" prefix="mysql&gt;">DELIMITER ;
+</li></ul></code></pre>
+<p>Next, run the following to delete all sales records associated with a <code>customer_id</code> of <code>2</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Delete from sales where customer_id='2';
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 1 row affected (0.00 sec)
+</code></pre>
+<p>Now check if there are records for the customer from the <code>sales</code> table:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Select * from customers where customer_id='2';
+</li></ul></code></pre>
+<p>You will receive an <code>Empty Set</code> output since the customer record associated with the <code>customer_id</code> of <code>2</code> was deleted by the trigger:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Empty set (0.00 sec)
+</code></pre>
+<p>You&rsquo;ve now used each of the different forms of triggers to perform specific functions. Next you will see how you can remove a trigger from the database if you no longer need it.</p>
+
+<h2 id="step-8-—-deleting-triggers">Step 8 — Deleting Triggers</h2>
+
+<p>Similarly to any other database object, you can delete triggers using the <code>DROP</code> command. The following is the syntax for deleting a trigger:</p>
+<pre class="code-pre "><code langs="">Drop trigger <span class="highlight">[TRIGGER NAME]</span>;
+</code></pre>
+<p>For instance, to delete the last <code>AFTER DELETE</code> trigger that you created, run the following command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">Drop trigger delete_related_info;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Query OK, 0 rows affected (0.00 sec)
+</code></pre>
+<p>The need to delete triggers arises when you want to recreate its structure. In such a case, you can drop the trigger and redefine a new one with the different trigger commands.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this tutorial you&rsquo;ve created, used, and deleted the different kinds of triggers from a MySQL database. Using an example customer-related database you&rsquo;ve implemented triggers for different use cases such as data validation, business-logic application, audit logging, and enforcing referential integrity.</p>
+
+<p>For further information on using your <a href="https://www.digitalocean.com/community/tags/mysql/tutorials">MySQL database</a>, check out the following:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-optimize-mysql-with-query-cache-on-ubuntu-18-04">How To Optimize MySQL with Query Cache on Ubuntu 18.04</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-implement-pagination-in-mysql-with-php-on-ubuntu-18-04">How To Implement Pagination in MySQL with PHP on Ubuntu 18.04</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorial_series/how-to-troubleshoot-issues-in-mysql">How To Troubleshoot Issues in MySQL</a></li>
+</ul>

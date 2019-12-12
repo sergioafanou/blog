@@ -1,0 +1,168 @@
+---
+layout: post
+title: Como instalar o Nginx no Ubuntu 18.04 [Início rápido]
+network: digitalocean
+date: December 12, 2019 at 07:52PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04-quickstart-pt
+image: https://assets.digitalocean.com/articles/nginx_1604/default_page.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O Nginx é um dos servidores Web mais populares no mundo e é responsável por hospedar alguns dos sites de maior tráfego na Internet. Ele é mais amigável do que o Apache em termos de recursos na maioria dos casos e pode ser usado como um servidor Web ou como proxy reverso.</p>
+
+<p>Neste guia, explicamos como instalar o Nginx no seu servidor Ubuntu 18.04. Para uma versão mais detalhada deste tutorial, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">Como Instalar o Nginx no Ubuntu 18.04</a>.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Antes de iniciar este guia, você deve ter o seguinte:</p>
+
+<ul>
+<li>Um servidor Ubuntu 18.04 e um usuário regular não-root com privilégios sudo. Além disso, você precisará habilitar um firewall básico para bloquear portas não essenciais. Você pode aprender como configurar uma conta de usuário comum e configurar um firewall seguindo nosso <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guia de configuração inicial de servidor para o Ubuntu 18.04</a>.</li>
+</ul>
+
+<p>Quando tiver uma conta disponível, logue com seu usuário não raiz para começar.</p>
+
+<h2 id="passo-1-como-instalar-o-nginx">Passo 1 - Como instalar o Nginx</h2>
+
+<p>Uma vez que o Nginx está disponível nos repositórios padrão do Ubuntu, instale ele utilizando o sistema de empacotamento <code>apt</code>.</p>
+
+<p>Atualize seu índice de pacotes local:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Instale o Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install nginx
+</li></ul></code></pre>
+<h2 id="passo-2-—-como-ajustar-o-firewall">Passo 2 — Como ajustar o Firewall</h2>
+
+<p>Se seguiu o tutorial pré-requisito de configuração do servidor, então você tem o firewall UFW ativado. Verifique os perfis de aplicativo <code>ufw</code> disponíveis com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw app list
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Available applications:
+  Nginx Full
+  Nginx HTTP
+  Nginx HTTPS
+  OpenSSH
+</code></pre>
+<p>Vamos habilitar o perfil mais restritivo que ainda permitirá o tráfego que você configurou, permitindo o tráfego na porta <code>80</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Nginx HTTP'
+</li></ul></code></pre>
+<p>Verifique a mudança:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+Nginx HTTP                 ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)             
+Nginx HTTP (v6)            ALLOW       Anywhere (v6)
+</code></pre>
+<h2 id="passo-3-—-como-verificar-seu-servidor-web">Passo 3 — Como verificar seu Servidor Web</h2>
+
+<p>Verifique com o sistema init <code>systemd</code> para garantir que o serviço esteja funcionando digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">systemctl status nginx
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● nginx.service - A high performance web server and a reverse proxy server
+   Loaded: loaded (/lib/systemd/system/nginx.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Fri 2018-04-20 16:08:19 UTC; 3 days ago
+     Docs: man:nginx(8)
+ Main PID: 2369 (nginx)
+    Tasks: 2 (limit: 1153)
+   CGroup: /system.slice/nginx.service
+           ├─2369 nginx: master process /usr/sbin/nginx -g daemon on; master_process on;
+           └─2380 nginx: worker process
+</code></pre>
+<p>Acesse a página inicial padrão do Nginx para confirmar que o software está funcionando corretamente através do seu endereço IP:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>
+</code></pre>
+<p>Você deve ver a página inicial padrão do Nginx:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_1604/default_page.png" alt="Nginx default page"></p>
+
+<h2 id="passo-4-—-como-configurar-os-blocos-de-servidor-recomendado">Passo 4 — Como configurar os blocos de servidor (recomendado)</h2>
+
+<p>Ao usar o servidor Web Apache, é possível usar os <em>server blocks</em> (similares aos hosts virtuais no Apache) para encapsular detalhes de configuração e hospedar mais de um domínio de um único servidor. Vamos configurar um domínio chamado <strong>example.com</strong>, mas você deve <strong>substituí-lo por seu próprio nome de domínio</strong>. Para aprender mais sobre configuração de um nome de domínio com o DigitalOcean, veja nossa <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">introdução ao DNS DigitalOcean</a>.</p>
+
+<p>Crie o diretório para <code><span class="highlight">example.com</span></code>, usando a flag <code>-p</code> para criar quaisquer diretórios parentais necessários:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -p /var/www/<span class="highlight">example.com</span>/html
+</li></ul></code></pre>
+<p>Atribua a posse do diretório:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R $USER:$USER /var/www/<span class="highlight">example.com</span>/html
+</li></ul></code></pre>
+<p>As permissões das suas raízes Web devem estar corretas se ainda não tiver modificado seu valor <code>umask</code>, mas você pode certificar-se digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod -R 755 /var/www/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Crie uma página de amostra <code>index.html</code> utilizando o <code>nano</code> ou seu editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/<span class="highlight">example.com</span>/html/index.html
+</li></ul></code></pre>
+<p>Dentro, adicione a seguinte amostra HTML:</p>
+<div class="code-label " title="/var/www/example.com/html/index.html">/var/www/example.com/html/index.html</div><pre class="code-pre "><code langs="">&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;Welcome to <span class="highlight">Example.com</span>!&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;h1&gt;Success!  The <span class="highlight">example.com</span> server block is working!&lt;/h1&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Salve e feche o arquivo quando terminar.</p>
+
+<p>Faça um novo bloco de servidor em <code>/etc/nginx/sites-available/<span class="highlight">example.com</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Cole no seguinte bloco de configuração, atualizado para nosso novo diretório e nome de domínio:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code langs="">server {
+        listen 80;
+        listen [::]:80;
+
+        root /var/www/<span class="highlight">example.com</span>/html;
+        index index.html index.htm index.nginx-debian.html;
+
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        location / {
+                try_files $uri $uri/ =404;
+        }
+}
+</code></pre>
+<p>Salve e feche o arquivo quando terminar.</p>
+
+<p>Habilite o arquivo criando um link dele para o diretório <code>sites-enabled</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">example.com</span> /etc/nginx/sites-enabled/
+</li></ul></code></pre>
+<p>Agora, dois blocos de servidor estão habilitados e configurados para responder a pedidos baseados nas diretrizes <code>listen</code> e <code>server_name</code>:</p>
+
+<ul>
+<li><code>example.com</code>: Responderá aos pedidos para <code>example.com</code> e <code>www.example.com</code>.</li>
+<li><code>default</code>: Responderá a quaisquer pedidos na porta <code>80</code> que não correspondam aos outros dois blocos.</li>
+</ul>
+
+<p>Para evitar um possível problema de memória de hash que possa surgir ao adicionar nomes adicionais de servidor, é necessário ajustar um valor único no arquivo <code>/etc/nginx/nginx.conf</code>. Abra o arquivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/nginx.conf
+</li></ul></code></pre>
+<p>Encontre a diretriz <code>server_names_hash_bucket_size</code> e remova o símbolo <code>#</code> para remover a marca de comentário da linha:</p>
+<div class="code-label " title="/etc/nginx/nginx.conf">/etc/nginx/nginx.conf</div><pre class="code-pre "><code langs="">...
+http {
+    ...
+    server_names_hash_bucket_size 64;
+    ...
+}
+...
+</code></pre>
+<p>Teste para conferir se há erros de sintaxe:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Reinicie o Nginx para habilitar suas alterações:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>O Nginx agora deve estar atendendo seu nome de domínio. É possível testar isso ao navegar para <code>http://<span class="highlight">example.com</span></code>, onde você deve ver algo parecido com isso:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_server_block_1404/first_block.png" alt="Nginx first server block"></p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora que tem seu servidor Web instalado, você tem muitas opções para o tipo de conteúdo a oferecer e as tecnologias que quiser usar para criar uma experiência mais rica.</p>
+
+<p>Se quiser construir uma pilha de aplicativo mais completa, verifique este artigo sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-nginx-mysql-php-lemp-stack-ubuntu-18-04">como configurar uma pilha LEMP no Ubuntu 18.04</a>.</p>

@@ -1,0 +1,322 @@
+---
+layout: post
+title: Como-instalar-e-configurar-o-Gitlab-no-Ubuntu-18-04.md
+network: digitalocean
+date: December 12, 2019 at 07:39PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-gitlab-on-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/gitlab_install_1604/gitlab_initial_password2.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p><a href="https://gitlab.com/gitlab-org/gitlab-ce">O GitLab CE</a> ou Community Edition é um aplicativo de código aberto usado principalmente para hospedar repositórios Git, que possui recursos adicionais relacionados ao desenvolvimento como o rastreamento de problemas. Ele foi desenvolvido para ser hospedado usando infraestrutura própria, fornecendo flexibilidade na implantação como uma loja interna de repositórios para a sua equipe de desenvolvimento. Trata-se de uma maneira de interagir com os usuários ou um meio para que colaboradores hospedem seus respectivos projetos.</p>
+
+<p>O projeto GitLab torna relativamente simples a configuração de uma instância do GitLab no seu próprio hardware a partir de um processo de instalação fácil. Neste guia, falaremos sobre como instalar e configurar o GitLab em um servidor Ubuntu 18.04.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para este tutorial, você precisará de:</p>
+
+<ul>
+<li>Um servidor Ubuntu 18.04 com um usuário não raiz do comando sudo e um firewall básico. Para configurar esses detalhes, siga nosso <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Guia de configuração inicial do servidor Ubuntu 18.04</a>.</li>
+</ul>
+
+<p>Os <a href="http://docs.gitlab.com/ce/install/requirements.html#hardware-requirements">requisitos de hardware do GitLab</a> recomendam o uso de um servidor que tenha:</p>
+
+<ul>
+<li>2 núcleos</li>
+<li>8 GB de memória RAM</li>
+</ul>
+
+<p>É possível ignorar esse requisito substituindo algum espaço de swap por memória RAM, mas não recomendamos que faça isso. Para este guia, supomos que você tenha ao menos os recursos mínimos acima.</p>
+
+<ul>
+<li>Um nome de domínio apontando para seu servidor. Para saber mais, consulte nossa documentação sobre como <a href="https://www.digitalocean.com/docs/networking/dns/quickstart/">dar os primeiros passos com DNS na DigitalOcean</a>. Este tutorial usará o nome de domínio <strong>example.com</strong>.</li>
+</ul>
+
+<h2 id="passo-1-—-como-instalar-as-dependências">Passo 1 — Como instalar as dependências</h2>
+
+<p>Antes de instalar o GitLab propriamente dito, é importante instalar alguns dos software que ele utiliza durante a instalação e em base contínua. Todos os software necessários poderão ser instalados a partir dos repositórios do pacote padrão do Ubuntu.</p>
+
+<p>Como esta será a primeira vez que você usará o <code>apt</code> na sessão, podemos atualizar o índice de pacotes local e, em seguida, instalar as dependências, digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install ca-certificates curl openssh-server postfix
+</li></ul></code></pre>
+<p>É provável que você já tenha alguns dos software instalados. Para a instalação <code>postfix</code>, selecione *<em>Internet Site *</em>quando solicitado. Na tela seguinte, digite o nome de domínio do seu servidor e configure o modo como o sistema enviará e-mails.</p>
+
+<h2 id="passo-2-—-como-instalar-o-gitlab">Passo 2 — Como instalar o GitLab</h2>
+
+<p>Agora que as dependências estão instaladas, podemos instalar o GitLab. Este é um processo simples que se utiliza de um script de instalação para configurar seu sistema com os repositórios do GitLab.</p>
+
+<p>Vá para o diretório <code>/tmp</code> e, em seguida, faça o download do script de instalação:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li><li class="line" prefix="$">curl -LO https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.deb.sh
+</li></ul></code></pre>
+<p>Fique à vontade para avaliar o script baixado para garantir que se sinta seguro quanto as ações que o script realizará. Também é possível encontrar uma versão hospedada do script <a href="https://packages.gitlab.com/gitlab/gitlab-ce/install">aqui</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">less /tmp/script.deb.sh
+</li></ul></code></pre>
+<p>Se estiver satisfeito com a segurança do script, execute o instalador.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo bash /tmp/script.deb.sh
+</li></ul></code></pre>
+<p>O script irá configurar o seu servidor para usar os repositórios mantidos pelo GitLab. Isso permitirá que você gerencie o GitLab com as mesmas ferramentas de gerenciamento de pacotes que você usa com outros pacotes do seu sistema. Quando o processo estiver finalizado, instale o aplicativo GitLab com o comando <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install gitlab-ce
+</li></ul></code></pre>
+<p>Isso instalará os componentes necessários no sistema.</p>
+
+<h2 id="passo-3-—-ajustando-as-regras-do-firewall">Passo 3 — Ajustando as regras do Firewall</h2>
+
+<p>Antes de configurar o GitLab, será necessário conferir suas regras de firewall, de modo que estas permitam o tráfego da Web. Se você seguiu o guia presente nos pré-requisitos, você terá um firewall <code>ufw</code> habilitado.</p>
+
+<p>Para ver o status atual do firewall ativo, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)
+</code></pre>
+<p>Como é possível ver, as regras atuais permitem o tráfego SSH, mas o acesso a outros serviços se encontra restrito. O GitLab é um aplicativo da Web e, por isso, devemos habilitar o acesso HTTP. Como iremos aproveitar a capacidade do GitLab de solicitar e habilitar um certificado TLS/SSL gratuito a partir de <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a>, também iremos permitir o acesso HTTPS.</p>
+
+<p>O protocolo de mapeamentos de portas para HTTP e HTTPS está disponível no arquivo <code>/etc/services</code>. Desse modo, permitimos o tráfego pelo nome. Se você ainda não tiver o tráfego OpenSSH habilitado, você também deve permitir esse tráfego agora:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow http
+</li><li class="line" prefix="$">sudo ufw allow https
+</li><li class="line" prefix="$">sudo ufw allow OpenSSH
+</li></ul></code></pre>
+<p>Confira o <code>ufw status</code> novamente. Você verá o serviço configurado para pelo menos estes dois serviços:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+80/tcp                     ALLOW       Anywhere                  
+443/tcp                    ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)             
+80/tcp (v6)                ALLOW       Anywhere (v6)             
+443/tcp (v6)               ALLOW       Anywhere (v6)
+</code></pre>
+<p>O resultado acima indica que a interface da Web do GitLab ficará acessível assim que configurarmos o aplicativo.</p>
+
+<h2 id="passo-4-—-editanto-o-arquivo-de-configuração-do-gitlab">Passo 4 — Editanto o arquivo de configuração do GitLab</h2>
+
+<p>Antes de usar o aplicativo, será necessário atualizar o arquivo de configuração e executar um comando de reconfiguração. Primeiramente, abra o arquivo de configuração do GitLab:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/gitlab/gitlab.rb
+</li></ul></code></pre>
+<p>Na parte superior podemos ver a linha de configuração <code>external_url</code>. Atualize o arquivo para que ele corresponda ao seu domínio. Altere <code>http</code> para <code>https</code>. Assim, o GitLab redirecionará os usuários para o site protegido pelo certificado Let&rsquo;s Encrypt:</p>
+<div class="code-label " title="/etc/gitlab/gitlab.rb">/etc/gitlab/gitlab.rb</div><pre class="code-pre "><code langs="">##! For more details on configuring external_url see:
+##! https://docs.gitlab.com/omnibus/settings/configuration.html#configuring-the-external-url-for-gitlab
+external_url 'http<span class="highlight">s</span>://<span class="highlight">example.com</span>'
+</code></pre>
+<p>Depois, encontre a configuração <code>letsencrypt['contact_emails']</code>. Esta configuração define uma lista de endereços de e-mail que o projeto Let&rsquo;s Encrypt usará para contatar você caso haja algum problema com o domínio. É recomendável remover o comentário e colocar seu e-mail para que você fique sabendo de quaisquer problemas:</p>
+<div class="code-label " title="/etc/gitlab/gitlab.rb">/etc/gitlab/gitlab.rb</div><pre class="code-pre "><code langs="">letsencrypt['contact_emails'] = ['<span class="highlight">sammy@example.com</span>']
+</code></pre>
+<p>Salve e feche o arquivo. Execute o comando a seguir para reconfigurar o Gitlab:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo gitlab-ctl reconfigure
+</li></ul></code></pre>
+<p>Fazer isso inicializará o GitLab usando a informação do seu servidor. Trata-se de um processo completamente automatizado. Não será necessário responder a nenhum prompt durante o processo. O processo também configurará um certificado Let&rsquo;s Encrypt para o domínio.</p>
+
+<h2 id="passo-5-—-realizando-a-configuração-inicial-através-da-interface-da-web">Passo 5 — Realizando a configuração inicial através da Interface da Web</h2>
+
+<p>Com o GitLab em execução e p acesso concedido, podemos realizar algumas configurações iniciais do aplicativo através da interface da Web.</p>
+
+<h3 id="fazendo-login-pela-primeira-vez">Fazendo login pela primeira vez</h3>
+
+<p>Visite o nome de domínio do seu servidor GitLab no seu navegador da Web.</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">example.com</span>
+</code></pre>
+<p>Na primeira visita, você verá um prompt inicial para definir uma senha para a conta administrativa:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/gitlab_initial_password2.png" alt="GitLab initial password set prompt"></p>
+
+<p>No prompt de senha inicial, forneça e confirme uma senha segura para a conta administrativa. Clique no botão <strong>Change your password</strong> quando tiver terminado.</p>
+
+<p>Você será redirecionado para a página padrão de login do GitLab:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/gitlab_first_signin2.png" alt="GitLab first sign in prompt"></p>
+
+<p>Aqui, é possível fazer login com a senha que você definiu. As credenciais são:</p>
+
+<ul>
+<li>Nome de usuário: <strong>root</strong></li>
+<li>Senha: [a senha que você definiu]</li>
+</ul>
+
+<p>Digite esses dados nos campos em relação aos usuários existentes e clique no botão <strong>Sign in</strong> Você agora estará logado no aplicativo e será direcionado até a página de destino, onde será solicitado que você adicione projetos:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/landing_page2.png" alt="GitLab initial login landing page"></p>
+
+<p>Agora é possível fazer algumas alterações simples para deixar o GitLab do jeito que você quiser.</p>
+
+<h3 id="ajustando-as-configurações-do-seu-perfil">Ajustando as configurações do seu perfil</h3>
+
+<p>Uma das primeiras coisas a fazer após uma instalação nova é melhorar seu perfil. O GitLab possui alguns padrões razoáveis, mas que não são geralmente apropriados para quando você começar a usar o software.</p>
+
+<p>Para fazer as modificações necessárias, clique no ícone de usuário, no canto superior direito da interface. No menu suspenso, selecione <strong>Configurações</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/profile_settings_button2.png" alt="GitLab profile settings button"></p>
+
+<p>Você será levado à seção do <strong>Perfil</strong> de suas configurações:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/profile_settings2.png" alt="GitLab profile settings page"></p>
+
+<p>Ajuste o <strong>Name</strong> e endereço de <strong>E-mail</strong> do &ldquo;Administrador&rdquo; e &ldquo;<a href="mailto:admin@example.com">admin@example.com</a>&rdquo; para algo mais preciso. O nome que você selecionar será exibido para os outros usuários, enquanto o e-mail será usado como padrão para a detecção de avatar, notificações, ações Git através da interface, etc.</p>
+
+<p>Clique no botão <strong>Atualizar</strong> configurações de perfil, na parte inferior, quando tiver terminado:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/update_profile_settings_button2.png" alt="GitLab update profile settings button"></p>
+
+<p>Um e-mail de confirmação será enviado para o endereço que você forneceu. Siga as instruções no e-mail para confirmar sua conta para poder começar a usá-la com o GitLab.</p>
+
+<h3 id="alterando-seu-nome-de-conta">Alterando seu nome de conta</h3>
+
+<p>Em seguida, clique no item <strong>Conta</strong> na barra de menu do lado esquerdo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/account_menu_item2.png" alt="GitLab account menu item​​​"></p>
+
+<p>Aqui, você pode encontrar seu token pessoal da API ou configurar a autenticação de dois fatores. Entretanto, a funcionalidade em que estamos interessados no momento é a seção <strong>Alterar nome de usuário</strong>.</p>
+
+<p>Por padrão, a primeira conta administrativa recebe o nome de <strong>root</strong>. Como se trata de um nome de conta conhecido, é mais seguro mudar para um nome diferente. Você ainda terá privilégios administrativos; a única coisa que mudará é o nome. Substitua *<em>root *</em>com seu nome de usuário preferido:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/change_username2.png" alt="GitLab change username section"></p>
+
+<p>Clique no botão <strong>Atualizar nome de usuário</strong> para fazer a alteração:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/update_username_button2.png" alt="GitLab update username button"></p>
+
+<p>Da próxima vez que fizer login no Gitlab, lembre-se de utilizar seu novo nome de usuário.</p>
+
+<h3 id="como-adicionar-uma-chave-ssh-à-sua-conta">Como adicionar uma chave SSH à sua conta</h3>
+
+<p>Na maioria dos casos, você irá querer utilizar as chaves SSH com Git para interagir com seus projetos do GitLab. Para isso, será necessário adicionar sua chave pública SSH à sua conta do GitLab.</p>
+
+<p>Se já tiver um par de chaves SSH criado no seu <strong>computador local</strong>, normalmente é possível visualizar a chave pública digitando:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat ~/.ssh/id_rsa.pub
+</li></ul></code></pre>
+<p>Você verá um texto grande, como este:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDMuyMtMl6aWwqBCvQx7YXvZd7bCFVDsyln3yh5/8Pu23LW88VXfJgsBvhZZ9W0rPBGYyzE/TDzwwITvVQcKrwQrvQlYxTVbqZQDlmsC41HnwDfGFXg+QouZemQ2YgMeHfBzy+w26/gg480nC2PPNd0OG79+e7gFVrTL79JA/MyePBugvYqOAbl30h7M1a7EHP3IV5DQUQg4YUq49v4d3AvM0aia4EUowJs0P/j83nsZt8yiE2JEYR03kDgT/qziPK7LnVFqpFDSPC3MR3b8B354E9Af4C/JHgvglv2tsxOyvKupyZonbyr68CqSorO2rAwY/jWFEiArIaVuDiR9YM5 sammy@mydesktop
+</code></pre>
+<p>Copie este texto e volte para a página de Configuração do perfil na interface Web do GitLab.</p>
+
+<p>Se, em vez disso, você receber uma mensagem parecida com esta, isto significa que você ainda não possui um par de chaves SSH configurado em sua máquina:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>cat: /home/sammy/.ssh/id_rsa.pub: No such file or directory
+</code></pre>
+<p>Se for este o caso, você pode criar um par de chaves SSH digitando:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh-keygen
+</li></ul></code></pre>
+<p>Aceite os padrões e, se desejar, forneça uma senha para proteger a chave localmente:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Generating public/private rsa key pair.
+Enter file in which to save the key (/home/sammy/.ssh/id_rsa):
+Enter passphrase (empty for no passphrase):
+Enter same passphrase again:
+Your identification has been saved in /home/sammy/.ssh/id_rsa.
+Your public key has been saved in /home/sammy/.ssh/id_rsa.pub.
+The key fingerprint is:
+SHA256:I8v5/M5xOicZRZq/XRcSBNxTQV2BZszjlWaIHi5chc0 sammy@gitlab.docsthat.work
+The key's randomart image is:
++---[RSA 2048]----+
+|          ..%o==B|
+|           *.E =.|
+|        . ++= B  |
+|         ooo.o . |
+|      . S .o  . .|
+|     . + .. .   o|
+|      +   .o.o ..|
+|       o .++o .  |
+|        oo=+     |
++----[SHA256]-----+
+</code></pre>
+<p>Uma vez que a tiver, você pode mostrar sua chave pública como acima digitando:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat ~/.ssh/id_rsa.pub
+</li></ul></code></pre><pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDMuyMtMl6aWwqBCvQx7YXvZd7bCFVDsyln3yh5/8Pu23LW88VXfJgsBvhZZ9W0rPBGYyzE/TDzwwITvVQcKrwQrvQlYxTVbqZQDlmsC41HnwDfGFXg+QouZemQ2YgMeHfBzy+w26/gg480nC2PPNd0OG79+e7gFVrTL79JA/MyePBugvYqOAbl30h7M1a7EHP3IV5DQUQg4YUq49v4d3AvM0aia4EUowJs0P/j83nsZt8yiE2JEYR03kDgT/qziPK7LnVFqpFDSPC3MR3b8B354E9Af4C/JHgvglv2tsxOyvKupyZonbyr68CqSorO2rAwY/jWFEiArIaVuDiR9YM5 sammy@mydesktop
+</code></pre>
+<p>Copie o bloco de texto exibido e volte para sua <strong>Configuração</strong> de perfil na interface Web do GitLab.</p>
+
+<p>Clique no item *<em>Chaves SSH *</em>no menu do lado esquerdo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/ssh_keys_menu_item2.png" alt="GitLab SSH Keys menu item"></p>
+
+<p>No espaço indicado, cole a chave pública que copiou da sua máquina local. Dê a ela um título descritivo e clique no botão <strong>Adicionar chave</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/add_ssh_key2.png" alt="GitLab add SSH Key"></p>
+
+<p>Agora, você deve conseguir gerenciar seus projetos e repositórios do GitLab a partir de sua máquina local sem ter que fornecer suas credenciais da conta GitLab.</p>
+
+<h2 id="passo-6-—-restringindo-ou-desabilitando-inscrições-públicas-opcional">Passo 6 — Restringindo ou desabilitando inscrições públicas (opcional)</h2>
+
+<p>Você deve ter notado que é possível para qualquer um registrar uma conta ao visitar a página de destino de sua instância do GitLab. Isso pode ser o que você quer caso esteja procurando hospedar um projeto público. Entretanto, muitas vezes é desejável usar configurações mais restritivas.</p>
+
+<p>Para começar, vá para a área administrativa, clicando no ícone de** chave inglesa**, na barra de menu principal no todo da página:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/admin_area_button2.png" alt="GitLab administrative area button"></p>
+
+<p>Na página que segue, é possível ver um resumo da instância GitLab como um todo. Para ajustar as configurações, clique no item <strong>Configurações</strong> no final do menu do lado esquerdo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/admin_settings_button2.png" alt="GitLab administrative settings button"></p>
+
+<p>Você será levado para as configurações globais de sua instância GitLab. Aqui é possível ajustar uma série de configurações que afetam se novos usuários podem se inscrever e o nível de acesso deles.</p>
+
+<h3 id="desabilitando-inscrições">Desabilitando inscrições</h3>
+
+<p>Se deseja desativar as inscrições completamente (você ainda pode criar contas para novos usuários manualmente), role para baixo até a seção de <strong>Restrições de inscrição</strong>.</p>
+
+<p><strong>Desmarque a caixa</strong> de seleção Inscrição habilitada:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/deselect_sign-ups_enabled.png" alt="GitLab deselect sign-ups enabled"></p>
+
+<p>Role até a parte inferior e clique no botão <strong>Salvar alterações</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/new_save_changes_button.png" alt="GitLab save settings button"></p>
+
+<p>A seção de inscrição deve estar removida da página de destino da GitLab agora.</p>
+
+<h3 id="restringindo-inscrições-por-domínio">Restringindo inscrições por domínio</h3>
+
+<p>Se estiver usando o GitLab como parte de uma organização que fornece endereços de e-mail associados a um domínio, você pode restringir as inscrições por domínio, em vez de desabilitá-las totalmente.</p>
+
+<p>Na seção <strong>Restrições de inscrição​​​</strong>, selecione a caixa <strong>Enviar e-mail</strong> de confirmação no momento da inscrição, o que permitirá que os usuários façam login apenas depois de confirmarem seus respectivos e-mails.</p>
+
+<p>Na sequência, adicione seu domínio ou domínios à caixa <strong>Domínios whitelist</strong> para inscritos, um domínio por linha. Você pode usar o asterisco &ldquo;*&rdquo; para especificar domínios wildcard:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/restrict_sign-ups_by_domain.png" alt="GitLab restrict sign-ups by domain"></p>
+
+<p>Role até a parte inferior e clique no botão <strong>Salvar alterações</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/new_save_changes_button.png" alt="GitLab save settings button"></p>
+
+<p>A seção de inscrição deve estar removida da página de destino da GitLab agora.</p>
+
+<h3 id="restringindo-a-criação-de-projetos">Restringindo a criação de projetos</h3>
+
+<p>Por padrão, novos usuários podem criar até 10 projetos. Se quiser dar permissões de visibilidade e participação aos novos usuários externos, mas também quiser limitar o acesso deles à criação de novos projetos, é possível fazer isso** na seção Configurações de cont**a e limite.</p>
+
+<p>Dentro, é possível alterar o <strong>Limite de projetos padrão</strong> para 0 para desabilitar completamente a criação de projetos dos novos usuários:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/set_projects_to_zero.png" alt="GitLab set projects to zero"></p>
+
+<p>Novos usuários ainda podem ser adicionados aos projetos manualmente e terão acesso aos projetos internos ou públicos criados por outros usuários.</p>
+
+<p>Role até a parte inferior e clique no botão <strong>Salvar alterações</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/gitlab_install_1604/new_save_changes_button.png" alt="GitLab save settings button"></p>
+
+<p>Agora, os novos usuários poderão criar contas, mas não poderão criar projetos.</p>
+
+<h3 id="renovando-os-certificados-let-39-s-encrypt">Renovando os certificados Let&rsquo;s Encrypt</h3>
+
+<p>Por padrão, o GitLab tem uma tarefa programada configurada para renovar os certificados do Let&rsquo;s Encrypt após a meia-noite a cada quatro dias, com o minuto exato baseado em seu <code>external_url</code>. Você pode modificar essas configurações no arquivo <code>/etc/gitlab/gitlab.rb</code>. Por exemplo, se quisesse renovar todo dia 7, às 12h30, poderia configurar isso como segue:</p>
+<div class="code-label " title="/etc/gitlab/gitlab.rb">/etc/gitlab/gitlab.rb</div><pre class="code-pre "><code langs="">letsencrypt['auto_renew_hour'] = "12"
+letsencrypt['auto_renew_minute'] = "30"
+letsencrypt['auto_renew_day_of_month'] = "*/7"
+</code></pre>
+<p>Também é possível desabilitar a renovação automática, adicionando uma configuração adicional para <code>/etc/gitlab/gitlab</code>.rb:</p>
+<div class="code-label " title="/etc/gitlab/gitlab.rb">/etc/gitlab/gitlab.rb</div><pre class="code-pre "><code langs="">letsencrypt['auto_renew'] = false
+</code></pre>
+<p>Com a renovação automática funcionando, não será mais necessário se preocupar com interrupções de serviço.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora, você deve ter uma instância GitLab funcionando hospedada em seu próprio servidor. Você pode começar a importar ou criar novos projetos e configurar o nível de acesso apropriado para sua equipe. O GitLab adiciona recursos e atualiza sua plataforma regularmente. Assim, assegure-se de verificar a página inicial de projetos para se manter atualizado em relação às melhorias ou avisos importantes.</p>

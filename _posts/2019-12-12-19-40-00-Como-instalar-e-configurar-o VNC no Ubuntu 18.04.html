@@ -1,0 +1,208 @@
+---
+layout: post
+title: Como-instalar-e-configurar-o VNC no Ubuntu 18.04
+network: digitalocean
+date: December 12, 2019 at 07:40PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-vnc-on-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/vnc_1804/NB8S1EX.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <em>Virtual Network Computing</em>, ou VNC, é um sistema de conexão que permite que você use seu teclado e mouse para interagir com um ambiente gráfico da área de trabalho em um servidor remoto. Isso facilita o gerenciamento de arquivos, software e configurações em um servidor remoto para os usuários que ainda não se sentem confortáveis com a linha de comando.</p>
+
+<p>Neste guia, você irá configurar um servidor VNC em um servidor Ubuntu 18.04 e se conectar a ele com segurança através de um túnel SSH. Você usará o <a href="https://www.tightvnc.com/">TightVNC</a>, um pacote de controle remoto rápido e leve. Esta escolha irá garantir que nossa conexão VNC será suave e estável mesmo em conexões de Internet mais lentas.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para completar este tutorial, será necessário:</p>
+
+<ul>
+<li>Um servidor Ubuntu 18.04 configurado conforme o <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Guia de configuração inicial do servidor Ubuntu 18.04</a>, incluindo um usuário não raiz de comando sudo e um firewall.</li>
+<li>Um computador local com um cliente VNC instalado, compatível com conexões VNC sobre túneis SSH.
+
+<ul>
+<li>No Windows, utilize o <a href="https://www.tightvnc.com/">TightVNC</a>, o <a href="https://www.realvnc.com/">RealVNC</a> ou o <a href="https://www.uvnc.com/">UltraVNC.</a></li>
+<li>No macOS, utilize o programa integrado <a href="https://support.apple.com/guide/mac-help/screen-sharing-overview-mh14066/mac">Screen Sharing</a> ou utilize um app de multiplataforma como o <a href="https://www.realvnc.com/">RealVNC</a>.</li>
+<li>No Linux, escolha um dentre as várias opções, incluindo o <code>vinagre</code>, <code>krdc</code>, <a href="https://www.realvnc.com/">RealVNC</a> ou o <a href="https://www.tightvnc.com/">TightVNC</a>.</li>
+</ul></li>
+</ul>
+
+<h2 id="passo-1-—-instalando-o-ambiente-da-Área-de-trabalho-e-o-servidor-vnc">Passo 1 — Instalando o Ambiente da Área de Trabalho e o Servidor VNC</h2>
+
+<p>Por padrão, um servidor Ubuntu 18.04 não vem com um ambiente gráfico de área de trabalho ou um servidor VNC instalado, então começaremos instalando eles. Especificamente, iremos instalar pacotes de ambiente de área de trabalho mais recentes, o <a href="https://xfce.org/">Xfce</a> e o pacote TightVNC disponíveis no repositório oficial do Ubuntu.</p>
+
+<p>No seu servidor, atualize sua lista de pacotes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Agora, instale o ambiente de área de trabalho Xfce no seu servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install xfce4 xfce4-goodies
+</li></ul></code></pre>
+<p>Uma vez que a instalação tiver terminada, instale o servidor do TightVNC:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install tightvncserver
+</li></ul></code></pre>
+<p>Para completar a configuração inicial do servidor VNC após a instalação, utilize o comando <code>vncserver</code> para configurar uma senha segura e crie os arquivos de configuração iniciais:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver
+</li></ul></code></pre>
+<p>Será solicitado que você digite e verifique uma senha para acessar sua máquina remotamente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>You will require a password to access your desktops.
+
+Password:
+Verify:
+</code></pre>
+<p>A senha deve ter entre seis e oito caracteres. Senhas com mais de 8 caracteres serão truncadas automaticamente.</p>
+
+<p>Uma vez verificada a senha, você terá a opção de criar uma senha somente para exibição. Usuários que fizerem login com a senha somente para exibição não poderão controlar a instância VNC com seus respectivos mouses ou teclados. Esta é uma opção útil se quiser demonstrar algo para outras pessoas utilizando seu servidor VNC, mas isso não é necessário.</p>
+
+<p>Depois, o processo criará os arquivos necessários de configuração padrão e informações de conexão para o servidor:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Would you like to enter a view-only password (y/n)? <span class="highlight">n</span>
+xauth:  file /home/<span class="highlight">sammy</span>/.Xauthority does not exist
+
+New 'X' desktop is <span class="highlight">your_hostname</span>:1
+
+Creating default startup script /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Starting applications specified in /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Log file is /home/<span class="highlight">sammy</span>/.vnc/<span class="highlight">your_hostname</span>:1.log
+</code></pre>
+<p>Agora, vamos configurar o servidor VNC.</p>
+
+<h2 id="passo-2-—-configurando-o-servidor-vnc">Passo 2 — Configurando o Servidor VNC</h2>
+
+<p>O servidor VNC precisa saber quais comandos executar quando ele iniciar. Especificamente, o VNC precisa saber a qual  ambiente gráfico de área de trabalho ele deve se conectar.</p>
+
+<p>Estes comandos estão localizados em um arquivo de configuração chamado de <code>xstartup</code> na pasta <code>.vnc</code> sob o seu diretório inicial. O script de inicialização foi criado quando você executou o <code>vncserver</code> no passo anterior, mas vamos criar o nosso próprio script para iniciar a área de tabalho Xfce.</p>
+
+<p>Quando o VNC é configurado pela primeira vez, ele inicia uma instância de servidor padrão na porta <code>5901</code>. Essa porta é chamada de <em>porta de exibição</em> e é referida pelo VNC como <code>:1</code>. O VNC pode iniciar várias instâncias em outras porta de exibição, como <code>:2</code>, <code>:3</code> e assim por diante.</p>
+
+<p>Uma vez que vamos alterar a configuração do servidor VNC, primeiramente, interrompa a instância do servidor VNC que estiver em execução na porta <code>5901</code> com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver -kill :1
+</li></ul></code></pre>
+<p>O resultado deve se parecer com este, embora você veja um PID diferente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Killing Xtightvnc process ID <span class="highlight">17648</span>
+</code></pre>
+<p>Antes de modificar o arquivo <code>xstartup</code>, faça um back-up do original:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mv ~/.vnc/xstartup ~/.vnc/xstartup.bak
+</li></ul></code></pre>
+<p>Agora, crie um novo arquivo de <code>xstartup</code> e abra ele no seu editor de texto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/.vnc/xstartup
+</li></ul></code></pre>
+<p>Os comandos neste arquivo são executados de maneira automática, sempre que você iniciar ou reiniciar o servidor VNC. Precisamos que o VNC inicie nosso ambiente de área de trabalho, caso ainda não tiver sido iniciado. Adicione esses comandos ao arquivo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="~/.vnc/xstartup">~/.vnc/xstartup</div>#!/bin/bash
+xrdb $HOME/.Xresources
+startxfce4 &amp;
+</code></pre>
+<p>O primeiro comando no arquivo, <code>xrdb $HOME/.Xresources</code> diz ao framework GUI do VNC para ler o usuário do servidor.<code>.Xresources</code> arquivo O <code>.Xresources</code> é onde um usuário pode fazer alterações em certas configurações do ambiente de trabalho gráfico, como as cores de terminal, temas de cursor e rendering de fontes. O segundo comando diz ao servidor para iniciar o Xfce, que é onde você encontrará todos os software gráficos necessários para gerenciar confortavelmente seu servidor.</p>
+
+<p>Para garantir que o servidor VNC será capaz de usar esse novo arquivo de inicialização corretamente, precisaremos torná-lo executável.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod +x ~/.vnc/xstartup
+</li></ul></code></pre>
+<p>Agora, reinicie o servidor VNC.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver
+</li></ul></code></pre>
+<p>Você verá um resultado semelhante a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>New 'X' desktop is <span class="highlight">your_hostname</span>:1
+
+Starting applications specified in /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Log file is /home/<span class="highlight">sammy</span>/.vnc/<span class="highlight">your_hostname</span>:1.log
+</code></pre>
+<p>Com a configuração implementada, vamos conectar nossa máquina local ao servidor.</p>
+
+<h2 id="passo-3-—-conectando-a-área-de-trabalho-do-vnc-com-segurança">Passo 3 — Conectando a área de trabalho do VNC com segurança</h2>
+
+<p>O VNC propriamente dito não utiliza protocolos de segurança ao se conectar. Utilizaremos um túnel SSH para conectar ao nosso servidor com segurança. Em seguida, diremos ao nosso cliente VNC para usar aquele túnel e não fazer uma conexão direta.</p>
+
+<p>Crie uma conexão SSH no seu computador local; ela encaminhará a conexão <code>localhost</code> para o VNC. É possível fazer isto através do terminal no Linux ou no macOS com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh -L <span class="highlight">5901</span>:127.0.0.1:<span class="highlight">5901</span> -C -N -l <span class="highlight">sammy</span> <span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>O switch <code>-L</code> especifica as ligações de porta. Neste caso, estamos ligando a porta <code>5901</code> da conexão remota à porta <code>5901</code> de sua máquina local. O switch <code>-C</code> habilita a compressão, enquanto o switch <code>-N</code> diz ao ssh <code>que</code> não queremos executar um comando remoto. O switch <code>-l</code> especifica o nome de login remoto.</p>
+
+<p>Lembre-se de substituir o <code><span class="highlight">sammy</span></code> e o <code><span class="highlight">your_server_ip</span></code> pelo nome de usuário não raiz de comando sudo e o endereço IP do seu servidor.</p>
+
+<p>Se estiver usando um cliente SSH gráfico, como o PuTTY, utilize o <code><span class="highlight">your_server_ip</span></code> como a conexão IP e defina o <code>localhost:5901</code> como uma nova porta encaminhada nas configurações de túnel SSH do programa.</p>
+
+<p>Assim que o túnel estiver em execução, utilize um cliente VNC para se conectar ao &ldquo;localhost:5901. Será solicitado que autentique usando a senha definida no Passo 1.</p>
+
+<p>Uma vez que estiver conectado, verá o área de trabalho padrão Xfce. Ela deve se parecer com isto:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/vnc_1804/NB8S1EX.png" alt="VNC connection to Ubuntu 18.04 server​​​​​​"></p>
+
+<p>É possível acessar arquivos em seu diretório inicial com o gerenciador de arquivos ou da linha de comando, como visto aqui:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/vnc_1804/vi0hGFq.png" alt="Files via VNC connection to Ubuntu 18.04"></p>
+
+<p>Pressione <code>CTRL+C</code> no seu terminal para parar o túnel SSH e voltar ao seu prompt. Isto também irá desconectar sua sessão VNC.</p>
+
+<p>A seguir, vamos configurar nosso servidor VNC como um serviço.</p>
+
+<h2 id="passo-4-—-executando-o-vnc-como-um-serviço-de-sistema">Passo 4 — Executando o VNC como um Serviço de Sistema</h2>
+
+<p>Depois, vamos configurar o servidor VNC como um serviço de systemd para que possamos iniciar, parar e reiniciar se necessário, como em qualquer outro serviço. Isso também irá garantir que o VNC inicie quando seu servidor reinicializar.</p>
+
+<p>Primeiramente, crie um novo arquivo de unidade chamado <code>/etc/systemd/system/vncserver@.service</code>, usando seu editor de texto favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/vncserver@.service
+</li></ul></code></pre>
+<p>O símbolo <code>@</code> no final do nome permitirá que enviemos um argumento que poderemos usar na configuração do serviço. Vamos usar isso para especificar a porta de exibição do VNC que queremos usar quando gerenciarmos o serviço.</p>
+
+<p>Adicione as linhas a seguir ao arquivo. Certifique-se de alterar o valor do <strong>User</strong>, <strong>Group</strong>, <strong>WorkingDirectory</strong> e o nome de usuário no valor do P*<em>IDFILE *</em>para corresponder ao seu nome de usuário:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="/etc/systemd/system/vncserver@.service ">/etc/systemd/system/vncserver@.service </div>[Unit]
+Description=Start TightVNC server at startup
+After=syslog.target network.target
+
+[Service]
+Type=forking
+User=<span class="highlight">sammy</span>
+Group=<span class="highlight">sammy</span>
+WorkingDirectory=/home/<span class="highlight">sammy</span>
+
+PIDFile=/home/<span class="highlight">sammy</span>/.vnc/%H:%i.pid
+ExecStartPre=-/usr/bin/vncserver -kill :%i &gt; /dev/null 2&gt;&amp;1
+ExecStart=/usr/bin/vncserver <span class="highlight">-depth 24 -geometry 1280x800</span> :%i
+ExecStop=/usr/bin/vncserver -kill :%i
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>O comando <code>ExecStartPre</code> interrompe o VNC , se ele já estiver em execução. O comando <code>ExecStart</code> inicia o VNC e define a profundidade de cor para 24 bits com uma resolução de 1280x800. Também é possível modificar essas opções de inicialização para atender suas necessidades.</p>
+
+<p>Salve e feche o arquivo.</p>
+
+<p>A seguir, faça com que o sistema saiba do novo arquivo de unidade.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl daemon-reload
+</li></ul></code></pre>
+<p>Habilite o arquivo de unidade.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable vncserver@1.service
+</li></ul></code></pre>
+<p>O <code>1</code> que depois do símbol o <code>@</code> significa sobre qual número de exibição o serviço deve aparecer, neste caso, o padrão <code>:1</code>, como foi discutido no Passo 2.</p>
+
+<p>Interrompa a instância atual do servidor VNC se ele ainda estiver em execução.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver -kill :1
+</li></ul></code></pre>
+<p>Então, inicie-o como você iniciaria qualquer outro serviço systemd.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start vncserver@1
+</li></ul></code></pre>
+<p>É possível verificar se ele iniciou com este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status vncserver@1
+</li></ul></code></pre>
+<p>Se ele iniciou corretamente, a saída deverá se parecer com isto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● vncserver@1.service - Start TightVNC server at startup
+   Loaded: loaded (/etc/systemd/system/vncserver@.service; indirect; vendor preset: enabled)
+   Active: <span class="highlight">active</span> (running) since Mon 2018-07-09 18:13:53 UTC; 2min 14s ago
+  Process: 22322 ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :1 (code=exited, status=0/SUCCESS)
+  Process: 22316 ExecStartPre=/usr/bin/vncserver -kill :1 &gt; /dev/null 2&gt;&amp;1 (code=exited, status=0/SUCCESS)
+ Main PID: 22330 (Xtightvnc)
+
+...
+</code></pre>
+<p>Seu servidor VNC agora estará disponível quando reiniciar a máquina.</p>
+
+<p>Inicie seu túnel SSH novamente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh -L <span class="highlight">5901</span>:127.0.0.1:<span class="highlight">5901</span> -C -N -l <span class="highlight">sammy</span> <span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>Então, faça uma nova conexão usando seu software de cliente VNC com o <code>localhost:5901</code> para conectar à sua máquina.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora, você tem um servidor VNC seguro e em execução no seu servidor Ubuntu 18.04. Agora, poderá gerenciar seus arquivos, software e configurações com uma interface gráfica conhecida e fácil de usar e será capaz de executar software gráficos como navegadores de Web remotamente.</p>

@@ -1,0 +1,192 @@
+---
+layout: post
+title: Como instalar o Node.js no Debian 9
+network: digitalocean
+date: December 12, 2019 at 07:53PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-debian-9-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://nodejs.org/en/">Node.js</a> é uma plataforma JavaScript para programação de fins gerais que permite que os usuários construam aplicativos de rede rapidamente. Ao potencializar o JavaScript em ambos front e backend, o Node.js torna o desenvolvimento mais consistente e integrado.</p>
+
+<p>Neste guia, mostraremos como começar com o Node.js em um servidor Debian 9.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Este guia supõe que você esteja usando o Debian 9. Antes de começar, será necessário ter uma conta de usuário sem root com privilégios sudo configurados no seu sistema. Você pode aprender como configurar isso seguindo a <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">configuração inicial de servidor para o Debian 9</a>.</p>
+
+<h2 id="como-instalar-a-versão-distro-estável-para-o-debian">Como instalar a Versão Distro-Estável para o Debian</h2>
+
+<p>O Debian contém uma versão de Node.js nos repositórios por padrão. No momento em que este artigo está sendo escrito, essa versão é a 4.8.2, que chegará ao final de vida no fim de abril de 2018. Se quiser testar com a linguagem usando uma opção estável e capaz, a instalação através do repositórios pode fazer mais sentido. No entanto, é recomendável que, para casos de desenvolvimento e de produção, que instale uma versão mais recente com uma PPA. Iremos discutir como instalar de um PPA no próximo passo.</p>
+
+<p>Para obter a versão distro-estável do Node.js, utilize o gerenciador de pacotes <code>apt</code>. Primeiramente, atualize seu índice de pacotes local:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Então, instale o pacote Node.js dos repositórios:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install nodejs
+</li></ul></code></pre>
+<p>Se o pacote nos repositórios atender às suas necessidades, então isso é tudo que precisa fazer para estar configurado com o Node.js.</p>
+
+<p>Para verificar qual versão do Node.js você tem instalada após esses passos iniciais, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nodejs -v
+</li></ul></code></pre>
+<p>Por causa de um conflito com outro pacote, o executável dos repositórios Debian é chamado de <code>nodejs</code> ao invés de <code>node</code>. Lembre-se disso quando estiver executando o software.</p>
+
+<p>Assim que tiver estabelecido qual versão de Node.js tem instalada pelos repositórios Debian, você pode decidir se quer ou não trabalhar com diferentes versões, arquivos de pacotes, ou gerentes de versão. Em seguida, discutiremos estes elementos junto com métodos de instalação mais flexíveis e robustos.</p>
+
+<h2 id="como-usar-um-ppa">Como usar um PPA</h2>
+
+<p>Para trabalhar com uma versão mais recente do Node.js, adicione o <em>PPA</em> (arquivo de pacotes pessoal) mantido pela NodeSource Este arquivo terá versões mais atualizadas do Node.js do que as dos repositórios do Debian oficial, e permitirá que escolha entre o Node.js v4.x (a versão de suporte de longo prazo mais antiga, que terá suporte até o final de abril de 2018), o Node.js v6.x (com suporte até abril de 2019), o Node.js v8.x (a versão LTS atual, com suporte até dezembro de 2019) e o Node.js v10x (a versão mais recente, com suporte até abril de 2021).</p>
+
+<p>Vamos atualizar o índice de pacotes local e instalar o <code>curl</code>, que você usará para acessar o PPA:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install curl
+</li></ul></code></pre>
+<p>Em seguida, instale o PPA para ter acesso ao seu conteúdo. Do seu diretório home, utilize o <code>curl</code> para recuperar o script de instalação para sua versão preferida, certificando-se de substituir <code><span class="highlight">10.x</span></code>com sua versão string favorita (se estiver diferente):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">curl -sL https://deb.nodesource.com/setup_<span class="highlight">10.x</span> -o nodesource_setup.sh
+</li></ul></code></pre>
+<p>É possível verificar o conteúdo deste script com o <code>nano</code> ou <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9#step-six-%E2%80%94-completing-optional-configuration">seu editor de texto preferido</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nodesource_setup.sh
+</li></ul></code></pre>
+<p>Execute o script sob <code>sudo</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo bash nodesource_setup.sh
+</li></ul></code></pre>
+<p>O PPA será adicionado à sua configuração e seu cache de pacotes local será atualizado automaticamente. Após executar o script de configuração, instale o pacote Node.js da mesma forma que você fez acima:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install nodejs
+</li></ul></code></pre>
+<p>Para verificar qual versão do Node.js você tem instalada após esses passos iniciais, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nodejs -v
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>v<span class="highlight">10.9.0</span>
+</code></pre>
+<p>O pacote <code>nodejs</code> contém o binário do <code>nodejs</code> assim como o <code>npm</code>, então não é necessário instalar o <code>npm</code> separadamente.</p>
+
+<p>O <code>npm</code> usa um arquivo de configuração no seu diretório home para manter o controle de atualizações. Ele será criado na primeira vez que você executar o <code>npm</code>. Execute este comando para verificar se o <code>npm</code> está instalado e crie o arquivo de configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm -v
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">6.2.0</span>
+</code></pre>
+<p>Para que alguns pacotes <code>npm</code> possam funcionar (os que requerem compilar o código da fonte, por exemplo), será necessário instalar o pacote <code>build-essential</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install build-essential
+</li></ul></code></pre>
+<p>Agora, você tem as ferramentas necessárias para trabalhar com os pacotes <code>npm</code> que requerem o código de compilação da fonte.</p>
+
+<h2 id="como-instalar-utilizando-o-nvm">Como instalar utilizando o NVM</h2>
+
+<p>Uma alternativa para instalar o Node.js através do <code>apt</code> é usar uma ferramenta chamada <code>nvm</code>, que significa &ldquo;Gerenciador de versão Node.js&rdquo;. Ao invés de trabalhar no nível do sistema operacional, o <code>nvm</code> funciona no nível de um diretório independente dentro do seu diretório home. Isso significa que você pode instalar várias versões auto-contidas do Node.js sem afetar o sistema inteiro.</p>
+
+<p>Controlar seu ambiente com o <code>nvm</code> permite que você acesse as versões mais novas do Node.js e mantenha e gerencie versões anteriores. No entanto, é um utilitário diferente do <code>apt</code>, e as versões do Node.js que você gerencia com ele são distintas daquelas gerenciadas com o <code>apt</code>.</p>
+
+<p>Para baixar o script de instalação <code>nvm</code> da <a href="https://github.com/creationix/nvm">página de projetos do GitHub</a>, utilize o <code>curl</code>. Note que o número de versão pode diferir do que está destacado aqui:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -sL https://raw.githubusercontent.com/creationix/nvm/<span class="highlight">v0.33.11</span>/install.sh -o install_nvm.sh
+</li></ul></code></pre>
+<p>Verifique o script de instalação com o <code>nano</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano install_nvm.sh
+</li></ul></code></pre>
+<p>Execute o script com o <code>bash</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">bash install_nvm.sh
+</li></ul></code></pre>
+<p>Ele instalará o software em um subdiretório do seu diretório home em <code>~/.nvm</code>. Ele também adicionará as linhas necessárias no seu arquivo <code>~/.profile</code> para usar o arquivo.</p>
+
+<p>Para obter acesso à funcionalidade <code>nvm</code>, será necessário que saia e faça o login novamente, ou origine o arquivo <code>~/.profile</code> para que sua sessão atual saiba sobre as alterações:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ~/.profile
+</li></ul></code></pre>
+<p>Com o <code>nvm</code> instalado, instale as versões do Node.js isoladamente. Para maiores informações sobre as versões do Node.js disponíveis, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm ls-remote
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+         v8.11.1   (Latest LTS: Carbon)
+         v9.0.0
+         v9.1.0
+         v9.2.0
+         v9.2.1
+         v9.3.0
+         v9.4.0
+         v9.5.0
+         v9.6.0
+         v9.6.1
+         v9.7.0
+         v9.7.1
+         v9.8.0
+         v9.9.0
+        v9.10.0
+        v9.10.1
+        v9.11.0
+        v9.11.1
+        v10.0.0  
+        v10.1.0
+        v10.2.0
+        v10.2.1
+        v10.3.0
+        v10.4.0
+        v10.4.1
+        v10.5.0
+        v10.6.0
+        v10.7.0
+        v10.8.0
+        v10.9.0
+</code></pre>
+<p>Como pode ver, a versão LTS atual no momento em que este artigo está sendo escrito é a v8.11.1. Instale-a digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm install <span class="highlight">8.11.1</span>
+</li></ul></code></pre>
+<p>Normalmente, o <code>nvm</code> irá mudar para usar a versão mais recentemente instalada. Diga ao <code>nvm</code> para usar a versão que acabou de baixar digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm use <span class="highlight">8.11.1</span>
+</li></ul></code></pre>
+<p>Quando instalar o Node.js usando o <code>nvm</code>, o executável é chamado de <code>node</code>. É possível visualizar a versão que está sendo usada pela shell digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node -v
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>v<span class="highlight">8.11.1</span>
+</code></pre>
+<p>Se tiver várias versões do Node.js, verifique o que está instalado digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm ls
+</li></ul></code></pre>
+<p>Se quiser umas das versões como padrão, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm alias default <span class="highlight">8.11.1</span>
+</li></ul></code></pre>
+<p>Esta versão será selecionada automaticamente quando uma nova sessão começar. Também é possível chamá-la pelo pseudônimo, desta forma:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm use default
+</li></ul></code></pre>
+<p>Cada versão do Node.js irá manter o controle dos seus próprios pacotes e tem o <code>npm</code> disponível para gerenciar esses pacotes.</p>
+
+<p>Também é possível ter pacotes de instalação <code>npm</code> no diretório de projeto do Node.js <code>./node_modules</code>. Utilize a seguinte sintaxe para instalar o módulo <code>express</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install <span class="highlight">express</span>
+</li></ul></code></pre>
+<p>Se quiser instalar o módulo globalmente, disponibilizando-o para outros projetos utilizando a mesma versão do Node.js, adicione a flag <code>-g</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install -g <span class="highlight">express</span>
+</li></ul></code></pre>
+<p>Isso instalará o pacote em:</p>
+<pre class="code-pre "><code langs="">~/.nvm/versions/node/<span class="highlight">node_version</span>/lib/node_modules/<span class="highlight">express</span>
+</code></pre>
+<p>A instalação do módulo global permitirá que você execute comandos da linha de comando, mas será necessário conectar o pacote para sua esfera local para solicitar ele de dentro de um programa:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm link <span class="highlight">express</span>
+</li></ul></code></pre>
+<p>Aprenda mais a respeito das opções disponíveis a você com o nvm digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm help
+</li></ul></code></pre>
+<h2 id="como-remover-o-node-js">Como remover o Node.js</h2>
+
+<p>É possível desinstalar o Node.js usando o <code>apt</code> ou o <code>nvm</code>, dependendo da versão do programa escolhido. Para remover as versões instaladas dos repositórios ou do PPA, será necessário trabalhar com o utilitário <code>apt</code> no nível do sistema.</p>
+
+<p>Para remover qualquer uma destas versões, digite o seguinte:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt remove nodejs
+</li></ul></code></pre>
+<p>Este comando removerá o pacote e os arquivos de configuração.</p>
+
+<p>Para desinstalar uma versão do Node.js que tenha habilitado usando o <code>nvm</code>, verifique primeiro se a versão que gostaria de remover é a versão atual ativa:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm current
+</li></ul></code></pre>
+<p>Se a versão que está escolhendo <strong>no</strong> é a versão atualmente ativa, execute:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm uninstall <span class="highlight">node_version</span>
+</li></ul></code></pre>
+<p>Este comando irá desinstalar a versão selecionada do Node.js.</p>
+
+<p>Se a versão que você gostaria de remover *<em>é *</em>a versão ativa, será necessário desativar o <code>nvm</code> para permitir suas alterações:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nvm deactivate
+</li></ul></code></pre>
+<p>Agora, é possível desinstalar a versão atual usando o comando <code>uninstall</code> acima, que removerá todos os arquivos associados à versão escolhida do Node.js exceto os arquivos na cache que podem ser usados para uma reinstalação.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Há várias maneiras de trazer e executar com o Node.js em seu servidor Debian 9. Suas circunstâncias irão ditar qual dos métodos acima são melhores para suas necessidades. Ao mesmo tempo que usar a versão de pacotes no repositório Debian seja uma opção para experimentação, a instalação a partir de um PPA e seu funcionamento com o <code>npm</code> ou o <code>nvm</code> também oferece uma flexibilidade adicional.</p>

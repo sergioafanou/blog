@@ -1,0 +1,362 @@
+---
+layout: post
+title: How To Serve Flask Applications with Gunicorn and Nginx on Ubuntu 18.04
+network: digitalocean
+date: December 12, 2019 at 08:01PM
+url: https://www.digitalocean.com/community/tutorials/how-to-serve-flask-applications-with-gunicorn-and-nginx-on-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Neste guia, você construirá um aplicativo Python usando o microframework Flask no Ubuntu 18.04. A maior parte deste artigo será sobre como configurar o <a href="http://gunicorn.org/">servidor do aplicativo Gunicorn</a>, como iniciar o aplicativo e configurar o <a href="https://www.nginx.com/">Nginx</a> para atuar como um proxy reverso no front-end.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Antes de iniciar este guia, você deve ter:</p>
+
+<ul>
+<li>Um servidor com o Ubuntu 18.04 instalado e um usuário não raiz com privilégios sudo. Siga nosso <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guia de configuração inicial do servidor</a> para orientação.</li>
+<li>O Nginx instalado, seguindo os Passos 1 e 2 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">Como Instalar o Nginx no Ubuntu 18.04</a>.</li>
+<li><p>Um nome de domínio configurado para apontar para o seu servidor. Você pode comprar um no <a href="https://namecheap.com">Namecheap</a> ou obter um de graça no <a href="http://www.freenom.com/en/index.html">Freenom</a>. Você pode aprender como apontar domínios para o DigitalOcean seguindo a relevante <a href="https://www.digitalocean.com/docs/networking/dns/">documentação para domínios e DNS</a>. Certifique-se de criar os seguintes registros DNS:</p>
+
+<ul>
+<li>Um registro com o <code>your_domain &lt;^&gt;</code>apontando para o endereço IP público do seu servidor.</li>
+<li>Um registro A com <code>www.<span class="highlight">your_domain</span></code> apontando para o endereço IP público do seu servidor.</li>
+</ul></li>
+<li><p>Familiarize-se com a especificação do WSGI, que o servidor do Gunicorn usará para se comunicar com seu aplicativo Flask. <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-uwsgi-and-nginx-to-serve-python-apps-on-ubuntu-14-04#definitions-and-concepts">Esta discussão</a>aborda mais detalhadamente o WSGI.</p></li>
+</ul>
+
+<h2 id="passo-1-—-instalando-os-componentes-dos-repositórios-do-ubuntu">Passo 1 — Instalando os componentes dos repositórios do Ubuntu</h2>
+
+<p>Nosso primeiro passo será instalar todas as partes que precisamos dos repositórios do Ubuntu. Isso inclui o <code>pip</code>, o gerenciador de pacotes Python que irá gerenciar nossos componentes Python. Também vamos obter os arquivos de desenvolvimento do Python necessários para construir alguns dos componentes do Gunicorn.</p>
+
+<p>Primeiramente, vamos atualizar o índice local de pacotes e instalar os pacotes que irão nos permitir construir nosso ambiente Python. Estes incluem o <code>python3-pip</code>, junto com alguns outros pacotes e ferramentas de desenvolvimento necessários para um ambiente de programação robusto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install python3-pip python3-dev build-essential libssl-dev libffi-dev python3-setuptools
+</li></ul></code></pre>
+<p>Com esses pacotes instalados, vamos seguir em frente para criar um ambiente virtual para nosso projeto.</p>
+
+<h2 id="passo-2-—-criando-um-ambiente-virtual-em-python">Passo 2 — Criando um Ambiente Virtual em Python</h2>
+
+<p>Em seguida, vamos configurar um ambiente virtual para isolar nosso aplicativo Flask dos outros arquivos Python no sistema.</p>
+
+<p>Inicie instalando o pacote <code>python3-venv</code>, que instalará o módulo <code>venv</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-venv
+</li></ul></code></pre>
+<p>Em seguida, vamos fazer um diretório pai para nosso projeto Flask. Acesse o diretório após criá-lo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/<span class="highlight">myproject</span>
+</li><li class="line" prefix="$">cd ~/<span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Crie um ambiente virtual para armazenar os requisitos Python do projeto Flask digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3.6 -m venv <span class="highlight">myprojectenv</span>
+</li></ul></code></pre>
+<p>Isso instalará uma cópia local do Python e do <code>pip</code> para um diretório chamado <code><span class="highlight">myprojectenv</span></code> dentro do diretório do seu projeto.</p>
+
+<p>Antes de instalar aplicativos no ambiente virtual, você precisa ativá-lo. Faça isso digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">myprojectenv</span>/bin/activate
+</li></ul></code></pre>
+<p>Seu prompt mudará para indicar que você agora está operando no ambiente virtual. Ele se parecerá com isso: <code>(<span class="highlight">myprojectenv</span>)<span class="highlight">user</span>@<span class="highlight">host</span>:~/<span class="highlight">myproject</span>$</code>.</p>
+
+<h2 id="passo-3-—-configurando-um-aplicativo-flask">Passo 3 — Configurando um aplicativo Flask</h2>
+
+<p>Agora que você está no seu ambiente virtual, instale o Flask e o Gunicorn e comece a projetar seu aplicativo.</p>
+
+<p>Primeiramente, vamos instalar o <code>wheel</code> com a instância local do <code>pip</code> para garantir que nossos pacotes sejam instalados mesmo se estiverem faltando arquivos wheel:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pip install wheel
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Independentemente da versão do Python que você estiver usando, quando o ambiente virtual for ativado, você deve usar o comando <code>pip</code> (não o <code>pip3</code>).<br></span></p>
+
+<p>Em seguida, vamos instalar o Flask e o Gunicorn:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">pip install gunicorn flask
+</li></ul></code></pre>
+<h3 id="criando-um-app-de-exemplo">Criando um app de exemplo</h3>
+
+<p>Agora que você tem o Flask disponível, você pode criar um aplicativo simples. O Flask é um microframework. Ele não inclui muitas das ferramentas que os frameworks mais completos talvez tenham. Ele existe, principalmente, como um módulo que você pode importar para seus projetos para ajudá-lo na inicialização de um aplicativo Web.</p>
+
+<p>Embora seu aplicativo possa ser mais complexo, vamos criar nosso app Flask em um único arquivo, chamado <code>myproject.py:&lt;^&gt;</code></p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">nano ~/<span class="highlight">myproject</span>/<span class="highlight">myproject</span>.py
+</li></ul></code></pre>
+<p>O código do aplicativo ficará neste arquivo. Ele importará o Flask e instanciará um objeto Flask. Você pode usar isto para definir as funções que devem ser executadas quando uma rota específica for solicitada:</p>
+<div class="code-label " title="~/myproject/myproject.py">~/myproject/myproject.py</div><pre class="code-pre "><code class="code-highlight language-python">from flask import Flask
+app = Flask(__name__)
+
+@app.route("/")
+def hello():
+    return "&lt;h1 style='color:blue'&gt;Hello There!&lt;/h1&gt;"
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0')
+</code></pre>
+<p>Isso define basicamente qual conteúdo apresentar quando o domínio raiz for acessado. Salve e feche o arquivo quando você terminar.</p>
+
+<p>Se você seguiu o guia de configuração inicial do servidor, você deverá ter um firewall UFW ativado. Para testar o aplicativo, será necessário permitir o acesso à porta <code>5000</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">sudo ufw allow 5000
+</li></ul></code></pre>
+<p>Agora é possível testar seu app Flask digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">python <span class="highlight">myproject</span>.py
+</li></ul></code></pre>
+<p>Você verá um resultado como o seguinte, incluindo um aviso útil lembrando para não usar essa configuração de servidor na produção:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>* Serving Flask app "myproject" (lazy loading)
+ * Environment: production
+   WARNING: Do not use the development server in a production environment.
+   Use a production WSGI server instead.
+ * Debug mode: off
+ * Running on http://0.0.0.0:5000/ (Press CTRL+C to quit)
+</code></pre>
+<p>Visite o endereço IP do seu servidor seguido de <code>:5000</code> no seu navegador Web:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>:5000
+</code></pre>
+<p>Você deve ver algo como isto:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png" alt="Flask sample app"></p>
+
+<p>Quando terminar, tecle <code>CTRL-C</code> na janela do seu terminal para parar o servidor de desenvolvimento Flask.</p>
+
+<h3 id="criando-o-ponto-de-entrada-da-wsgi">Criando o ponto de entrada da WSGI</h3>
+
+<p>Em seguida, vamos criar um arquivo que servirá como o ponto de entrada para nosso aplicativo. Isso dirá ao nosso servidor do Gunicorn como interagir com o aplicativo.</p>
+
+<p>Vamos chamar o arquivo de <code>wsgi.py</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">nano ~/<span class="highlight">myproject</span>/wsgi.py
+</li></ul></code></pre>
+<p>Neste arquivo, vamos importar a instância Flask do nosso aplicativo e então executá-lo:</p>
+<div class="code-label " title="~/myproject/wsgi.py">~/myproject/wsgi.py</div><pre class="code-pre "><code class="code-highlight language-python">from myproject import app
+
+if __name__ == "__main__":
+    app.run()
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<h2 id="passo-4-—-configurando-o-gunicorn">Passo 4 — Configurando o Gunicorn</h2>
+
+<p>Seu aplicativo agora está gravado com um ponto de entrada estabelecido. Podemos agora seguir em frente para configurar o Gunicorn.</p>
+
+<p>Antes de continuar, devemos verificar se o Gunicorn pode atender o aplicativo corretamente.</p>
+
+<p>Podemos fazer essa verificação simplesmente passando o nome do nosso ponto de entrada para o Gunicorn. Criamos esse ponto de entrada como o nome do módulo (menos a extensão <code>.py</code>) mais o nome do objeto callable dentro do aplicativo. No nosso caso, trata-se do <code>wsgi:app</code>.</p>
+
+<p>Também vamos especificar a interface e a porta a vincular, de modo que o aplicativo seja iniciado em uma interface disponível publicamente:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">cd ~/<span class="highlight">myproject</span>
+</li><li class="line" prefix="(myprojectenv) $">gunicorn --bind 0.0.0.0:5000 wsgi:app
+</li></ul></code></pre>
+<p>Deverá ver um resultado como o seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[2018-07-13 19:35:13 +0000] [28217] [INFO] Starting gunicorn 19.9.0
+[2018-07-13 19:35:13 +0000] [28217] [INFO] Listening at: http://0.0.0.0:5000 (28217)
+[2018-07-13 19:35:13 +0000] [28217] [INFO] Using worker: sync
+[2018-07-13 19:35:13 +0000] [28220] [INFO] Booting worker with pid: 28220
+</code></pre>
+<p>Visite o endereço IP do seu servidor com <code>:5000</code> anexado ao final no seu navegador Web novamente:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>:5000
+</code></pre>
+<p>Você deve ver o resultado do seu aplicativo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png" alt="Flask sample app"></p>
+
+<p>Quando você tiver confirmado que ele está funcionando corretamente, pressione <code>CTRL-C</code> na janela do seu terminal.</p>
+
+<p>Acabamos agora o nosso ambiente virtual, para que possamos desativá-lo:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">deactivate
+</li></ul></code></pre>
+<p>Agora, qualquer comando Python voltará a usar o ambiente do sistema Python.</p>
+
+<p>Em seguida, vamos criar o arquivo da unidade de serviço systemd. Criar um arquivo de unidade systemd permitirá que o sistema init do Ubuntu inicie automaticamente o Gunicorn e atenda o aplicativo Flask sempre que o servidor inicializar.</p>
+
+<p>Crie um arquivo de unidade que termine com <code>.service</code> dentro do diretório <code>/etc/systemd/system para começar</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/<span class="highlight">myproject</span>.service
+</li></ul></code></pre>
+<p>Ali, vamos começar com a seção <code>[Unit]</code>, que é usada para especificar os metadados e dependências. Vamos colocar uma descrição do nosso serviço aqui e dizer ao sistema init para iniciar isso somente após o objetivo da rede ter sido alcançado:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=Gunicorn instance to serve <span class="highlight">myproject</span>
+After=network.target
+</code></pre>
+<p>Em seguida, vamos abrir a seção <code>[Service]</code>. Isso especificará o usuário e o grupo sob o qual que queremos que o processo seja executado. Vamos dar à nossa conta de usuário regular a propriedade sobre o processo, uma vez que ela possui todos os arquivos relevantes. Vamos também dar a propriedade sobre o grupo para o grupo <code>www-data</code>, de modo que o Nginx possa se comunicar facilmente com os processos do Gunicorn. Lembre-se de substituir o nome de usuário abaixo pelo seu nome de usuário:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=Gunicorn instance to serve <span class="highlight">myproject</span>
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+</code></pre>
+<p>Em seguida, vamos mapear o diretório de trabalho e definir a variável de ambiente <code>PATH</code> para que o sistema init saiba que os executáveis do processo estão localizados dentro do nosso ambiente virtual. Vamos também especificar o comando para iniciar o serviço. Este comando fará o seguinte:</p>
+
+<ul>
+<li>Iniciar três processos de trabalho (embora deva ajustar isso conforme necessário)</li>
+<li>Criar e vincular a um arquivo de socket Unix, <code>myproject&lt;^&gt;.sock</code>, dentro de nosso diretório de projeto. Vamos definir um valor de umask de <code>007</code> para que o arquivo socket seja criado dando acesso ao proprietário e ao grupo, ao mesmo tempo que restringe outros acessos</li>
+<li>Especificar o nome do arquivo de ponto de entrada da WSGI, junto com o objeto callable do Python dentro daquele arquivo (<code>wsgi:app</code>)</li>
+</ul>
+
+<p>O systemd exige que seja dado o caminho completo para o executável do Gunicorn, que está instalado dentro do nosso ambiente virtual.</p>
+
+<p>Lembre-se de substituir o nome de usuário e os caminhos do projeto por seus próprios dados:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=Gunicorn instance to serve <span class="highlight">myproject</span>
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+WorkingDirectory=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>
+Environment="PATH=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin"
+ExecStart=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin/gunicorn --workers 3 --bind unix:<span class="highlight">myproject</span>.sock -m 007 <span class="highlight">wsgi</span>:<span class="highlight">app</span>
+</code></pre>
+<p>Finalmente, vamos adicionar uma seção <code>[Install]</code>. Isso dirá ao systemd ao que vincular este serviço se nós o habilitarmos para iniciar na inicialização. Queremos que este serviço comece quando o sistema regular de vários usuários estiver funcionando:</p>
+<div class="code-label " title="/etc/systemd/system/myproject.service">/etc/systemd/system/myproject.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=Gunicorn instance to serve <span class="highlight">myproject</span>
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+WorkingDirectory=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>
+Environment="PATH=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin"
+ExecStart=/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myprojectenv</span>/bin/gunicorn --workers 3 --bind unix:<span class="highlight">myproject</span>.sock -m 007 <span class="highlight">wsgi</span>:<span class="highlight">app</span>
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>Com isso, nosso arquivo de serviço systemd está completo. Salve e feche-o agora.</p>
+
+<p>Podemos agora iniciar o serviço Gunicorn que criamos e habilitá-lo para que ele seja iniciado na inicialização:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start <span class="highlight">myproject</span>
+</li><li class="line" prefix="$">sudo systemctl enable <span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Vamos verificar o status:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status <span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Você deve ver um resultado como este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● myproject.service - Gunicorn instance to serve myproject
+   Loaded: loaded (/etc/systemd/system/myproject.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Fri 2018-07-13 14:28:39 UTC; 46s ago
+ Main PID: 28232 (gunicorn)
+    Tasks: 4 (limit: 1153)
+   CGroup: /system.slice/myproject.service
+           ├─28232 /home/sammy/myproject/myprojectenv/bin/python3.6 /home/sammy/myproject/myprojectenv/bin/gunicorn --workers 3 --bind unix:myproject.sock -m 007
+           ├─28250 /home/sammy/myproject/myprojectenv/bin/python3.6 /home/sammy/myproject/myprojectenv/bin/gunicorn --workers 3 --bind unix:myproject.sock -m 007
+           ├─28251 /home/sammy/myproject/myprojectenv/bin/python3.6 /home/sammy/myproject/myprojectenv/bin/gunicorn --workers 3 --bind unix:myproject.sock -m 007
+           └─28252 /home/sammy/myproject/myprojectenv/bin/python3.6 /home/sammy/myproject/myprojectenv/bin/gunicorn --workers 3 --bind unix:myproject.sock -m 007
+</code></pre>
+<p>Se encontrar erros, certifique-se de resolvê-los antes de continuar com o tutorial.</p>
+
+<h2 id="passo-5-—-configurando-o-nginx-para-solicitações-de-proxy">Passo 5 — Configurando o Nginx para solicitações de proxy</h2>
+
+<p>Nosso servidor do aplicativo Gunicorn deve estar funcionando agora, esperando pedidos no arquivo de socket no diretório do projeto. Vamos agora configurar o Nginx para passar pedidos Web para aquele socket, fazendo algumas pequenas adições ao seu arquivo de configuração.</p>
+
+<p>Comece criando um novo arquivo de configuração do bloco do servidor no diretório <code>sites-available</code> do Nginx. Vamos chamá-lo de <code><span class="highlight">myproject</span></code> para mantê-lo alinhado com o resto do guia:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Abra um bloco de servidor e diga ao Nginx para escutar na porta padrão <code>80</code>. Vamos também dizer a ele para usar este bloco para pedidos para o nome de domínio do nosso servidor:</p>
+<div class="code-label " title="/etc/nginx/sites-available/myproject">/etc/nginx/sites-available/myproject</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    server_name <span class="highlight">your_domain</span> www.<span class="highlight">your_domain</span>;
+}
+</code></pre>
+<p>Em seguida, vamos adicionar um bloco de localização que corresponda a cada pedido. Dentro deste bloco, vamos incluir o arquivo <code>proxy_params</code> que especifica alguns parâmetros gerais de proxy que precisam ser configurados. Vamos então passar os pedidos para o socket que definimos usando a diretriz <code>proxy_pass</code>:</p>
+<div class="code-label " title="/etc/nginx/sites-available/myproject">/etc/nginx/sites-available/myproject</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    server_name <span class="highlight">your_domain</span> www.<span class="highlight">your_domain</span>;
+
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:/home/<span class="highlight">sammy</span>/<span class="highlight">myproject</span>/<span class="highlight">myproject</span>.sock;
+    }
+}
+</code></pre>
+<p>Salve e feche o arquivo quando terminar.</p>
+
+<p>Para habilitar a configuração do bloco do servidor Nginx que acabou de criar, vincule o arquivo ao diretório <code>sites-enabled</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">myproject</span> /etc/nginx/sites-enabled
+</li></ul></code></pre>
+<p>Com o arquivo naquele diretório, você pode testar quanto a erros de sintaxe:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Se retornar sem indicar quaisquer problemas, reinicie o processo Nginx para ler a nova configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Finalmente, vamos ajustar o firewall novamente. Já não precisamos de acesso através da porta <code>5000</code>, então podemos remover essa regra. Podemos então conceder acesso total ao servidor Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete allow 5000
+</li><li class="line" prefix="$">sudo ufw allow 'Nginx Full'
+</li></ul></code></pre>
+<p>Agora, você consegue navegar até o nome de domínio do seu servidor no seu navegador Web:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_domain</span>
+</code></pre>
+<p>Você deve ver o resultado do seu aplicativo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_uwsgi_wsgi_1404/test_app.png" alt="Flask sample app"></p>
+
+<p>Caso encontre quaisquer erros, tente verificar o seguinte:</p>
+
+<ul>
+<li><code>sudo less /var/log/nginx/error.log</code>: verifica os registros de erros do Nginx.</li>
+<li><code>sudo less /var/log/nginx/access.log</code>: verifica os registros de acesso do Nginx.</li>
+<li><code>sudo journalctl -u nginx</code>: verifica os registros de processo do Nginx.</li>
+<li><code>sudo journalctl -u <span class="highlight">myproject</span></code>: verifica os registros do Gunicorn do seu app Flask.</li>
+</ul>
+
+<h2 id="passo-6-—-protegendo-o-aplicativo">Passo 6 — Protegendo o aplicativo</h2>
+
+<p>Para garantir que o tráfego para seu servidor permaneça protegido, vamos obter um certificado SSL para seu domínio. Há várias maneiras de fazer isso, incluindo a obtenção de um certificado gratuito do <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a>, <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-nginx-in-ubuntu-18-04">gerando um certificado autoassinado</a> ou <a href="https://www.digitalocean.com/community/tutorials/how-to-install-an-ssl-certificate-from-a-commercial-certificate-authority">comprando algum de outro provedor</a> e configurando o Nginx para usá-lo, seguindo os Passos 2 a 6 de <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-nginx-in-ubuntu-18-04#step-2-%E2%80%93-configuring-nginx-to-use-ssl">Como criar um certificado SSL autoassinado para o Nginx no Ubuntu 18.04</a>. Vamos escolher a opção um por questão de conveniência.</p>
+
+<p>Primeiramente, adicione o repositório de software Ubuntu do Certbot:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository ppa:certbot/certbot
+</li></ul></code></pre>
+<p>Aperte <code>ENTER</code> para aceitar.</p>
+
+<p>Instale o pacote Nginx do Certbot com o <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python-certbot-nginx
+</li></ul></code></pre>
+<p>O Certbot oferece várias maneiras de obter certificados SSL através de plug-ins. O plug-in Nginx cuidará da reconfiguração do Nginx e recarregará a configuração sempre que necessário. Para usar este plug-in, digite o seguinte:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --nginx -d <span class="highlight">your_domain</span> -d www.<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Esse comando executa o <code>certbot</code> com o plug-in <code>--nginx</code>, usando <code>-d</code> para especificar os nomes para os quais desejamos um certificado válido.</p>
+
+<p>Se essa é a primeira vez que você executa o <code>certbot</code>, você será solicitado a informar um endereço de e-mail e concordar com os termos de serviço. Após fazer isso, o <code>certbot</code> se comunicará com o servidor da Let&rsquo;s Encrypt, executando posteriormente um desafio para verificar se você controla o domínio para o qual está solicitando um certificado.</p>
+
+<p>Se tudo correr bem, o <code>certbot</code> perguntará como você quer definir suas configurações de HTTPS:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Please choose whether or not to redirect HTTP traffic to HTTPS, removing HTTP access.
+-------------------------------------------------------------------------------
+1: No redirect - Make no further changes to the webserver configuration.
+2: Redirect - Make all requests redirect to secure HTTPS access. Choose this for
+new sites, or if you're confident your site works on HTTPS. You can undo this
+change by editing your web server's configuration.
+-------------------------------------------------------------------------------
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel):
+</code></pre>
+<p>Select your choice then hit ​​​<code>ENTER​​​​​</code>. A configuração será atualizada e o Nginx recarregará para aplicar as novas configurações. O <code>certbot</code> será encerrado com uma mensagem informando que o processo foi concluído e onde os certificados estão armazenados:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>IMPORTANT NOTES:
+ - Congratulations! Your certificate and chain have been saved at:
+   /etc/letsencrypt/live/<span class="highlight">your_domain</span>/fullchain.pem
+   Your key file has been saved at:
+   /etc/letsencrypt/live/<span class="highlight">your_domain</span>/privkey.pem
+   Your cert will expire on 2018-07-23. To obtain a new or tweaked
+   version of this certificate in the future, simply run certbot again
+   with the "certonly" option. To non-interactively renew *all* of
+   your certificates, run "certbot renew"
+ - Your account credentials have been saved in your Certbot
+   configuration directory at /etc/letsencrypt. You should make a
+   secure backup of this folder now. This configuration directory will
+   also contain certificates and private keys obtained by Certbot so
+   making regular backups of this folder is ideal.
+ - If you like Certbot, please consider supporting our work by:
+
+   Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+   Donating to EFF:                    https://eff.org/donate-le
+
+</code></pre>
+<p>Se seguiu as instruções de instalação do Nginx nos pré-requisitos, a permissão do perfil HTTP redundante não é mais necessária:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete allow 'Nginx HTTP'
+</li></ul></code></pre>
+<p>Para verificar a configuração, navegue novamente para seu domínio, usando <code>https://</code>:</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">your_domain</span>
+</code></pre>
+<p>Você deve ver novamente o resultado do seu aplicativo, junto com o indicador de segurança do seu navegador, o qual deve indicar que o site está protegido.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste guia, você criou e protegeu um aplicativo Flask simples em um ambiente virtual Python. Você criou um ponto de entrada da WSGI para que qualquer servidor de aplicativo compatível com a WSGI possa interagir com ela, e então configurou o servidor de app Gunicorn para fornecer essa função. Depois, criou um arquivo de serviço systemd para iniciar automaticamente o servidor do aplicativo na inicialização. Você também criou um bloco de servidor Nginx que passa o tráfego Web do cliente para o servidor do aplicativo - retransmitindo pedidos externos - e protegeu o tráfego para seu servidor com o Let&rsquo;s Encrypt.</p>
+
+<p>O Flask é um framework muito simples - mas extremamente flexível, destinado a fornecer funcionalidade a seus aplicativos sem ser restritivo demais em termos de estrutura e design. Você pode usar a pilha geral descrita neste guia para atender os aplicativos flask que projetar.</p>

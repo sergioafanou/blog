@@ -1,0 +1,469 @@
+---
+layout: post
+title: How to Set Up an IKEv2 VPN Server with StrongSwan on Ubuntu 18.04
+network: digitalocean
+date: December 12, 2019 at 08:03PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-an-ikev2-vpn-server-with-strongswan-on-ubuntu-18-04-2-pt
+image: https://assets.digitalocean.com/articles/ikevpn_ubuntu_1604/4PN0vT6.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Uma rede virtual privada, ou VPN, permite que você criptografe com segurança o tráfego enquanto ele viaja através de redes não confiáveis, como aquelas em uma cafeteria, uma sala de conferências ou um aeroporto.</p>
+
+<p>O <a href="https://en.wikipedia.org/wiki/Internet_Key_Exchange">IKEv2</a>, ou Internet Key Exchange v2, é um protocolo que permite o tunelamento direto IPSec entre o servidor e o cliente. Em implementações de VPNs com IKEv2, o IPSec fornece criptografia para o tráfego de rede. O IKEv2 é nativamente suportado em algumas plataformas (OS X 10.11+, iOS 9.1+ e Windows 10) sem a necessidade de aplicativos adicionais, ele lida muito bem com falhas no cliente.</p>
+
+<p>Neste tutorial, você irá configurar um servidor em VPN com IKEv2 utilizando o <a href="https://www.strongswan.org/">StrongSwan</a> em um servidor Ubuntu 18.04, e se conectar a ele a partir de clientes em Windows, Ubuntu, iOS e Android.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para completar este tutorial, você precisará de:</p>
+
+<ul>
+<li>Um servidor Ubuntu 18.04 configurado seguindo <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">o guia de configuração inicial do servidor Ubuntu 18.04</a>, incluindo um usuário <code>sudo</code> não-raiz e um firewall.</li>
+</ul>
+
+<h2 id="passo-1-—-instalando-o-strongswan">Passo 1 — Instalando o StrongSwan</h2>
+
+<p>Primeiramente, vamos instalar o StrongSwan, um daemon IPSec de código aberto que vamos configurar como nosso servidor VPN. Também vamos instalar o componente de infraestrutura de chave pública para que possamos criar uma autoridade de certificação para fornecer credenciais para nossa infraestrutura.</p>
+
+<p>Atualize o cache do pacote local e instale o software digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install strongswan strongswan-pki
+</li></ul></code></pre>
+<p>Agora que tudo está instalado, vamos seguir em frente para criar nossos certificados.</p>
+
+<h2 id="passo-2-—-criando-uma-utoridade-de-certificação">Passo 2 — Criando uma utoridade de certificação</h2>
+
+<p>Um servidor com IKEv2 exige que um certificado se identifique para os clientes. Para nos ajudar a criar o certificado exigido, o pacote <code>strongswan-pki</code> vem com um utilitário para gerar uma autoridade de certificação e certificados de servidor. Para começar, vamos criar alguns diretórios para armazenar todos os ativos em que iremos trabalhar. A estrutura do diretório corresponde a alguns dos diretórios em <code>/etc/ipsec.d</code>, para onde vamos mover todos os itens que eventualmente criarmos. Vamos bloquear as permissões para que nossos arquivos privados não possam ser vistos por outros usuários:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/pki/{cacerts,certs,private}
+</li><li class="line" prefix="$">chmod 700 ~/pki
+</li></ul></code></pre>
+<p>Agora que temos uma estrutura de diretório para armazenar tudo, podemos gerar uma chave raiz. Esta é uma chave RSA 4096-bit que será usada para assinar nossa autoridade de certificação raiz.</p>
+
+<p>Execute estes comandos para gerar a chave:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ipsec pki --gen --type rsa --size 4096 --outform pem &gt; ~/pki/private/ca-key.pem
+</li></ul></code></pre>
+<p>Agora que temos uma chave, podemos seguir em frente para criar nossa autoridade de certificação raiz, usando a chave para assinar o certificado raiz:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ipsec pki --self --ca --lifetime 3650 --in ~/pki/private/ca-key.pem \
+</li><li class="line" prefix="$">    --type rsa --dn "CN=VPN root CA" --outform pem &gt; ~/pki/cacerts/ca-cert.pem
+</li></ul></code></pre>
+<p>É possível alterar os valores <em>distinguished name</em> (DN) para outra coisa se você preferir. O common name aqui é apenas o indicador, de modo que ele não precisa corresponder a nada em sua infraestrutura.</p>
+
+<p>Agora que temos nossa autoridade de certificação raiz em funcionamento, podemos criar um certificado que o servidor VPN usará.</p>
+
+<h2 id="passo-3-—-gerando-um-certificado-para-o-servidor-vpn">Passo 3 — Gerando um certificado para o Servidor VPN</h2>
+
+<p>Agora vamos criar um certificado e chave para o servidor VPN. Este certificado permitirá que o cliente verifique a autenticidade do servidor utilizando o certificado CA que acabamos de gerar.</p>
+
+<p>Primeiramente, crie uma chave privada para o servidor VPN com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ipsec pki --gen --type rsa --size 4096 --outform pem &gt; ~/pki/private/server-key.pem
+</li></ul></code></pre>
+<p>Agora, crie e assine o certificado do servidor VPN com a chave de autoridade de certificação que você criou no passo anterior. Execute o comando a seguir, mas altere o campo Common Name (CN) e o campo Subject Alternate Name (SAN) para o nome DNS do seu servidor VPN ou endereço IP:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ipsec pki --pub --in ~/pki/private/server-key.pem --type rsa \
+</li><li class="line" prefix="$">    | ipsec pki --issue --lifetime 1825 \
+</li><li class="line" prefix="$">        --cacert ~/pki/cacerts/ca-cert.pem \
+</li><li class="line" prefix="$">        --cakey ~/pki/private/ca-key.pem \
+</li><li class="line" prefix="$">        --dn "CN=<span class="highlight">server_domain_or_IP</span>" --san "<span class="highlight">server_domain_or_IP</span>" \
+</li><li class="line" prefix="$">        --flag serverAuth --flag ikeIntermediate --outform pem \
+</li><li class="line" prefix="$">    &gt;  ~/pki/certs/server-cert.pem
+</li></ul></code></pre>
+<p>Agora que geramos todos os arquivos TLS/SSL que o StrongSwan necessita, podemos mover os arquivos para seus lugares no diretório <code>/etc/ipsec.d</code> digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp -r ~/pki/* /etc/ipsec.d/
+</li></ul></code></pre>
+<p>Neste passo, criamos um par de certificados que seriam usado para proteger as comunicações entre o cliente e o servidor. Também assinamos os certificados com a chave CA, para que o cliente possa verificar a autenticidade do servidor VPN utilizando o certificado CA. Agora que temos todos os certificados prontos, vamos seguir em frente para configurar o software.</p>
+
+<h2 id="passo-4-—-configurando-o-strongswan">Passo 4 — Configurando o StrongSwan</h2>
+
+<p>O StrongSwan tem um arquivo de configuração padrão com alguns exemplos, mas a maior parte da configuração terá que ser feita por nossa conta. Vamos fazer um backup do arquivo para referência antes de começar do zero:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv /etc/ipsec.conf{,.original}
+</li></ul></code></pre>
+<p>Crie e abra um novo arquivo de configuração em branco digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ipsec.conf
+</li></ul></code></pre>
+<p>Primeiramente, vamos dizer ao StrongSwan para registrar os status do daemon para correção de erros e permitir conexões duplicadas. Adicione estas linhas ao arquivo:</p>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">config setup
+    charondebug="ike 1, knl 1, cfg 0"
+    uniqueids=no
+</code></pre>
+<p>Depois, vamos criar uma seção de configuração para nossa VPN. Também vamos dizer ao StrongSwan para criar os Túneis da VPN com IKEv2 e para carregar automaticamente essa seção de configuração quando for iniciado. Adicione as linhas a seguir ao arquivo:</p>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">. . .
+conn ikev2-vpn
+    auto=add
+    compress=no
+    type=tunnel
+    keyexchange=ikev2
+    fragmentation=yes
+    forceencaps=yes
+</code></pre>
+<p>Também vamos configurar a detecção de ponto morto para limpar conexões pendentes, caso o cliente se desconecte de maneira inesperada. Adicione estas linhas:</p>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">. . .
+conn ikev2-vpn
+    . . .
+    dpdaction=clear
+    dpddelay=300s
+    rekey=no
+</code></pre>
+<p>Na sequência, vamos configurar os parâmetros IPSec do lado (esquerdo) do servidor. Adicione isto ao arquivo:</p>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">. . .
+conn ikev2-vpn
+    . . .
+    left=%any
+    leftid=<span class="highlight">@server_domain_or_IP</span>
+    leftcert=server-cert.pem
+    leftsendcert=always
+    leftsubnet=0.0.0.0/0
+</code></pre>
+<span class='note'><p>
+<strong>Nota:</strong> quando configurar o ID do servidor (<code>leftid</code>), inclua apenas o caractere <code>@</code> se seu servidor de VPN for identificado por um nome de domínio:</p>
+<pre class="code-pre "><code langs="">    leftid=<span class="highlight">@vpn.example.com</span>
+</code></pre>
+<p>Se o servidor for identificado pelo seu endereço IP, apenas coloque o endereço IP em:</p>
+<pre class="code-pre "><code langs="">    leftid=<span class="highlight">203.0.113.7</span>
+</code></pre>
+<p></p></span>
+
+<p>Em seguida, podemos configurar os parâmetros IPSec do lado (direito) do cliente, como os intervalos de endereços IP privados e os servidores DNS para usar:</p>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">. . .
+conn ikev2-vpn
+    . . .
+    right=%any
+    rightid=%any
+    rightauth=eap-mschapv2
+    rightsourceip=10.10.10.0/24
+    rightdns=8.8.8.8,8.8.4.4
+    rightsendcert=never
+</code></pre>
+<p>Finalmente, vamos dizer ao StrongSwan para pedir ao cliente as credenciais de usuários ao se conectarem:</p>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">. . .
+conn ikev2-vpn
+    . . .
+    eap_identity=%identity
+</code></pre>
+<p>O arquivo de configuração deve se parecer com este:</p>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">config setup
+    charondebug="ike 1, knl 1, cfg 0"
+    uniqueids=no
+
+conn ikev2-vpn
+    auto=add
+    compress=no
+    type=tunnel
+    keyexchange=ikev2
+    fragmentation=yes
+    forceencaps=yes
+    dpdaction=clear
+    dpddelay=300s
+    rekey=no
+    left=%any
+    leftid=<span class="highlight">@server_domain_or_IP</span>
+    leftcert=server-cert.pem
+    leftsendcert=always
+    leftsubnet=0.0.0.0/0
+    right=%any
+    rightid=%any
+    rightauth=eap-mschapv2
+    rightsourceip=10.10.10.0/24
+    rightdns=8.8.8.8,8.8.4.4
+    rightsendcert=never
+    eap_identity=%identity
+</code></pre>
+<p>Salve e feche o arquivo assim que tiver verificado se você configurou tudo como mostrado.</p>
+
+<p>Agora que configuramos os parâmetros VPN, vamos seguir em frente para criar uma conta que permita que nossos usuários se conectem ao servidor.</p>
+
+<h2 id="passo-5-—-configurando-a-autenticação-da-vpn">Passo 5 — Configurando a autenticação da VPN</h2>
+
+<p>Nosso servidor VPN agora está configurado para aceitar conexões de clientes, mas ainda não temos nenhuma credencial configurada. Vamos ter que configurar algumas coisas em um arquivo de configuração especial chamado <code>ipsec.secrets</code>:</p>
+
+<ul>
+<li>Precisamos dizer ao StrongSwan onde encontrar a chave privada do certificado do nosso servidor, de modo que o servidor consiga autenticar os clientes.</li>
+<li>Também precisamos configurar uma lista de usuários que serão autorizados a se conectar à VPN.</li>
+</ul>
+
+<p>Vamos abrir o arquivo secrets para edição:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ipsec.secrets
+</li></ul></code></pre>
+<p>Primeiramente, vamos dizer ao StrongSwan onde encontrar nossa chave privada:</p>
+<div class="code-label " title="/etc/ipsec.secrets">/etc/ipsec.secrets</div><pre class="code-pre "><code langs="">: RSA "server-key.pem"
+</code></pre>
+<p>Então, vamos definir as credenciais do usuário. Você pode inventar qualquer nome de usuário ou senha que você queira:</p>
+<div class="code-label " title="/etc/ipsec.secrets">/etc/ipsec.secrets</div><pre class="code-pre "><code langs=""><span class="highlight">your_username</span> : EAP <span class="highlight">"your_password"</span>
+</code></pre>
+<p>Salve e feche o arquivo. Agora que terminamos de trabalhar com os parâmetros da VPN, vamos reiniciar o serviço da VPN para que nossas configurações sejam aplicadas:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart strongswan
+</li></ul></code></pre>
+<p>Agora que o servidor da VPN foi configurado completamente com as opções de servidor e credenciais de usuário, é hora de seguir em frente para configurar a parte mais importante: o firewall.</p>
+
+<h2 id="passo-6-—-configurando-o-encaminhamento-de-ip-do-firewall-e-do-kernel">Passo 6 — Configurando o encaminhamento de IP do Firewall e do Kernel</h2>
+
+<p>Com a configuração StrongSwan completa, precisamos configurar o firewall para encaminhar e permitir o tráfego da VPN.</p>
+
+<p>Se seguiu o tutorial de pré-requisitos, você deverá ter um firewall UFW muito básico já habilitado. Se ainda não tiver o UFW configurado, você pode criar uma configuração básica e habilitá-lo digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow OpenSSH
+</li><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>Agora, adicione uma regra para permitir o tráfego UDP nas portas padrão do IPSec, 500 e 4500:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 500,4500/udp
+</li></ul></code></pre>
+<p>Em seguida, vamos abrir um dos arquivos de configuração do UFW para adicionar algumas políticas de baixo nível para roteamento e encaminhamento de pacotes IPSec. Antes, precisamos descobrir qual interface de rede do nosso servidor é usada para o acesso à internet. Podemos descobrir isso buscando pela interface associada à rota padrão:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip route | grep default
+</li></ul></code></pre>
+<p>Sua interface pública deve vir após a palavra &ldquo;dev&rdquo;. Por exemplo, este resultado mostra a interface chamada <code>eth0</code>, que está destacada abaixo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>default via 203.0.113.7 dev <span class="highlight">eth0</span> proto static
+</code></pre>
+<p>Quando tiver sua interface de rede pública, abra o arquivo <code>/etc/ufw/before.rules</code> no seu editor de texto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ufw/before.rules
+</li></ul></code></pre>
+<p>Perto do topo do arquivo (antes da linha <code>*filter</code>), adicione o seguinte bloco de configuração:</p>
+<div class="code-label " title="/etc/ufw/before.rules">/etc/ufw/before.rules</div><pre class="code-pre "><code langs=""><span class="highlight">*nat</span>
+<span class="highlight">-A POSTROUTING -s 10.10.10.0/24 -o eth0 -m policy --pol ipsec --dir out -j ACCEPT</span>
+<span class="highlight">-A POSTROUTING -s 10.10.10.0/24 -o eth0 -j MASQUERADE</span>
+<span class="highlight">COMMIT</span>
+
+<span class="highlight">*mangle</span>
+<span class="highlight">-A FORWARD --match policy --pol ipsec --dir in -s 10.10.10.0/24 -o eth0 -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360</span>
+<span class="highlight">COMMIT</span>
+
+*filter
+:ufw-before-input - [0:0]
+:ufw-before-output - [0:0]
+:ufw-before-forward - [0:0]
+:ufw-not-local - [0:0]
+. . .
+</code></pre>
+<p>Altere cada instância de <code>eth0</code> na configuração acima para corresponder ao nome de interface que você encontrou com <code>ip route</code>. As linhas <code>*nat</code> criam regras para que o firewall possa rotear e manipular corretamente o tráfego entre os clientes VPN e a internet. A linha <code>*mangle</code> ajusta o tamanho máximo do segmento de pacotes para evitar possíveis problemas com certos clientes VPN.</p>
+
+<p>Em seguida, após as linhas de definição <code>*filter</code> e de cadeia, adicione mais um bloco de configuração:</p>
+<div class="code-label " title="/etc/ufw/before.rules">/etc/ufw/before.rules</div><pre class="code-pre "><code langs="">. . .
+*filter
+:ufw-before-input - [0:0]
+:ufw-before-output - [0:0]
+:ufw-before-forward - [0:0]
+:ufw-not-local - [0:0]
+
+<span class="highlight">-A ufw-before-forward --match policy --pol ipsec --dir in --proto esp -s 10.10.10.0/24 -j ACCEPT</span>
+<span class="highlight">-A ufw-before-forward --match policy --pol ipsec --dir out --proto esp -d 10.10.10.0/24 -j ACCEPT</span>
+</code></pre>
+<p>Essas linhas dizem ao firewall para encaminhar o tráfego <a href="https://wiki.wireshark.org/ESP">ESP</a> (Encapsulating Security Payload) para que os clientes VPN possam se conectar. O ESP proporciona segurança adicional para nossos pacotes VPN, enquanto eles estiverem passando por redes não confiáveis.</p>
+
+<p>Quando você terminar, salve e feche o arquivo.</p>
+
+<p>Antes de reiniciarmos o firewall, vamos alterar alguns parâmetros do kernel da rede para permitir o roteamento de uma interface para outra. Abra o arquivo de configuração de parâmetros do kernel do UFW:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ufw/sysctl.conf
+</li></ul></code></pre>
+<p>Vamos precisar configurar algumas coisas por aqui:</p>
+
+<ul>
+<li>Primeiramente, vamos habilitar o encaminhamento de pacotes IPv4.</li>
+<li>Vamos desabilitar a Path MTU Discovery (PMTUD), ou Descoberta da unidade máxima de transmissão do caminho, para evitar problemas de fragmentação de pacotes.</li>
+<li>Também não vamos aceitar redirecionamentos do ICMP (ou Internet Control Message Protocol - Protocolo de mensagens para o controle do tráfego) para evitar ataques de <a href="https://en.wikipedia.org/wiki/Man-in-the-middle_attack">man-in-the-middle</a>.</li>
+</ul>
+
+<p>As alterações que você precisa fazer no arquivo estão destacadas no seguinte código:</p>
+<div class="code-label " title="/etc/ufw/sysctl.conf">/etc/ufw/sysctl.conf</div><pre class="code-pre "><code langs="">
+. . .
+
+# Enable forwarding
+# Uncomment the following line
+<span class="highlight">net/ipv4/ip_forward=1</span>
+
+. . .
+
+# Do not accept ICMP redirects (prevent MITM attacks)
+# Ensure the following line is set
+<span class="highlight">net/ipv4/conf/all/accept_redirects=0</span>
+
+# Do not send ICMP redirects (we are not a router)
+# Add the following lines
+<span class="highlight">net/ipv4/conf/all/send_redirects=0</span>
+<span class="highlight">net/ipv4/ip_no_pmtu_disc=1</span>
+</code></pre>
+<p>Salve o arquivo quando terminar. O UFW aplicará essas mudanças na próxima vez que for iniciado.</p>
+
+<p>Agora, podemos habilitar todas as nossas mudanças, desabilitando e reabilitando o firewall:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw disable
+</li><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>Será solicitado que você confirme o processo. Digite <code>Y</code> para habilitar o UFW novamente com as novas configurações.</p>
+
+<h2 id="passo-7-—-testando-a-conexão-vpn-em-windows-ios-e-macos">Passo 7 — Testando a conexão VPN em Windows, iOS e macOS</h2>
+
+<p>Agora que você tem tudo configurado, é hora do teste. Primeiro, você precisará copiar o certificado CA que você criou e instalá-lo no(s) seu(s) dispositivo(s) cliente que serão conectados à VPN. A maneira mais simples de fazer isso é fazendo login no seu servidor e gerando o conteúdo do arquivo de certificação:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /etc/ipsec.d/cacerts/ca-cert.pem
+</li></ul></code></pre>
+<p>Você verá um resultado similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>-----BEGIN CERTIFICATE-----
+MIIFQjCCAyqgAwIBAgIIFkQGvkH4ej0wDQYJKoZIhvcNAQEMBQAwPzELMAkGA1UE
+
+. . .
+
+EwbVLOXcNduWK2TPbk/+82GRMtjftran6hKbpKGghBVDPVFGFT6Z0OfubpkQ9RsQ
+BayqOb/Q
+-----END CERTIFICATE-----
+</code></pre>
+<p>Copie este resultado para o seu computador, incluindo as linhas <code>-----BEGIN CERTIFICATE-----</code> e <code>-----END CERTIFICATE-----</code> e salve-o em um arquivo com um nome reconhecível, como <code>ca-cert.pem</code>. Certifique-se de que o arquivo que você criar tenha a extensão <code>.pem</code>.</p>
+
+<p>De forma alternativa, <a href="https://www.digitalocean.com/community/tutorials/how-to-use-sftp-to-securely-transfer-files-with-a-remote-server">utilize o SFTP para transferir o arquivo para seu computador</a>.</p>
+
+<p>Assim que tiver o arquivo <code>ca-cert.pem</code> baixado no seu computador, você pode configurar a conexão com a VPN.</p>
+
+<h3 id="conectando-se-com-o-windows">Conectando-se com o Windows</h3>
+
+<p>Primeiramente, importe o certificado raiz, seguindo estes passos:</p>
+
+<ol>
+<li>Pressione <code>WINDOWS+R</code> para trazer a janela <strong>Executar</strong> e digite <code>mmc.exe</code> para iniciar o Console de Gerenciamento do Windows.</li>
+<li>Do menu <strong>Arquivo</strong>, navegue até <strong>Adicionar ou Remover Snap-in</strong>, selecione <strong>Certificados</strong> da lista de snap-ins disponíveis, e clique em** Adiciona**r.</li>
+<li>Queremos que a VPN funcione com qualquer usuário, logo selecione <strong>Conta de Computador</strong> e clique em <strong>Avançar</strong>.</li>
+<li>Estamos configurando coisas no computador local, então selecione <strong>Computador Local</strong> e, depois, clique em <strong>Concluir</strong>.</li>
+<li><p>Sob o nó <strong>Raiz do Console</strong>, expanda a entrada <strong>Certificados (Computador Local)</strong>, expanda <strong>Autoridades de Certificação de Raíz Confiáveis</strong> e, em seguida, selecione a entrada <strong>Certificados</strong>: <img src="https://assets.digitalocean.com/articles/ikevpn_ubuntu_1604/4PN0vT6.png" alt="Exibição de Certificados"></p></li>
+<li><p>A partir do menu <strong>Ação</strong>, selecione <strong>Todas as Tarefas</strong> e clique <strong>Importar</strong> para exibir o Assistente de Importação de Certificados. Clique em <strong>Avançar</strong> para passar da introdução.</p></li>
+<li><p>Na tela <strong>Arquivo para Importar</strong>, pressione o botão <strong>Pesquisar</strong> e selecione o arquivo do certificado que você salvou. Então, clique em** Avançar**.</p></li>
+<li><p>Certifique-se de que <strong>Armazenagem de Certificados</strong> foi configurada em <strong>Autoridades Confiáveis para Certificação Raiz</strong>, e clique em <strong>Avançar</strong>.</p></li>
+<li><p>Clique em <strong>Concluir</strong> para importar o certificado.</p></li>
+</ol>
+
+<p>Então, configure a VPN com estes passos:</p>
+
+<ol>
+<li>Abra o <strong>Painel de Controle</strong>, navegue até o <strong>Centro de Redes e Compartilhamento</strong>.</li>
+<li>Clique em <strong>Configurar uma nova conexão ou rede</strong>, depois selecione** Conectar a um local de trabalh**o.</li>
+<li>Selecione <strong>Usar minha conexão com a Internet (VPN)</strong>.</li>
+<li>Digite os detalhes do servidor VPN. Digite o nome de domínio ou endereço IP do servidor no campo <strong>Endereço de internet</strong>, depois, preencha o <strong>Nome do destino</strong> com algo que descreva sua conexão VPN. Então,clique em <strong>Feito</strong>.</li>
+</ol>
+
+<p>Sua nova conexão VPN estará visível abaixo da lista de redes. Selecione a VPN e clique em <strong>Conectar</strong>. Você será solicitado a colocar seu nome de usuário e senha. Digite-os, clique em <strong>OK</strong> e você estará conectado.</p>
+
+<h3 id="conectando-se-com-o-macos">Conectando-se com o macOS</h3>
+
+<p>Siga estes passos para importar o certificado:</p>
+
+<ol>
+<li>Clique duas vezes no arquivo de certificados.** Acesso ao Chaveiro **irá aparecer com uma janela que diz &ldquo;Acesso ao Chaveiro está tentando modificar o chaveiro do sistema. Digite sua senha para permitir.&rdquo;</li>
+<li>Digite sua senha, então clique em <strong>Modificar o Chaveiro</strong></li>
+<li>Clique duas vezes no certificado VPN recém-importado. Isso traz uma pequena janela de propriedades onde você pode especificar os níveis de confiança. Defina <strong>Segurança IP (IPSec)</strong> para <strong>Sempre Confiar</strong> e você será solicitado a inserir sua senha novamente. Esta configuração é salva automaticamente após colocar a senha.</li>
+</ol>
+
+<p>Agora que o certificado é importante e confiável, configure a conexão VPN com estes passos:</p>
+
+<ol>
+<li>Vá até as <strong>Preferências do Sistema</strong> e escolha <strong>Rede</strong>.</li>
+<li>Clique no pequeno botão &ldquo;mais&rdquo; no canto inferior esquerdo da lista de redes.</li>
+<li>Na notificação que aparece, Defina a <strong>Interface</strong> como <strong>VPN</strong>, defina o <strong>Tipo de VPN</strong> como <strong>IKEv2</strong> e nomeie a conexão.</li>
+<li>No campo <strong>Servidor</strong> e <strong>ID Remoto</strong>, digite o nome do domínio ou endereço IP do servidor. Deixe o <strong>ID Local</strong> em branco.</li>
+<li>Clique em <strong>Configurações de Autenticação</strong>, selecione <strong>Nome de usuário</strong>, e digite seu nome de usuário e senha que você configurou para seu usuário VPN. Então clique em <strong>OK</strong>.</li>
+</ol>
+
+<p>Por fim, clique em <strong>Conectar</strong> para se conectar à VPN. Agora, você deve estar conectado à VPN.</p>
+
+<h3 id="conectando-se-com-o-ubuntu">Conectando-se com o Ubuntu</h3>
+
+<p>Para se conectar a partir de uma máquina com Ubuntu, você pode configurar e gerenciar o StrongSwan como um serviço ou usar um comando único cada vez que desejar se conectar. São fornecidas instruções para ambos.</p>
+
+<h4 id="gerenciando-o-strongswan-como-um-serviço">Gerenciando o StrongSwan como um Serviço</h4>
+
+<ol>
+<li>Atualize seu cache de pacotes local: <code>sudo apt update</code></li>
+<li>Instale o StrongSwan e os softwares relacionados <code>sudo apt install strongswan libcharon-extra-plugins</code></li>
+<li>Copie o certificado CA para o diretório <code>/etc/ipsec.d/cacerts</code>: <code>sudo cp <span class="highlight">/tmp/ca-cert.pem</span> /etc/ipsec.d/cacerts</code></li>
+<li>Desabilite o StrongSwan para que a VPN não seja iniciada automaticamente: <code>sudo systemctl disable --now strongswan</code></li>
+<li>Configure seu nome de usuário e senha da VPN no arquivo /<code>etc/ipsec.secrets:</code> y<code>our_username:<span class="highlight"> EAP</span> "your_password"&lt;^&gt;</code></li>
+<li>Edite o arquivo <code>/etc/ipsec.conf</code> para definir sua configuração.</li>
+</ol>
+<div class="code-label " title="/etc/ipsec.conf">/etc/ipsec.conf</div><pre class="code-pre "><code langs="">config setup
+
+conn ikev2-rw
+    right=<span class="highlight">server_domain_or_IP</span>
+    # This should match the `leftid` value on your server's configuration
+    rightid=<span class="highlight">server_domain_or_IP</span>
+    rightsubnet=0.0.0.0/0
+    rightauth=pubkey
+    leftsourceip=%config
+    leftid=<span class="highlight">username</span>
+    leftauth=eap-mschapv2
+    eap_identity=%identity
+    auto=start
+</code></pre>
+<p>Para se conectar à VPN, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start strongswan
+</li></ul></code></pre>
+<p>Para se desconectar novamente, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl stop strongswan
+</li></ul></code></pre>
+<h4 id="usando-um-cliente-simples-para-conexões-Únicas">Usando um Cliente Simples para Conexões Únicas</h4>
+
+<ol>
+<li>Atualize seu cache de pacotes local: <code>sudo apt update</code></li>
+<li>Instale o <code>charon-cmd</code> e software relacionados <code>sudo apt install charon-cmd libcharon-extra-plugins</code></li>
+<li>Vá até o diretório onde você copiou o certificado CA: <code>cd &lt;^&gt;/path/to/ca-cert.pem</code></li>
+<li>Conecte-se ao servidor VPN com o <code>charon-cmd</code> utilizando o certificado CA do servidor, o endereço IP do servidor VPN e o nome de usuário que você configurou: <code>sudo charon-cmd --cert ca-cert.pem --host <span class="highlight">vpn_domain_or_IP </span>--identity <span class="highlight">your_username</span></code></li>
+<li>Quando solicitado, insira a senha do usuário VPN.</li>
+</ol>
+
+<p>Agora, você deve estar conectado à VPN. Para se desconectar, pressione <code>CTRL+C</code> e aguarde que a conexão feche.</p>
+
+<h3 id="conectando-se-com-o-ios">Conectando-se com o iOS</h3>
+
+<p>Para configurar a conexão VPN em um dispositivo iOS, siga estes passos:</p>
+
+<ol>
+<li>Envie um e-mail para si mesmo com o certificado raiz anexado.</li>
+<li>Abra o e-mail no seu dispositivo iOS e toque no arquivo do certificado anexado; depois, toque em <strong>Instalar</strong> e digite a sua senha. Assim que instalar, toque em <strong>Feito</strong>.</li>
+<li>Vá até <strong>Configurações</strong>, <strong>Geral</strong>, <strong>VPN</strong> e toque em <strong>Adicionar Configuração de VPN</strong>. Isso irá trazer a tela de configuração de conexão VPN.</li>
+<li>Toque em <strong>Tipo **e selecione</strong> IKEv2**.</li>
+<li>No campo <strong>Descrição</strong>, escreva um nome curto para a conexão VPN. Isso pode ser o que você quiser.</li>
+<li>No campo <strong>Servidor</strong> e <strong>ID Remoto</strong>, digite o nome do domínio ou endereço IP do servidor. O campo <strong>ID Local</strong> pode ser deixado em branco.</li>
+<li>Digite seu nome de usuário e senha na seção <strong>Autenticação</strong> e, em seguida toque em <strong>Feito</strong>.</li>
+<li>Selecione a conexão VPN que você acabou de criar, toque no botão no alto da página e você estará conectado.</li>
+</ol>
+
+<h3 id="conectando-se-com-o-android">Conectando-se com o Android</h3>
+
+<p>Siga estes passos para importar o certificado:</p>
+
+<ol>
+<li>Envie um e-mail para si mesmo com o certificado CA anexado. Salve o certificado CA na sua pasta de downloads.</li>
+<li>Faça download do <a href="https://play.google.com/store/apps/details?id=org.strongswan.android&amp;hl=en_US">StrongSwan VPN client</a> da Play Store.</li>
+<li>Abra o aplicativo. Toque no** ícone &ldquo;mais&rdquo;,** no canto superior direito (o ícone dos três pontos) e selecione <strong>certificados CA</strong>.</li>
+<li>Toque no <strong>ícone &ldquo;mais&rdquo;</strong>, no canto superior direito novamente. Selecione <strong>Importar certificado</strong>.</li>
+<li>Navegue até o arquivo do certificado CA, em sua pasta de downloads e selecione-o para importá-lo para o aplicativo.</li>
+</ol>
+
+<p>Agora que o certificado foi importado para aplicativo StrongSwan, você pode configurar a conexão VPN com estes passos:</p>
+
+<ol>
+<li>No aplicativo, clique em <strong>ADICIONAR PERFIL VPN</strong>, no topo.</li>
+<li>Preencha o <strong>Servidor</strong> com o nome de domínio ou endereço IP público do seu servidor VPN.</li>
+<li>Certifique-se de que <strong>IKEv2 EAP (Usuário/Senha)</strong> está selecionado como o Tipo VPN.</li>
+<li>Preencha o <strong>Nome de usuário</strong> e <strong>Senha</strong> com as credenciais que você definiu no servidor.</li>
+<li>Desmarque <strong>Selecionar automaticamente</strong> na seção <strong>certificado CA</strong> e clique em <strong>Selecionar o certificado CA</strong>.</li>
+<li>Toque na aba <strong>IMPORTADO</strong>, no alto da tela e escolha o CA que você importou (ele será chamado &ldquo;VPN raiz CA&rdquo; se você não tiver mudado o &ldquo;DN&rdquo; anteriormente).</li>
+<li>Se você quiser, preencha o <strong>Nome de perfil (opcional)</strong> com um nome mais descritivo.</li>
+</ol>
+
+<p>Quando você quiser se conectar à VPN, clique no perfil que você acabou de criar no aplicativo StrongSwan.</p>
+
+<h3 id="solucionando-problemas-de-conexão">Solucionando problemas de conexão</h3>
+
+<p>Se você não conseguir importar o certificado, certifique-se de que o arquivo tenha a extensão <code>.pem</code>, e não <code>.pem.txt</code>.</p>
+
+<p>Se você não conseguir conectar-se à VPN, verifique o nome do servidor ou endereço IP que você usou. O nome de domínio ou endereço IP do servidor deve corresponder ao que você havia configurado como o nome comum (CN) ao criar o certificado. Se eles não corresponderem, a conexão VPN não funcionará. Se configurar um certificado com o CN do <code>vpn.example.com</code>, você *deve <code>usar *vpn.example.com</code> quando você digitar os detalhes do servidor VPN. Verifique novamente o comando que você usou para gerar o certificado e os valores que você usou ao criar sua conexão VPN.</p>
+
+<p>Por fim, verifique novamente a configuração da VPN para garantir que o valor <code>leftid</code> tenha sido configurado com o símbolo <code>@</code>se você estiver usando um nome de domínio:</p>
+<pre class="code-pre "><code langs="">    leftid=<span class="highlight">@</span>vpn.example.com
+</code></pre>
+<p>E, se você estiver usando um endereço IP, certifique-se de que o símbolo <code>@</code> seja omitido.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste tutorial, você construiu um servidor VPN que usa o protocolo IKEv2. Agora, você pode ter certeza de que suas atividades online permanecerão seguras onde quer que você vá!</p>
+
+<p>Para adicionar ou remover usuários, basta olhar o Passo 5 novamente. Cada linha é para um usuário, então adicionar ou remover usuários é tão simples quanto editar o arquivo.</p>
+
+<p>A partir daqui, você pode querer examinar como configurar um analisador de arquivos de registro, uma vez que o StrongSwan despeja seus registros no syslog. O tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-logwatch-log-analyzer-and-reporter-on-a-vps">Como Instalar e Usar o Analisador e Relator de Registros Logwatch em um VPS</a> tem mais informações sobre como configurar isso.</p>
+
+<p>Você também pode estar interessado <a href="https://www.eff.org/wp/effs-top-12-ways-protect-your-online-privacy">neste guia do EFF sobre privacidade online</a>.</p>

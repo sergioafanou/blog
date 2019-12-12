@@ -1,0 +1,271 @@
+---
+layout: post
+title: Como instalar o Linux, o Nginx, o MySQL, o PHP (pilha LEMP) no Ubuntu 18.04
+network: digitalocean
+date: December 12, 2019 at 07:49PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-linux-nginx-mysql-php-lemp-stack-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/lemp_ubuntu_1604/nginx_default.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>A pilha de software LEMP é um grupo de software que pode ser usado para atender páginas e aplicativos Web dinâmicos. Este é um acrônimo que descreve um sistema operacional <strong>L</strong>inux, com um servidor Web Nginx (se pronuncia &ldquo;<strong>E</strong>ngine-X). Os dados backend são armazenados no banco de dados <strong>M</strong>ySQL e o processamento dinâmico é tratado pelo <strong>P</strong>HP.</p>
+
+<p>Este guia demonstra como instalar uma pilha LEMP em um servidor Ubuntu 18.04. O sistema operacional Ubuntu cuida do primeiro requisito. Vamos descrever como colocar o resto dos componentes em funcionamento.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Antes de completar este tutorial, será necessário ter uma conta de usuário regular e sem root no seu servidor com privilégios <code>sudo</code>. Configure esta conta completando nosso guia de <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">configuração inicial do servidor para o Ubuntu 18.04</a> .</p>
+
+<p>Assim que tiver seu usuário disponível, você está pronto para iniciar as etapas delineadas neste guia.</p>
+
+<h2 id="passo-1-—-como-instalar-o-servidor-web-nginx">Passo 1 — Como instalar o servidor Web Nginx</h2>
+
+<p>Para mostrar páginas Web aos visitantes de nosso site, vamos usar o Nginx, um moderno e eficiente servidor Web.</p>
+
+<p>Todo software usado neste procedimento virão dos repositórios de pacote padrão do Ubuntu. Isso significa que podemos usar o conjunto de gerenciamento de pacotes <code>apt</code> para completar as instalações necessárias.</p>
+
+<p>Uma vez que essa é a primeira vez que vamos usar o <code>apt</code> para esta sessão, atualize o índice de pacotes do seu servidor. Em seguida, instale o servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install nginx
+</li></ul></code></pre>
+<p>No Ubuntu 18.04, o Nginx está configurado para começar a executar após a instalação.</p>
+
+<p>Se tiver o firewall <code>ufw</code> funcionando como descrito no guia de configuração inicial, será necessário permitir as conexões ao Nginx. O Nginx registra-se com o <code>ufw</code> após a instalação, então o procedimento é bastante simples.</p>
+
+<p>É recomendável que habilite o perfil mais restritivo que ainda assim permitirá o tráfego que quiser. Como ainda não configurou o SSL para seu servidor neste guia, será necessário apenas permitir o tráfego na porta <code>80</code>.</p>
+
+<p>Habilite isso digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Nginx HTTP'
+</li></ul></code></pre>
+<p>Verifique a mudança executando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre>
+<p>Este comando irá mostrar que o tráfego HTTP é permitido:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere
+Nginx HTTP                 ALLOW       Anywhere
+OpenSSH (v6)               ALLOW       Anywhere (v6)
+Nginx HTTP (v6)            ALLOW       Anywhere (v6)
+</code></pre>
+<p>Com essas novas regras adicionadas no firewall, você pode testar se o servidor está funcionando acessando o nome do domínio do seu servidor ou endereço IP público no seu navegador Web.</p>
+
+<p>Se você não tiver um nome de domínio apontando no seu servidor e você não sabe o endereço IP público do seu servidor, é possível encontrá-lo executando o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip addr show eth0 | grep inet | awk '{ print $2; }' | sed 's/\/.*$//'
+</li></ul></code></pre>
+<p>Isso irá mostrar na tela alguns endereços IP. Você pode testar cada um deles em seu navegador Web.</p>
+
+<p>Como uma alternativa, verifique qual endereço IP está acessível, como visto por outras locações na internet:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -4 icanhazip.com
+</li></ul></code></pre>
+<p>Digite o endereço que receber no seu navegador Web e ele irá levá-lo para a página inicial do Nginx:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">server_domain_or_IP</span>
+</code></pre>
+<p><img src="https://assets.digitalocean.com/articles/lemp_ubuntu_1604/nginx_default.png" alt="Nginx default page"></p>
+
+<p>Se ver a página acima, você instalou o Nginx com sucesso.</p>
+
+<h2 id="passo-2-—-como-instalar-o-mysql-para-gerenciar-dados-do-site">Passo 2 — Como instalar o MySQL para gerenciar dados do site</h2>
+
+<p>Agora que você tem um servidor Web, será necessário instalar o MySQL (um sistema de gerenciamento de banco de dados) para armazenar e gerenciar os dados para seu site.</p>
+
+<p>Instale o MySQL digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install mysql-server
+</li></ul></code></pre>
+<p>O software de banco de dados MySQL agora está instalado, mas sua configuração ainda não está completa.</p>
+
+<p>Para proteger a instalação, o MySQL vem com um script que irá perguntar se queremos modificar alguns padrões não-seguros. Inicie o script digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mysql_secure_installation
+</li></ul></code></pre>
+<p>Este script irá perguntar se deseja configurar o <code>VALIDATE PASSWORD PLUGIN</code>.</p>
+
+<p><span class='warning'><strong>Aviso:</strong> Ativar esta característica é uma decisão sua. Se habilitada, as senhas que não corresponderem o critério especificado serão rejeitadas pelo MySQL com um erro. Isso causará problemas caso utilize uma senha fraca em conjunto com o software que configura automaticamente as credenciais de usuário do MySQL, como os pacotes Ubuntu para o phpMyAdmin. É seguro deixar a validação desativada, mas sempre utilize senhas fortes e únicas para as credenciais do banco de dados.<br></span></p>
+
+<p>Responda <code>Y</code> para sim, ou qualquer outra coisa para continuar sem a habilitar.</p>
+<pre class="code-pre "><code langs="">VALIDATE PASSWORD PLUGIN can be used to test passwords
+and improve security. It checks the strength of password
+and allows the users to set only those passwords which are
+secure enough. Would you like to setup VALIDATE PASSWORD plugin?
+
+Press y|Y for Yes, any other key for No:
+</code></pre>
+<p>Se tiver habilitado a validação, o script também irá pedir a você para selecionar um nível de validação de senha. Lembre-se de que se digitar <strong>2</strong> para o níveis mais forte – receberá erros ao tentar definir qualquer senha que não contenha números, letras maiúsculas e minúsculas, e caracteres especiais, ou que se baseiam em palavras do dicionário comuns.</p>
+<pre class="code-pre "><code langs="">There are three levels of password validation policy:
+
+LOW    Length &gt;= 8
+MEDIUM Length &gt;= 8, numeric, mixed case, and special characters
+STRONG Length &gt;= 8, numeric, mixed case, special characters and dictionary                  file
+
+Please enter 0 = LOW, 1 = MEDIUM and 2 = STRONG: <span class="highlight">1</span>
+</code></pre>
+<p>Em seguida, será solicitado que envie e confirme uma senha root:</p>
+<pre class="code-pre "><code langs="">Please set the password for root here.
+
+New password:
+
+Re-enter new password:
+</code></pre>
+<p>Para o resto das perguntas, pressione <code>Y</code> e clique na tecla <code>ENTER</code> em cada prompt. Isso removerá alguns usuários anônimos e o banco de dados teste, desativará os logins remotos ao root, e carregará essas novas regras para que o MySQL respeite imediatamente as alterações que fizemos.</p>
+
+<p>Note que os sistemas Ubuntu que rodam o MySQL 5.7 (e as versões posteriores), o usuário <strong>root</strong> MySQL está definido para autenticar usando o plug-in do <code>auth_socket</code> por padrão ao invés de um com uma senha. Isso permite maior segurança e a usabilidade na maioria dos casos, mas também pode complicar as coisas quando for necessário permitir que um programa externo (por exemplo, o phpMyAdmin) acesse o usuário.</p>
+
+<p>Se usar o plug-in <code>auth_socket</code> para acessar o MySQL se encaixar com seu fluxo de trabalho, vá para o Passo 3. Se, no entanto, preferir usar uma senha quando se conectar ao MySQL como <strong>root</strong>, será necessário alterar seu método de autenticação do <code>auth_socket</code> para o <code>mysql_native_password</code>. Para fazer isso, abra o prompt do MySQL do seu terminal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mysql
+</li></ul></code></pre>
+<p>Em seguida, verifique quais os métodos de autenticação cada conta de usuário do seu MySQL utilizam com o seguinte comando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">SELECT user,authentication_string,plugin,host FROM mysql.user;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+------------------+-------------------------------------------+-----------------------+-----------+
+| user             | authentication_string                     | plugin                | host      |
++------------------+-------------------------------------------+-----------------------+-----------+
+| root             |                                           | auth_socket           | localhost |
+| mysql.session    | *THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE | mysql_native_password | localhost |
+| mysql.sys        | *THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE | mysql_native_password | localhost |
+| debian-sys-maint | *CC744277A401A7D25BE1CA89AFF17BF607F876FF | mysql_native_password | localhost |
++------------------+-------------------------------------------+-----------------------+-----------+
+4 rows in set (0.00 sec)
+</code></pre>
+<p>Neste exemplo, é possível ver que o usuário <strong>root</strong> autenticou usando o plug-in <code>auth_socket</code>. Para configurar a conta <strong>root</strong> para autenticar com uma senha, execute o comando <code>ALTER USER</code>. Certifique-se de trocar a <code><span class="highlight">senha</span></code> por uma senha forte de sua escolha:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '<span class="highlight">password</span>';
+</li></ul></code></pre>
+<p>Então, execute o comando <code>FLUSH</code>  o qual diz para o servidor recarregar as tabelas de permissões e colocar as suas alterações em vigor:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">FLUSH PRIVILEGES;
+</li></ul></code></pre>
+<p>Verifique novamente os métodos de autenticação utilizados por cada um dos seus usuários para confirmar que *<em>root *</em>já não autentica utilizando o plug-in do <code>auth_socket</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">SELECT user,authentication_string,plugin,host FROM mysql.user;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+------------------+-------------------------------------------+-----------------------+-----------+
+| user             | authentication_string                     | plugin                | host      |
++------------------+-------------------------------------------+-----------------------+-----------+
+| root             | *3636DACC8616D997782ADD0839F92C1571D6D78F | <span class="highlight">mysql_native_password</span> | localhost |
+| mysql.session    | *THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE | mysql_native_password | localhost |
+| mysql.sys        | *THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE | mysql_native_password | localhost |
+| debian-sys-maint | *CC744277A401A7D25BE1CA89AFF17BF607F876FF | mysql_native_password | localhost |
++------------------+-------------------------------------------+-----------------------+-----------+
+4 rows in set (0.00 sec)
+</code></pre>
+<p>Neste exemplo, é possível ver o resultado que agora o usuário <strong>root</strong> MySQL autentica utilizando uma senha. Assim que confirmar isso no seu servidor, saia do shell MySQL:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">exit
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Nota:</strong> Após configurar seu usuário <strong>root</strong> MySQL para autenticar com uma senha, você já não será capaz de acessar o MySQL com o comando <code>sudo mysql</code> usado anteriormente. Ao invés disso, execute o seguinte:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -u root -p
+</li></ul></code></pre>
+<p>Após digitar a senha que acabou de definir, você verá o prompt do MySQL.<br></p></span>
+
+<p>Neste ponto, seu sistema de banco de dados está configurado e você pode seguir em frente para a instalação do PHP.</p>
+
+<h2 id="passo-3-—-como-instalar-o-php-e-configurar-o-nginx-para-usar-o-processo-do-php">Passo 3 — Como instalar o PHP e configurar o Nginx para usar o Processo do PHP</h2>
+
+<p>Agora você tem o Nginx instalado para servir suas páginas e o MySQL instalado para armazenar e gerenciar seus dados. No entanto, você ainda não tem nada instalado que possa gerar conteúdo dinâmico. Aqui é onde o PHP entra em jogo.</p>
+
+<p>Uma vez que o Nginx não contém o processamento nativo do PHP como outros servidores Web, você precisará instalar o <code>php-fpm</code>, que significa &quot;gerenciador de processos fastCGI&rdquo;. Diremos ao Nginx para passar os pedidos PHP para este software para processamento.</p>
+
+<span class='note'><p>
+<strong>Nota:</strong> Dependendo do seu fornecedor de nuvem, talvez seja necessário adicionar o repositório <code>universe</code> do Ubuntu que inclui o software de código aberto mantido pela comunidade Ubuntu, antes de instalar o pacote <code>php-fpm</code>. Faça isso digitando:**</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository universe
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Instale o módulo <code>php-fpm</code> junto com um pacote auxiliar adicional, <code>php-mysql</code>, que permitirá que o PHP se comunique com seu backend do banco de dados. A instalação irá puxar os arquivos principais e necessários do PHP. Faça isso digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install php-fpm php-mysql
+</li></ul></code></pre>
+<p>Agora você tem todos os componentes de pilha LEMP necessários instalados, mas ainda assim será necessário fazer algumas alterações de configuração para dizer ao Nginx para usar o processador PHP para conteúdo dinâmico.</p>
+
+<p>Isto é feito no nível de bloco do servidor ( os blocos do servidor são semelhantes aos hosts virtuais do Apache). Para fazer isso, abra um novo arquivo de configuração de bloco de servidor dentro do diretório <code>/etc/nginx/sites-available/</code>. Neste exemplo, o novo arquivo de configuração de bloco de servidor se chama <code>example.com</code>, embora você possa dar o nome que quiser:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Ao editar um novo arquivo de configuração de bloco de servidor, ao invés de editar o padrão, você será capaz de restaurar facilmente a configuração padrão caso seja necessário.</p>
+
+<p>Adicione o seguinte conteúdo, que foi tomado e ligeiramente modificado do arquivo de configuração padrão do bloco de servidor, ao seu novo arquivo de configuração de bloco de servidor:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code langs="">server {
+        listen 80;
+        root /var/www/html;
+        index index.php index.html index.htm index.nginx-debian.html;
+        server_name <span class="highlight">example.com</span>;
+
+        location / {
+                try_files $uri $uri/ =404;
+        }
+
+        location ~ \.php$ {
+                include snippets/fastcgi-php.conf;
+                fastcgi_pass unix:/var/run/php/php7.2-fpm.sock;
+        }
+
+        location ~ /\.ht {
+                deny all;
+        }
+}
+</code></pre>
+<p>Aqui está o que cada um desses blocos de localização e diretrizes fazem:</p>
+
+<ul>
+<li><code>listen</code> — Define o que a porta Nginx irá escutar. Neste caso, ele irá escutar na porta <code>80</code>, a porta padrão para o HTTP.</li>
+<li><code>root</code>— Define o documento root onde os arquivos apresentados pelo site são armazenados.</li>
+<li><code>index</code>— Configura o Nginx para dar prioridade a arquivos de serviço designados <code>index.php</code> quando um arquivo index é solicitado, se eles estiverem disponíveis.</li>
+<li><code>server_name</code>— Define qual bloco de servidor deve ser usado para um dado pedido ao seu servidor.** Aponte esta diretriz para o nome de domínio do seu servidor ou endereço IP público.**</li>
+<li><code>location /</code>— O primeiro bloco de localização inclui uma diretriz <code>try_files</code>, que verifica a existência de arquivos que correspondam a um pedido URI. Se o Nginx não puder encontrar o arquivo apropriado, ele irá retornar um erro 404.</li>
+<li><code>location ~ \.php$</code>— Este bloco de localização lida o processamento atual do PHP apontando o Nginx para o arquivo de configuração <code>fastcgi-php.conf</code> e o arquivo <code>php7.2-fpm.sock</code> que declara qual soquete está associado ao <code>php-fpm</code>.</li>
+<li><code>location ~ /\.ht</code> — O último bloco de localização lida com os arquivos <code>.htaccess</code>, que o Nginx não processa. Ao adicionar a diretriz <code>deny all</code>, se algum arquivo <code>.htaccess</code> encontrar seu caminho para a root do documento ele não será apresentado aos visitantes.</li>
+</ul>
+
+<p>Após adicionar este conteúdo, salve e feche o arquivo. Habilite seu novo bloco de servidor criando um link simbólico do seu novo arquivo de configuração de bloco de servidor (no diretório <code>/etc/nginx/sites-available/</code>) para o diretório <code>/etc/nginx/sites-enabled/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">example.com</span> /etc/nginx/sites-enabled/
+</li></ul></code></pre>
+<p>Então, desvincule o arquivo de configuração padrão do diretório <code>/sites-enabled/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo unlink /etc/nginx/sites-enabled/default
+</li></ul></code></pre>
+<span class='note '><p>Nota<strong>: Se for necessário restaurar a configuração padrão, recrie o link simbólico, desta forma:</strong></p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Teste seu novo arquivo de configuração para erros de sintaxe digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Se algum erro for reportado, volte e verifique novamente seu arquivo antes de continuar.</p>
+
+<p>Quando estiver pronto, recarregue o Nginx para fazer as alterações necessárias:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload nginx
+</li></ul></code></pre>
+<p>Isto conclui a instalação e configuração da sua pilha LEMP. No entanto, é prudente confirmar que todos os componentes podem se comunicar uns com os outros.</p>
+
+<h2 id="passo-4-—-como-criar-um-arquivo-php-para-testar-a-configuração">Passo 4 — Como criar um arquivo PHP para testar a configuração</h2>
+
+<p>Sua pilha LEMP agora deve estar configurada completamente. Teste ela para validar que o Nginx pode passar corretamente os arquivos <code>.php</code> para o processador PHP.</p>
+
+<p>Para fazer isso, utilize seu editor de texto para criar um arquivo de teste PHP chamado <code>info.php</code> na sua root do documento:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/info.php
+</li></ul></code></pre>
+<p>Digite as linhas a seguir para o novo arquivo. Este é um código PHP válido que irá retornar informações sobre seu servidor:</p>
+<div class="code-label " title="/var/www/html/info.php">/var/www/html/info.php</div><pre class="code-pre "><code langs="">&lt;?php
+phpinfo();
+</code></pre>
+<p>Quando você terminar, salve e feche o arquivo.</p>
+
+<p>Agora, visite esta página no seu navegador Web visitando o nome de domínio do seu servidor ou endereço IP público seguido por <code>/info.php</code>:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_domain_or_IP</span>/info.php
+</code></pre>
+<p>Você deve ver uma página Web que foi gerada pelo PHP com informações sobre seu servidor:</p>
+
+<p><img src="https://assets.digitalocean.com/lemp_ubuntu_1804/php_info_1804.png" alt="PHP page info"></p>
+
+<p>Se você ver uma página que se pareça com essa, o processamento PHP com o Nginx foi configurado com sucesso.</p>
+
+<p>Após verificar que o Nginx renderiza a página corretamente, é melhor remover o arquivo que você criou uma vez que ele pode de fato dar a usuários não autorizados algumas dicas sobre sua configuração que podem ajudá-los a tentar invadir. Você sempre pode gerar novamente este arquivo se precisar dele mais tarde.</p>
+
+<p>Agora, remova o arquivo digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo rm /var/www/html/info.php
+</li></ul></code></pre>
+<p>Com isso, você agora tem uma pilha LEMP totalmente configurada e funcionando no seu servidor Ubuntu 18.04.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Uma pilha LEMP é uma plataforma poderosa que permitirá que você configure e apresente quase qualquer site ou aplicativo do seu servidor.</p>
+
+<p>Há um número de passos que você pode tomar a partir daqui. Por exemplo, certifique-se de que as conexões para seu servidor estejam seguras. Para isso, você pode <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">proteger sua instalação Nginx com o Let&rsquo;s Encrypt</a>. Ao seguir este guia, você receberá um certificado TLS/SSL gratuito para seu servidor, permitindo que apresente conteúdo sobre o HTTPS.</p>

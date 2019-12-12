@@ -1,0 +1,280 @@
+---
+layout: post
+title: Como Instalar e Configurar um LEMP Stack usando Coleções de Software no CentOS 7
+network: digitalocean
+date: December 12, 2019 at 07:47PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-configure-lemp-stack-software-collections-centos-7-pt
+image: https://assets.digitalocean.com/articles/lemp_stack_centos7/lemp-centos-nginx.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>O autor selecionou a <a href="https://www.brightfunds.org/organizations/apache-software-foundation">Fundação do Software Apache</a> para receber uma doação de $100 como parte do programa <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="introdução">Introdução</h3>
+
+<p>Uma pilha de software LEMP é um grupo de softwares de código aberto que são normalmente instalados juntos para permitir que um servidor hospede sites dinâmicos e aplicativos Web. Este termo é, na verdade, uma sigla que representa o sistema operacional <strong>L</strong>inux, com o servidor Web <strong>E</strong>Nginx (que substitui o componente Apache de uma pilha LAMP). Os dados do site são armazenados em uma base de dados <strong>MySQL</strong> (usando MariaDB) e o conteúdo dinâmico é processado pelo <strong>PHP</strong>.</p>
+
+<p>Os componentes de pilha LEMP são, por vezes, instalados usando o <a href="https://fedoraproject.org/wiki/EPEL">repositório EPEL</a> do CentOS 7. No entanto, este repositório contém pacotes desatualizados. Por exemplo, você não pode instalar nenhuma versão do PHP maior que a 5.4.16 do EPEL, embora este lançamento não tenha sido suportado <a href="http://php.net/supported-versions.php">por muito tempo</a>. Para obter as versões mais recentes do software, é recomendado que você use Coleções de Software, também conhecidas como SCLs. Os SCLs são coleções de recursos do desenvolvedor fornecidos pela RedHat que permitem que você use várias versões do software no mesmo sistema sem afetar pacotes previamente instalados.</p>
+
+<p>Neste guia, você irá instalar uma pilha LEMP em um servidor do CentOS 7. O sistema operacional CentOS cuida do componente Linux. Você irá instalar o resto dos componentes usando o repositório de Coleções do Software e, em seguida, configurá-los para servir uma página Web simples.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Antes de começar este tutorial, você deve ter o servidor CentOS 7 configurado seguindo <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-centos-7">o guia de configuração inicial do servidor CentOS 7</a>, incluindo um usuário sudo que não seja root.</p>
+
+<h2 id="passo-1-—-ativando-o-repositório-de-coleções-de-software">Passo 1 — Ativando o Repositório de Coleções de Software</h2>
+
+<p>Para obter acesso às SCLs para o CentOS, instalar o arquivo de liberação de Coleções de Software CentOS Linux:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install centos-release-scl
+</li></ul></code></pre>
+<p>Veja a lista de pacotes SCL disponíveis usando o comando a seguir:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">yum --disablerepo='*' --enablerepo='centos-sclo-rh' --enablerepo='centos-sclo-sclo' list available
+</li></ul></code></pre>
+<p>Para evitar quaisquer conflitos de sistema, os pacotes SCL são instalados no diretório <code>/opt/rh</code>. Isso permite que você, por exemplo, instale o Python 3.5 em uma máquina CentOS 7 sem remover ou interferir com o Python 2.7.</p>
+
+<p>Todos os arquivos de configuração para os pacotes SCL são armazenados na pasta correspondente dentro do diretório <code>/etc/opt/rh/</code>. Os pacotes SCL fornecem scripts de shell que definem as variáveis de ambiente necessárias para usar as aplicações incluídas, como <code>PATH</code>, <code>LD_LIBRARY_PATH</code>, e <code>MANPATH</code>. Estes scripts são armazenados no sistema de arquivos como <code>/opt/rh/<span class="highlight">package-name</span>/enable</code>.</p>
+
+<p>Agora, você está pronto para começar a instalar os pacotes apresentados neste guia.</p>
+
+<h2 id="passo-2-—-instalando-o-servidor-web-nginx">Passo 2 — Instalando o Servidor Web Nginx</h2>
+
+<p>Para mostrar páginas Web aos visitantes, vamos usar Nginx, um moderno e eficiente servidor Web.</p>
+
+<p>Instale Nginx usando o comando <code>yum</code> a seguir. Certifique-se de substituir o valor em destaque pela versão do Nginx que você quer instalar; a versão mais recente terá o número mais alto no nome do pacote (<code>112</code> no momento em que este texto está sendo escrito):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install rh-nginx<span class="highlight">112</span>
+</li></ul></code></pre>
+<p>Assim que terminar a instalação, inicie o serviço Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start rh-nginx<span class="highlight">112</span>-nginx
+</li></ul></code></pre>
+<p>Certifique-se de que o Nginx está em execução através do comando <code>systemctl status</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status rh-nginx<span class="highlight">112</span>-nginx
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● rh-nginx112-nginx.service - The nginx HTTP and reverse proxy server
+   Loaded: loaded (/usr/lib/systemd/system/rh-nginx112-nginx.service; disabled; vendor preset: disabled)
+   Active: active (running) since Fri 2018-03-19 15:15:43 UTC; 1min 17s ago
+ Main PID: 10556 (nginx)
+   CGroup: /system.slice/rh-nginx112-nginx.service
+           ├─10556 nginx: master process /opt/rh/rh-nginx112/root/usr/sbin/nginx
+           ├─10557 nginx: worker process
+           └─10558 nginx: worker process
+
+Mar 19 15:15:43 lemp-centos-222 systemd[1]: Starting The nginx HTTP and reverse proxy server...
+Mar 19 15:15:43 lemp-centos-222 nginx-scl-helper[10541]: nginx: the configuration file /etc/opt/rh/rh-nginx... ok
+Mar 19 15:15:43 lemp-centos-222 nginx-scl-helper[10541]: nginx: configuration file /etc/opt/rh/rh-nginx112/...ful
+Mar 19 15:15:43 lemp-centos-222 systemd[1]: Started The nginx HTTP and reverse proxy server.
+Hint: Some lines were ellipsized, use -l to show in full.
+</code></pre>
+<p>Neste ponto, seu servidor pode estar vulnerável a um acesso não autorizado por usuários não autorizados. Para consertar isso, configure um firewall usando firewalld. Você pode precisar instalar primeiro o firewalld, o que pode ser feito com o comando a seguir:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install firewalld
+</li></ul></code></pre>
+<p>Em seguida, inicie o serviço firewalld:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start firewalld
+</li></ul></code></pre>
+<p>Então, adicione algumas regras no firewall para permitir o acesso SSH no seu servidor e as conexões HTTP e HTTPS no Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo firewall-cmd --permanent --add-service=ssh
+</li><li class="line" prefix="$">sudo firewall-cmd --zone=public --permanent --add-service=http
+</li><li class="line" prefix="$">sudo firewall-cmd --zone=public --permanent --add-service=https
+</li></ul></code></pre>
+<p>Recarregue o firewall para implementar as novas regras de firewall:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo firewall-cmd --reload
+</li></ul></code></pre>
+<p>Saiba mais sobre o firewalld em <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-firewall-using-firewalld-on-centos-7">Como Configurar um Firewall Usando o FirewallD no CentOS 7</a>.</p>
+
+<p>Com essas novas regras adicionadas no firewall, você pode testar se o servidor está funcionando acessando o nome do domínio do seu servidor ou endereço IP público no seu navegador Web.</p>
+
+<p>Se você não tiver um nome de domínio apontando no seu servidor e você não sabe o endereço IP público do seu servidor, você pode encontrá-lo digitando o seguinte no seu terminal:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -4 icanhazip.com
+</li></ul></code></pre>
+<p>Digite o endereço IP obtido como resultado na barra de endereço do seu navegador, e você verá a página padrão de destino do Nginx:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">server_domain_or_IP</span>
+</code></pre>
+<p><img src="https://assets.digitalocean.com/articles/lemp_stack_centos7/lemp-centos-nginx.png" alt="Nginx default page"></p>
+
+<p>Se você ver essa página, você instalou o Nginx com sucesso. Antes de continuar, habilite o Nginx para iniciar no boot usando o comando a seguir:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable rh-nginx<span class="highlight">112</span>-nginx
+</li></ul></code></pre>
+<p>O servidor Nginx agora está instalado e você pode seguir para a instalação do software de banco de dados MariaDB.</p>
+
+<h2 id="passo-3-—-instalando-mariadb-para-gerenciar-os-dados-do-site">Passo 3 — Instalando MariaDB para Gerenciar os Dados do Site</h2>
+
+<p>Agora que temos um servidor Web, é hora de instalar o MariaDB, um substituto para o MySQL, para armazenar e gerenciar os dados para seu site.</p>
+
+<p>Instale o MariaDB com o comando a seguir. Novamente, substitua o valor em destaque com o número de versão que você quer instalar, o número mais alto sendo a versão mais recente disponível (<code>102</code>, no momento em que o texto foi escrito):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install rh-mariadb<span class="highlight">102</span>
+</li></ul></code></pre>
+<p>Quando a instalação for concluída, inicie o serviço MariaDB com o comando a seguir:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start rh-mariadb<span class="highlight">102</span>-mariadb
+</li></ul></code></pre>
+<p>Com isso, o MariaDB está instalado e funcionando. No entanto, a configuração dele ainda não está completa.</p>
+
+<p>Para proteger a instalação, o MariaDB vem instalado com um script de segurança que te notifica para modificar algumas configurações padrão inseguras. Execute o script digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source /opt/rh/rh-mariadb102/enable
+</li><li class="line" prefix="$">mysql_secure_installation
+</li></ul></code></pre>
+<p>O aviso irá pedir a sua senha root atual. Uma vez que você acabou de instalar o MySQL, você provavelmente não terá um, então deixe ele em branco pressionando <code>ENTER</code>. Então a notificação irá perguntar se você quer definir uma senha root. Vá em frente e digite <code>Y</code> e siga as instruções:</p>
+<pre class="code-pre "><code langs="">. . .
+Enter current password for root (enter for none):
+OK, successfully used password, moving on...
+
+Setting the root password ensures that nobody can log into the MariaDB
+root user without the proper authorization.
+
+Set root password? [Y/n] <span class="highlight">Y</span>
+New password: <span class="highlight">password</span>
+Re-enter new password: <span class="highlight">password</span>
+Password updated successfully!
+Reloading privilege tables..
+ ... Success!
+. . .
+</code></pre>
+<p>Para o resto das perguntas, pressione a tecla <code>ENTER</code> em cada uma das notificações para aceitar os valores padrão. Isso irá remover alguns usuários anônimos e o banco de dados teste, desativará os logins remotos ao root, e carregará essas novas regras para que o MariaDB implemente imediatamente as alterações que fizemos.</p>
+
+<p>A última coisa a fazer é permitir que o MariaDB comece no boot. Use o comando a seguir para fazer isso:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable rh-mariadb<span class="highlight">102</span>-mariadb
+</li></ul></code></pre>
+<p>Neste ponto, seu sistema de banco de dados está agora configurado e você pode seguir para a configuração do PHP no seu servidor.</p>
+
+<h2 id="passo-4-—-instalando-e-configurando-o-php-para-processamento">Passo 4 — Instalando e Configurando o PHP para Processamento</h2>
+
+<p>Agora você tem o Nginx instalado para servir suas páginas e o MariaDB instalado para armazenar e gerenciar seus dados. No entanto, você ainda não tem nada instalado que possa gerar conteúdo dinâmico. É aqui que o PHP entra.</p>
+
+<p>Uma vez que o Nginx não contém o processamento nativo do PHP como outros servidores Web, você precisará instalar <code>php-fpm</code>, que significa &ldquo;gerenciador de processos fastCGI&rdquo;. Mais tarde, você irá configurar o Nginx para passar pedidos ao PHP para este software para processamento.</p>
+
+<p>Instale este módulo e pegue também um pacote auxiliar que irá permitir o PHP se comunicar com seu backend do banco de dados. A instalação irá puxar os arquivos principais e necessários do PHP. Faça isso digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install rh-php<span class="highlight">71</span>-php-fpm rh-php<span class="highlight">71</span>-php-mysqlnd
+</li></ul></code></pre>
+<p>Seu componente PHP agora está instalado, mas há uma ligeira alteração de configuração que você deve fazer para reforçar a segurança da sua instalação.</p>
+
+<p>Abra o arquivo principal de configuração <code>php.ini</code> com privilégios <strong>root</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi /etc/opt/rh/rh-php<span class="highlight">71</span>/php.ini
+</li></ul></code></pre>
+<p>Neste arquivo, procure o parâmetro que define <code>cgi.fix_pathinfo</code>. Isso será comentado com um ponto-e-vírgula (;) e definido para &ldquo;1&rdquo; por padrão.</p>
+
+<p>Esta é uma configuração extremamente insegura porque ela diz ao PHP para tentar executar o arquivo mais próximo que ele puder descobrir se o arquivo PHP solicitado não puder ser encontrado. Isso basicamente permitiria que os usuários criassem pedidos PHP de uma maneira que lhes permitissem executar scripts que eles não deveriam ser autorizados a executar.</p>
+
+<p>Altere ambas essas condições descomentando a linha e definindo-a em &ldquo;0&rdquo; dessa forma:</p>
+<div class="code-label " title="/etc/opt/rh/rh-php&lt;span class=" highlight>71/php.ini&rsquo;&gt;/etc/opt/rh/rh-php<span class="highlight">71</span>/php.ini</div><pre class="code-pre "><code langs="">cgi.fix_pathinfo=<span class="highlight">0</span>
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar (pressione <code>ESC</code>, digite <code>:wq</code> e então pressione <code>Enter</code>).</p>
+
+<p>A seguir, abra o arquivo de configuração php-fpm <code>www.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi /etc/opt/rh/rh-php<span class="highlight">71</span>/php-fpm.d/www.conf
+</li></ul></code></pre>
+<p>Por padrão, este arquivo está configurado para funcionar com o servidor Apache. Uma vez que seu servidor tem o Nginx instalado nele, encontre as linhas que definem o <code>user</code> e <code>group</code> e que alteram os seus valores de &ldquo;apache&rdquo; para &ldquo;nginx&rdquo;:</p>
+<div class="code-label " title="/etc/opt/rh/rh-php&lt;span class=" highlight>71/php-fpm.d/www.conf&rsquo;&gt;/etc/opt/rh/rh-php<span class="highlight">71</span>/php-fpm.d/www.conf</div><pre class="code-pre "><code langs="">user = <span class="highlight">nginx</span>
+group = <span class="highlight">nginx</span>
+</code></pre>
+<p>Então, salve e feche o arquivo.</p>
+
+<p>Em seguida, inicie seu processador PHP digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start rh-php<span class="highlight">71</span>-php-fpm
+</li></ul></code></pre>
+<p>Então habilite o php-fpm para iniciar no boot:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable rh-php<span class="highlight">71</span>-php-fpm
+</li></ul></code></pre>
+<p>Com isso, você instalou com sucesso o PHP no seu servidor. No entanto, ele ainda deve ser configurado para funcionar com outros softwares que você instalou para permitir que seu servidor sirva corretamente o conteúdo do seu site.</p>
+
+<h2 id="passo-5-—-configurando-o-nginx-para-usar-o-processo-php">Passo 5 — Configurando o Nginx para Usar o Processo PHP</h2>
+
+<p>Neste ponto, você tem todos os componentes necessários para uma pilha LEMP instalados. A única alteração de configuração que você ainda precisa fazer é dizer ao Nginx para usar seu processador PHP para conteúdo dinâmico.</p>
+
+<p>Esta alteração de configuração é feita no nível de bloco do servidor ( os blocos do servidor são semelhantes aos hosts virtuais do Apache). Abra o arquivo padrão de configuração do bloco do servidor Nginx digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi /etc/opt/rh/rh-nginx<span class="highlight">112</span>/nginx/nginx.conf
+</li></ul></code></pre>
+<p>Descomente o bloco <code>location ~.php$</code> (o segmento do arquivo que lida com pedidos PHP, encontrados no bloco <code>server</code>) e seu conteúdo removendo as cerquilhas (#) do começo de cada linha. Você também precisa atualizar a opção <code>fastcgi_param</code> para <code>SCRIPT FILENAME $document_root$fastcgi_script_name</code>. Isso informa o PHP do local da root do documento onde ele pode encontrar arquivos para processar.</p>
+
+<p>Após fazer as alterações necessárias, o bloco <code>server</code> estará assim:</p>
+<div class="code-label " title="/etc/nginx/sites-available/default">/etc/nginx/sites-available/default</div><pre class="code-pre "><code langs="">...
+server {
+    listen       80 default_server;
+    listen       [::]:80 default_server;
+    server_name  _;
+    root         /opt/rh/rh-nginx112/root/usr/share/nginx/html;
+
+    # Load configuration files for the default server block.
+    include      /etc/opt/rh/rh-nginx112/nginx/default.d/*.conf;
+
+    location / {
+    }
+
+    error_page 404 /404.html;
+    location = /40x.html {
+    }
+
+    error_page 500 502 503 504  /50x.html;
+    location = /50x.html {
+    }
+
+    # proxy the PHP scripts to Apache listening on 127.0.0.1:80
+    #
+    #location ~ \.php$ {
+    #    proxy_pass   http://127.0.0.1;
+    #}
+
+    # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+    #
+    <span class="highlight">location ~ \.php$ {</span>
+        <span class="highlight">root           html;</span>
+        <span class="highlight">fastcgi_pass   127.0.0.1:9000;</span>
+        <span class="highlight">fastcgi_index  index.php;</span>
+        <span class="highlight">fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;</span>
+        <span class="highlight">include        fastcgi_params;</span>
+    <span class="highlight">}</span>
+
+    # deny access to .htaccess files, if Apache's document root
+    # concurs with nginx's one
+    #
+    #location ~ /\.ht {
+    #    deny  all;
+    #}
+}
+...
+</code></pre>
+<p>Quando você fizer as alterações, você pode salvar o arquivo e sair do editor.</p>
+
+<p>Em seguida, teste seu arquivo de configuração à procura de erros de sintaxe executando os seguintes comandos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source /opt/rh/rh-nginx<span class="highlight">112</span>/enable
+</li><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Se algum erro for reportado, volte e cheque novamente seu arquivo antes de continuar.</p>
+
+<p>Assim que seu arquivo de configuração estiver válido, recarregue o Nginx para implementar as alterações que você fez:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload rh-nginx<span class="highlight">112</span>-nginx
+</li></ul></code></pre>
+<p>Agora que o Nginx, o PHP e o MariaDB foram instalados e configurados, tudo o que resta fazer é confirmar que a configuração da pilha LEMP pode servir corretamente os visitantes do seu site.</p>
+
+<h2 id="passo-6-—-criando-um-arquivo-php-para-testar-a-configuração">Passo 6 — Criando um Arquivo PHP para Testar a Configuração</h2>
+
+<p>Sua pilha LEMP está agora completamente configurada e você pode testá-la para validar que o Nginx é capaz de entregar corretamente arquivos <code>.php</code> para seu processador PHP. Isso é feito criando um arquivo PHP de teste em nossa root do documento.</p>
+
+<p>Abra um novo arquivo chamado <code>info.php</code> dentro da root do documento:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo vi /opt/rh/rh-nginx<span class="highlight">112</span>/root/usr/share/nginx/html/info.php
+</li></ul></code></pre>
+<p>Adicione a seguinte linha ao novo arquivo. Este é um código PHP válido que irá retornar informações sobre seu servidor:</p>
+<div class="code-label " title="/opt/rh/rh-nginx&lt;span class=" highlight>112/root/usr/share/nginx/html/info.php&rsquo;&gt;/opt/rh/rh-nginx<span class="highlight">112</span>/root/usr/share/nginx/html/info.php</div><pre class="code-pre "><code langs="">&lt;?php phpinfo(); ?&gt;
+</code></pre>
+<p>Quando você terminar, salve e feche o arquivo. Então, visite esta página no seu navegador Web visitando o nome de domínio do seu servidor ou endereço IP público seguido por <code>/info.php</code>:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">server_domain_or_IP</span>/info.php
+</code></pre>
+<p>Você verá uma página Web que foi gerada pelo PHP com informações sobre seu servidor:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/lemp_stack_centos7/lemp-centos-php.png" alt="PHP page info"></p>
+
+<p>Se você ver uma página que se pareça com essa, o processamento PHP com o Nginx foi configurado com sucesso.</p>
+
+<p>Após verificar que o Nginx renderiza a página corretamente, é melhor remover o arquivo que você criou uma vez que ele pode de fato dar a usuários não autorizados algumas dicas sobre sua configuração que podem ajudá-los a tentar invadir. Você sempre pode regenerar este arquivo se você precisar dele mais tarde.</p>
+
+<p>Remova o arquivo digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo rm /opt/rh/rh-nginx<span class="highlight">112</span>/root/usr/share/nginx/html/info.php
+</li></ul></code></pre>
+<p>Com isso, você confirmou que todos os componentes da sua pilha LEMP estão instalados e configurados corretamente no seu servidor.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora você tem uma pilha LEMP totalmente configurada no seu servidor CentOS 7. Isso dá a você uma fundação muito flexível para fornecer conteúdo Web aos seus visitantes.</p>
+
+<p>Os SCLs também são usados para instalar várias versões de software e mudar entre elas. Você pode ver a lista de todas as coleções instaladas no sistema executando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scl --list
+</li></ul></code></pre>
+<p>Se estiver interessado, você pode encontrar mais informações sobre Coleções de Software no <a href="https://www.softwarecollections.org/">site oficial</a>.</p>

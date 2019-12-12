@@ -1,0 +1,254 @@
+---
+layout: post
+title: Como Instalar o Framework Web Django no Ubuntu 18.04
+network: digitalocean
+date: December 12, 2019 at 07:55PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-the-django-web-framework-on-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/django_install_18_04/django_landing_page_18_04.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://www.djangoproject.com/">Django</a> é um framework Web Python completo para o desenvolvimento de sites e aplicativos dinâmicos. Usando o Django, você pode criar aplicativos Web em Python e confiar no framework para fazer uma boa parte do trabalho pesado.</p>
+
+<p>Neste guia, você irá colocar o Django em funcionamento em um servidor Ubuntu 18.04. Após a instalação, você iniciará um novo projeto para usar como base para seu site.</p>
+
+<h2 id="métodos-diferentes">Métodos Diferentes</h2>
+
+<p>Existem maneiras diferentes de instalar o Django, dependendo das suas necessidades e como você queira configurar seu ambiente de desenvolvimento. Essas têm vantagens diferentes e um método pode se dar melhor na sua situação específica do que outros.</p>
+
+<p>Alguns dos métodos diferentes incluem:</p>
+
+<ul>
+<li><strong>Instalação global a partir de pacotes</strong>: Os repositórios oficiais do Ubuntu contêm pacotes Django que podem ser instalados com o gerenciador de pacotes convencional <code>apt</code>. Isso é simples, mas não tão flexível quanto alguns outros métodos. Além disso, a versão contida nos repositórios pode ficar para trás das versões oficiais disponíveis no projeto.</li>
+<li><strong>Instalar com o <code>pip</code> em um ambiente virtual</strong>: Você pode criar um ambiente auto-contido para seus projetos utilizando ferramentas como o <code>venv</code> e o <code>virtualenv</code>. Um ambiente virtual permite que você instale o Django em um diretório de projeto sem afetar o sistema como um todo, junto com outras personalizações e pacotes  por projeto. Esta é, normalmente, a abordagem mais prática e recomendada para trabalhar com o Django.</li>
+<li><strong>Instalar versão de desenvolvimento com o <code>git</code></strong>: Se você deseja instalar a versão de desenvolvimento mais recente ao invés do lançamento estável, você pode adquirir o código do repositório do Git. Isso é necessário para obter as últimas vantagens/correções e pode ser feito dentro do seu ambiente virtual. As versões de desenvolvimento não têm as mesmas garantias de estabilidade das versões mais estáveis, no entanto.</li>
+</ul>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Antes de começar, você deve ter um usuário não-root com privilégios sudo disponível no seu servidor Ubuntu 18.04. Para configurar esses detalhes, siga nosso <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Guia de configuração inicial do servidor Ubuntu 18.04</a>.</p>
+
+<h2 id="instalação-global-de-pacotes">Instalação Global de Pacotes</h2>
+
+<p>Se você deseja instalar o Django utilizando os repositórios do Ubuntu, o processo é muito simples.</p>
+
+<p>Primeiramente, atualize seu índice de pacotes local com o <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Em seguida, verifique qual versão do Python você tem instalada. 18.04  acompanha o Python 3.6 por padrão, que você pode verificar digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3 -V
+</li></ul></code></pre>
+<p>Você deve ver um resultado como este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Python <span class="highlight">3.6.5</span>
+</code></pre>
+<p>Em seguida, instale o Django:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-django
+</li></ul></code></pre>
+<p>Você pode testar se a instalação foi bem sucedida digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">django-admin --version
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">1.11.11</span>
+</code></pre>
+<p>Isso significa que o software foi instalado com sucesso. Você também pode notar que a versão do Django não é a versão estável mais recente. Para aprender mais sobre como usar o software, pule adiante para aprender <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-django-web-framework-on-ubuntu-18-04#creating-a-sample-project">como criar um projeto exemplo</a>.</p>
+
+<h2 id="instalar-com-o-pip-em-um-ambiente-virtual">Instalar com o pip em um Ambiente Virtual</h2>
+
+<p>A maneira mais flexível de instalar o Django no seu sistema é dentro de um ambiente virtual. Vamos mostrar como instalar o Django em um ambiente virtual que criaremos com o módulo <code>venv</code>, parte da biblioteca padrão do Python 3. Esta ferramenta permite que você crie ambientes virtuais Python e instale pacotes Python sem afetar o resto do sistema. Você pode, portanto, selecionar pacotes Python projeto a projeto, independentemente de conflitos com requisitos de outros projetos.</p>
+
+<p>Vamos começar recarregando o índice de pacotes local:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Verifique a versão do Python que você tem instalada:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3 -V
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Python <span class="highlight">3.6.5</span>
+</code></pre>
+<p>Em seguida, vamos instalar o <code>pip</code> dos repositórios do Ubuntu:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-pip
+</li></ul></code></pre>
+<p>Assim que o <code>pip</code> estiver instalado, você pode usá-lo para instalar o pacote <code>venv</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-venv
+</li></ul></code></pre>
+<p>Agora, sempre que você iniciar um novo projeto, você pode criar um ambiente virtual para ele. Comece criando e entrando em um novo diretório de projeto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/<span class="highlight">newproject</span>
+</li><li class="line" prefix="$">cd ~/<span class="highlight">newproject</span>
+</li></ul></code></pre>
+<p>Em seguida, crie um ambiente virtual dentro do diretório de projeto utilizando o comando <code>python</code> que é compatível com sua versão do Python. Vamos chamar nosso ambiente virtual de <code><span class="highlight">my_env</span></code>, mas você deve nomeá-lo algo descritivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3<span class="highlight">.6</span> -m venv <span class="highlight">my_env</span>
+</li></ul></code></pre>
+<p>Isso irá instalar versões standalone do Python e <code>pip</code> em uma estrutura de diretórios isolada dentro do seu diretório de projeto. Um diretório será criado com o nome que você selecionar, que irá reter a hierarquia de arquivos onde seus pacotes serão instalados.</p>
+
+<p>Para instalar pacotes no ambiente isolado, você deve ativá-lo digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<p>Seu prompt deve mudar para refletir que você agora está no seu ambiente virtual. Ele se parecerá com <code>(<span class="highlight">my_env</span>)username@hostname:~/newproject$</code>.</p>
+
+<p>No seu novo ambiente, você pode usar o <code>pip</code> para instalar o Django. Independentemente da sua versão do Python, o <code>pip</code> deve apenas ser chamado de <code>pip</code> quando você estiver no seu ambiente virtual. Note também que você <em>não</em> precisa usar o <code>sudo</code> uma vez que está instalando localmente:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">pip install django
+</li></ul></code></pre>
+<p>Você pode verificar a instalação digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">django-admin --version
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">2.1</span>
+</code></pre>
+<p>Note que sua versão pode diferir da versão mostrada aqui.</p>
+
+<p>Para deixar seu ambiente virtual, você precisa emitir o comando <code>deactivate</code> de qualquer lugar no sistema:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">deactivate
+</li></ul></code></pre>
+<p>Seu prompt deve retornar à exibição convencional. Quando você desejar trabalhar no seu projeto novamente, reative seu ambiente virtual retornando para seu diretório de projeto e ativando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/<span class="highlight">newproject</span>
+</li><li class="line" prefix="$">source <span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<h2 id="instalação-da-versão-de-desenvolvimento-com-o-git">Instalação da Versão de Desenvolvimento com o Git</h2>
+
+<p>Se você precisar de uma versão de desenvolvimento do Django, você pode baixar e instalar o Django do repositório do Git. Vamos fazer isso a partir do interior de um ambiente virtual.</p>
+
+<p>Primeiramente, vamos atualizar o índice de pacotes local:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Verifique a versão do Python que você tem instalada:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3 -V
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Python <span class="highlight">3.6.5</span>
+</code></pre>
+<p>Em seguida, instale o <code>pip</code> dos repositórios oficiais:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-pip
+</li></ul></code></pre>
+<p>Instale o pacote <code>venv</code> para criar seu ambiente virtual:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python3-venv
+</li></ul></code></pre>
+<p>O próximo passo é clonar o repositório do Django. Entre os lançamentos, este repositório terá mais recursos atualizados e correções de erros ao possível custo de estabilidade. Você pode clonar o repositório para um diretório chamado <code>~/<span class="highlight">django-dev</span></code> dentro do seu diretório home digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone git://github.com/django/django ~/<span class="highlight">django-dev</span>
+</li></ul></code></pre>
+<p>Mude para este diretório:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/<span class="highlight">django-dev</span>
+</li></ul></code></pre>
+<p>Crie um ambiente virtual utilizando o comando <code>python</code> que seja compatível com sua versão instalada do Python:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3<span class="highlight">.6</span> -m venv <span class="highlight">my_env</span>
+</li></ul></code></pre>
+<p>Ative-o:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<p>Em seguida, você pode instalar o repositório utilizando o <code>pip</code>. A opção <code>-e</code> irá instalar em modo &ldquo;editável&rdquo;, que é necessário ao instalar da versão controle:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">pip install -e ~/<span class="highlight">django-dev</span>
+</li></ul></code></pre>
+<p>Você pode verificar se a instalação foi bem sucedida digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">django-admin --version
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">2.2.dev20180802155335</span>
+</code></pre>
+<p>Novamente, a versão que você ver exibida pode não corresponder ao mostrado aqui.</p>
+
+<p>Agora você tem a versão mais recente do Django no seu ambiente virtual.</p>
+
+<h2 id="criando-um-projeto-exemplo">Criando um Projeto Exemplo</h2>
+
+<p>Com o Django instalado, você pode começar a construir seu projeto. Vamos analisar como criar um projeto e testá-lo no seu servidor de desenvolvimento utilizando um ambiente virtual.</p>
+
+<p>Primeiramente, crie um diretório para seu projeto e mude-se para dentro dele:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/<span class="highlight">django-test</span>
+</li><li class="line" prefix="$">cd ~/<span class="highlight">django-test</span>
+</li></ul></code></pre>
+<p>Em seguida, crie seu ambiente virtual:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3<span class="highlight">.6</span> -m venv <span class="highlight">my_env</span>
+</li></ul></code></pre>
+<p>Ative o ambiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<p>Instale o Django:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">pip install django
+</li></ul></code></pre>
+<p>Para construir seu projeto, você pode usar o <code>django-admin</code> com o comando <code>startproject</code>. Vamos chamar nosso projeto de <code><span class="highlight">djangoproject</span></code>, mas você pode substituí-lo por um nome diferente. O <code>startproject</code> criará um diretório dentro do seu diretório de trabalho atual que inclui:</p>
+
+<ul>
+<li>Um script de gerenciamento, <code>manage.py</code>, que você pode usar para administrar várias tarefas específicas do Django.</li>
+<li>Um diretório (com o mesmo nome do projeto) que inclui o código do projeto em si.</li>
+</ul>
+
+<p>Para evitar ter muitos diretórios amontoados, no entanto, vamos dizer ao Django para colocar o script de gerenciamento e diretório interno no diretório <em>atual</em> (note o ponto final):</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">django-admin startproject <span class="highlight">djangoproject</span> .
+</li></ul></code></pre>
+<p>Para migrar o banco de dados (este exemplo usa o SQLite por padrão), vamos usar o comando <code>migrate</code> com o <code>manage.py</code>. <a href="https://docs.djangoproject.com/en/2.0/topics/migrations/">Migrações</a> aplicam quaisquer alterações que você tenha feito aos seus <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-models">modelos</a> do Django no seu esquema de banco de dados.</p>
+
+<p>Para migrar o banco de dados, digite:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">python manage.py migrate
+</li></ul></code></pre>
+<p>Você verá um resultado como o seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, sessions
+Running migrations:
+  Applying contenttypes.0001_initial... OK
+  Applying auth.0001_initial... OK
+  Applying admin.0001_initial... OK
+  Applying admin.0002_logentry_remove_auto_add... OK
+  Applying admin.0003_logentry_add_action_flag_choices... OK
+  Applying contenttypes.0002_remove_content_type_name... OK
+  Applying auth.0002_alter_permission_name_max_length... OK
+  Applying auth.0003_alter_user_email_max_length... OK
+  Applying auth.0004_alter_user_username_opts... OK
+  Applying auth.0005_alter_user_last_login_null... OK
+  Applying auth.0006_require_contenttypes_0002... OK
+  Applying auth.0007_alter_validators_add_error_messages... OK
+  Applying auth.0008_alter_user_username_max_length... OK
+  Applying auth.0009_alter_user_last_name_max_length... OK
+  Applying sessions.0001_initial... OK
+</code></pre>
+<p>Finalmente, vamos criar um usuário administrativo para que você possa usar a <a href="https://www.digitalocean.com/community/tutorials/how-to-enable-and-connect-the-django-admin-interface">interface admin do Django</a>. Vamos fazer isso com o comando <code>createsuperuser</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">python manage.py createsuperuser
+</li></ul></code></pre>
+<p>Você será solicitado a incluir um nome de usuário, um endereço de e-mail, e uma senha para seu usuário.</p>
+
+<h2 id="modificando-allowed_hosts-nas-configurações-do-django">Modificando ALLOWED_HOSTS nas Configurações do Django</h2>
+
+<p>Para testar com sucesso seu aplicativo, você precisará modificar uma das diretivas nas configurações do Django.</p>
+
+<p>Abra o arquivo de configuração digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">nano ~/<span class="highlight">django-test</span>/<span class="highlight">djangoproject</span>/settings.py
+</li></ul></code></pre>
+<p>Dentro, localize a diretiva <code>ALLOWED_HOSTS</code>. Isso define uma lista de endereços ou nomes de domínio permitidos que podem ser usados para se conectar à instância do Django. Um pedido recebido com um cabeçalho <strong>Host</strong> que não está nesta lista irá criar uma exceção. O Django exige que você defina isso para prevenir uma certa classe de vulnerabilidade de segurança.</p>
+
+<p>Dentro dos colchetes, liste os endereços IP ou nomes de domínio associados ao seu servidor do Django. Cada item deve ser listado entre aspas, com entradas separadas divididas por uma vírgula. Se você quiser pedidos para um domínio inteiro e quaisquer subdomínios, anteceda um período ao início da entrada:</p>
+<div class="code-label " title="~/django-test/djangoproject/settings.py">~/django-test/djangoproject/settings.py</div><pre class="code-pre "><code langs="">. . .
+ALLOWED_HOSTS = ['<span class="highlight">your_server_ip_or_domain</span>', '<span class="highlight">your_second_ip_or_domain</span>', <span class="highlight">. . .</span>]
+</code></pre>
+<p>Quando você terminar, salve o arquivo e saia do seu editor.</p>
+
+<h2 id="testando-o-servidor-de-desenvolvimento">Testando o Servidor de Desenvolvimento</h2>
+
+<p>Assim que você tiver um usuário, você pode iniciar o servidor de desenvolvimento do Django para ver como é um projeto do Django recém-criado. Você deve apenas usar isso para fins de desenvolvimento. Quando você estiver pronto para implantar, certifique-se de seguir as <a href="https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/">diretrizes do Django para implantação</a> com cuidado.</p>
+
+<p>Antes de você testar o servidor de desenvolvimento, certifique-se de abrir a porta apropriada no seu firewall. Se você seguiu o guia de configuração inicial do servidor e está utilizando o UFW, você pode abrir a porta <code>8000</code> digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">sudo ufw allow 8000
+</li></ul></code></pre>
+<p>Inicie o servidor de desenvolvimento:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) $">python manage.py runserver <span class="highlight">your_server_ip</span>:8000
+</li></ul></code></pre>
+<p>Visite o endereço IP do seu servidor seguido de <code>:8000</code> no seu navegador Web:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>:8000
+</code></pre>
+<p>Você deve ver algo que se parece com isso:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/django_install_18_04/django_landing_page_18_04.png" alt="Django public page"></p>
+
+<p>Para acessar a interface admin, adicione <code>/admin/</code> ao final do seu URL:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>:8000/admin/
+</code></pre>
+<p>Isso irá levar você a uma tela de login:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_python/django/django-admin-login.png" alt="Django admin login"></p>
+
+<p>Se você digitar o nome de usuário e senha do admin que você acabou de criar, você terá acesso à seção admin principal do site:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_python/django/django-admin-panel.png" alt="Django admin page"></p>
+
+<p>Para mais informações sobre trabalhar com a interface admin do Django, por favor, veja <a href="https://www.digitalocean.com/community/tutorials/how-to-enable-and-connect-the-django-admin-interface">&ldquo;Como Habilitar e Conectar a Interface Admin do Django.&rdquo;</a></p>
+
+<p>Quando você terminar de olhar através do site padrão, você pode parar o servidor de desenvolvimento digitando <code>CTRL-C</code> no seu terminal.</p>
+
+<p>O projeto Django que você criou fornece a base estrutural para projetar um site mais completo. Verifique a documentação do Django para mais informações sobre como construir seus aplicativos e personalizar seu site.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora, você deve ter o Django instalado no seu servidor Ubuntu 18.04, fornecendo as principais ferramentas de que você precisa para criar aplicativos Web poderosos. Você também deve saber como iniciar um novo projeto e iniciar o servidor de desenvolvedor. Impulsionar um framework completo como o Django pode ajudar a tornar o desenvolvimento mais rápido, permitindo que você se concentre apenas nos aspectos únicos dos seus aplicativos.</p>
+
+<p>Se você quiser mais informações sobre trabalhar com o Django, incluindo discussões profundas sobre coisas como <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-models">modelos</a> e <a href="https://www.digitalocean.com/community/tutorials/how-to-create-django-views">views</a>, por favor, veja nossa <a href="https://www.digitalocean.com/community/tutorial_series/django-development">série de desenvolvimento do Django</a>.</p>

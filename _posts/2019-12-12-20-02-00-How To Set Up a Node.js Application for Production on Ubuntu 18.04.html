@@ -1,0 +1,234 @@
+---
+layout: post
+title: How To Set Up a Node.js Application for Production on Ubuntu 18.04
+network: digitalocean
+date: December 12, 2019 at 08:02PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-a-node-js-application-for-production-on-ubuntu-18-04-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://nodejs.org/en/">Node.js</a> é um ambiente de execução de código aberto do JavaScript para construção de aplicativos de rede e do servidor. A plataforma executa nos sistemas operacionais Linux, macOS, FreeBSD e Windows. Embora você possa executar aplicativos Node.js na linha de comando, este tutorial se concentrará em executá-los como um serviço. Isso significa que eles irão reiniciar após reinicialização ou falha, sendo seguros para utilização em um ambiente de produção.</p>
+
+<p>Neste tutorial, você irá configurar um ambiente Node.js pronto para produção em um único servidor com Ubuntu 18.04. Este servidor executará um aplicativo Node.js gerenciado pelo <a href="http://pm2.keymetrics.io/">PM2</a> e fornecerá aos usuários acesso seguro ao aplicativo através de um proxy reverso Nginx. O servidor Nginx oferecerá HTTPS usando um certificado gratuito fornecido pelo <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a>.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Este guia supõe que você tenha o seguinte:</p>
+
+<ul>
+<li>Uma instalação do servidor Ubuntu 18.04, como descrita no <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guia de configuração inicial de servidor para o Ubuntu 18.04</a>. Você deve ter um usuário não raiz com privilégios sudo e um firewall ativo.</li>
+<li>Um <a href="https://www.digitalocean.com/docs/networking/dns/quickstart/">nome de domínio apontando para o IP público do seu servidor</a>. Este tutorial usará o nome de domínio <strong>example.com</strong> do começo ao fim.</li>
+<li>O Nginx instalado, conforme descrito em <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">Como Instalar o Nginx no Ubuntu 18.04</a>.</li>
+<li>O Nginx configurado com SSL, usando certificados do Let&rsquo;s Encrypt. <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">Este tutorial sobre como proteger o Nginx com o Let&rsquo;s Encrypt no Ubuntu 18.04</a> irá conduzi-lo pelo processo.</li>
+</ul>
+
+<p>Quando você tiver completado os pré-requisitos, você terá um servidor atendendo à página de espaço reservado padrão do seu domínio em <code>https://<span class="highlight">example.com</span>/</code>.</p>
+
+<h2 id="passo-1-—-instalando-o-node-js">Passo 1 — Instalando o Node.js</h2>
+
+<p>Vamos começar instalando a versão mais recente do Node.js com LTS, ou Long-Term Support (Suporte de longo prazo), usando os arquivos do pacote <a href="https://github.com/nodesource/distributions">NodeSource</a>.</p>
+
+<p>Primeiramente, instale o NodeSource PPA para ter acesso ao seu conteúdo. Certifique-se de estar no seu diretório home, e utilize o <code>curl</code> para recuperar o script de instalação dos arquivos do Node.js 8.x:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">curl -sL https://deb.nodesource.com/setup_8.x -o nodesource_setup.sh
+</li></ul></code></pre>
+<p>É possível verificar o conteúdo deste script com o <code>nano</code> ou seu editor de texto preferido:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nodesource_setup.sh
+</li></ul></code></pre>
+<p>Quando terminar de inspecionar o script, execute-o sob o <code>sudo</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo bash nodesource_setup.sh
+</li></ul></code></pre>
+<p>O PPA será adicionado à sua configuração e seu cache de pacotes local será atualizado automaticamente. Após executar o script de configuração do Nodesource, você pode instalar o pacote do Node.js:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install nodejs
+</li></ul></code></pre>
+<p>Para verificar qual versão do Node.js você tem instalada após esses passos iniciais, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nodejs -v
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>v8.11.3
+</code></pre>
+<p><span class='note'><strong>Nota:</strong> ao instalar a partir do NodeSource com PPA, o arquivo do Node.js é chamado de <code>nodejs</code> e não <code>node</code>.<br></span></p>
+
+<p>O pacote <code>nodejs</code> contém o binário do <code>nodejs</code> assim como o <a href="https://www.npmjs.com/"><code>npm</code></a>, um gerenciador de pacotes para módulos Node, então não é necessário instalar o <code>npm</code> separadamente.</p>
+
+<p>O <code>npm</code> usa um arquivo de configuração no seu diretório home para controlar as atualizações. Ele será criado na primeira vez que você executar o <code>npm</code>. Execute este comando para verificar se o <code>npm</code> está instalado e crie o arquivo de configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm -v
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>5.6.0
+</code></pre>
+<p>Para que alguns pacotes <code>npm</code> possam funcionar (os que requerem compilar o código da fonte, por exemplo), será necessário instalar o pacote <code>build-essential</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install build-essential
+</li></ul></code></pre>
+<p>Agora, você tem as ferramentas necessárias para trabalhar com os pacotes <code>npm</code> que requerem a compilação do código da fonte.</p>
+
+<p>Com o ambiente de execução Node.js instalado, vamos seguir em frente para escrever um aplicativo Node.js.</p>
+
+<h2 id="passo-2-—-criando-um-aplicativo-node-js">Passo 2 — Criando um aplicativo Node.js</h2>
+
+<p>Vamos escrever um aplicativo <em>Hello World</em> que retorna &ldquo;Hello World&rdquo; a qualquer pedido de HTTP. Este aplicativo exemplo ajudará você a configurar o Node.js. Você pode substituí-lo pelo seu próprio aplicativo — certifique-se apenas de que você modifique seu aplicativo para escutar os endereços IP e portas apropriados.</p>
+
+<p>Primeiramente, vamos criar um aplicativo exemplo chamado <code>hello.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">nano hello.js
+</li></ul></code></pre>
+<p>Insira o seguinte código no arquivo:</p>
+<div class="code-label " title="~/hello.js">~/hello.js</div><pre class="code-pre "><code class="code-highlight language-js">const http = require('http');
+
+const hostname = 'localhost';
+const port = 3000;
+
+const server = http.createServer((req, res) =&gt; {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/plain');
+  res.end('Hello World!\n');
+});
+
+server.listen(port, hostname, () =&gt; {
+  console.log(`Server running at http://${hostname}:${port}/`);
+});
+</code></pre>
+<p>Salve o arquivo e saia do editor.</p>
+
+<p>Este aplicativo Node.js escuta no endereço especificado (<code>localhost</code>) e porta (<code>3000</code>) e retorna &ldquo;Hello World!&rdquo; com um código de sucesso HTTP <code>200</code>. Uma vez que estamos escutando no <code>localhost</code>, clientes remotos não poderão se conectar ao nosso aplicativo.</p>
+
+<p>Para testar seu aplicativo, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node hello.js
+</li></ul></code></pre>
+<p>Você verá o seguinte resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Server running at http://localhost:3000/
+</code></pre>
+<p><span class='note'><strong>Nota:</strong> executar um aplicativo Node.js desta maneira irá bloquear comandos adicionais até que o aplicativo seja encerrado pressionando-se <code>CTRL+C</code>.<br></span></p>
+
+<p>Para testar o aplicativo, abra outra sessão de terminal no seu servidor e conecte-se ao <code>localhost</code> com o <code>curl</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl http://localhost:<span class="highlight">3000</span>
+</li></ul></code></pre>
+<p>Se você vir o seguinte resultado, o aplicativo estará funcionando corretamente e escutando no endereço e porta corretos:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello World!
+</code></pre>
+<p>Se você não ver o resultado esperado, certifique-se de que seu aplicativo Node.js está funcionando e configurado para escutar no endereço e porta apropriados.</p>
+
+<p>Assim que tiver certeza certeza de que ele está funcionando, encerre o aplicativo (se você ainda não o tiver feito) pressionando <code>CTRL+C</code>.</p>
+
+<h2 id="passo-3-—-instalando-o-pm2">Passo 3 — Instalando o PM2</h2>
+
+<p>Em seguida, vamos instalar o PM2, um gerenciador de processos para aplicativos Node.js. O PM2 torna possível forçar os aplicativos a executarem como daemon para que eles executem em segundo plano como um serviço.</p>
+
+<p>Utilize o <code>npm</code> para instalar a última versão do PM2 no seu servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo npm install pm2@latest -g
+</li></ul></code></pre>
+<p>A opção <code>-g</code> faz com que o <code>npm</code> instale o módulo <em>globally</em>, para que ele esteja disponível em todo o sistema.</p>
+
+<p>Vamos usar primeiro o comando <code>pm2 start</code> para executar seu aplicativo, <code>hello.js</code>, em segundo plano:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 start <span class="highlight">hello.js</span>
+</li></ul></code></pre>
+<p>Isso também adiciona seu aplicativo na lista de processos do PM2, que é produzida toda vez que você inicia um aplicativo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[PM2] Spawning PM2 daemon with pm2_home=/home/sammy/.pm2
+[PM2] PM2 Successfully daemonized
+[PM2] Starting /home/sammy/hello.js in fork_mode (1 instance)
+[PM2] Done.
+┌──────────┬────┬──────┬──────┬────────┬─────────┬────────┬─────┬───────────┬───────┬──────────┐
+│ App name │ id │ mode │ pid  │ status │ restart │ uptime │ cpu │ mem       │ user  │ watching │
+├──────────┼────┼──────┼──────┼────────┼─────────┼────────┼─────┼───────────┼───────┼──────────┤
+│ <span class="highlight">hello</span>    │ 0  │ fork │ 1338 │ online │ 0       │ 0s     │ 0%  │ 23.0 MB   │ sammy │ disabled │
+└──────────┴────┴──────┴──────┴────────┴─────────┴────────┴─────┴───────────┴───────┴──────────┘
+ Use `pm2 show &lt;id|name&gt;` to get more details about an app
+</code></pre>
+<p>Como pode ver, o PM2 atribui automaticamente um <code>App name</code> (com base no nome do arquivo, sem a extensão <code>.js</code>) e um <code>id</code> PM2. O PM2 também mantém outras informações, como o <code>PID</code> do processo, seu status atual e o uso de memória.</p>
+
+<p>Os aplicativos que estão funcionando sob o PM2 serão reiniciados automaticamente se o aplicativo falhar ou for encerrado, mas podemos ir um passo além para fazer o aplicativo iniciar na inicialização do sistema usando o subcomando <code>startup</code>. Este subcomando gera e configura um script de inicialização para iniciar o PM2 e seus processos gerenciados nas inicializações do servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 startup systemd
+</li></ul></code></pre>
+<p>A última linha da saída resultante incluirá um comando para ser executado com privilégios de superusuário para definir o PM2 para iniciar na inicialização:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[PM2] Init System found: systemd
+[PM2] To setup the Startup Script, copy/paste the following command:
+<span class="highlight">sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u sammy --hp /home/sammy</span>
+</code></pre>
+<p>Execute o comando a partir do resultado, com seu nome de usuário no lugar de <code><span class="highlight">sammy</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u <span class="highlight">sammy</span> --hp /home/<span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Como um passo adicional, podemos salvar a lista de processos PM2 e os ambientes correspondentes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 save
+</li></ul></code></pre>
+<p>Agora, você criou uma <em>unidade</em> systemd que executa o <code>pm2</code> para seu usuário na inicialização. Esta instância <code>pm2</code>, por sua vez, executa o <code>hello.js</code>.</p>
+
+<p>Inicie o serviço com <code>systemctl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start pm2-<span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Verifique o status da unidade systemd:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">systemctl status pm2-<span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Para um panorama detalhado do systemd, veja <a href="https://www.digitalocean.com/community/tutorials/systemd-essentials-working-with-services-units-and-the-journal">Fundamentos do Systemd: trabalhando com serviços, unidades e o diá</a>rio.</p>
+
+<p>Além daqueles que abordamos, o PM2 fornece muitos subcomandos que permitem que você gerencie ou procure informações sobre seus aplicativos.</p>
+
+<p>Interrompa um aplicativo com este comando (especifique o <code>App name</code> do PM2 ou <code>id</code>):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 stop <span class="highlight">app_name_or_id</span>
+</li></ul></code></pre>
+<p>Reinicie um aplicativo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 restart <span class="highlight">app_name_or_id</span>
+</li></ul></code></pre>
+<p>Liste os aplicativos atualmente gerenciados pelo PM2:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 list
+</li></ul></code></pre>
+<p>Obtenha informações sobre um aplicativo específico usando seu <code>App name</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 info <span class="highlight">app_name</span>
+</li></ul></code></pre>
+<p>O monitor de processos do PM2 pode ser trazido com o subcomando <code>monit</code>. Isso mostra o status do aplicativo, da CPU, e o uso de memória:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pm2 monit
+</li></ul></code></pre>
+<p>Note que executar o <code>pm2</code> sem qualquer argumento também exibirá uma página de ajuda com exemplos de uso.</p>
+
+<p>Agora que seu aplicativo Node.js está funcionando e é gerenciado pelo PM2, vamos configurar o proxy reverso.</p>
+
+<h2 id="passo-4-—-configurando-o-nginx-como-um-servidor-proxy-reverso">Passo 4 — Configurando o Nginx como um servidor proxy reverso</h2>
+
+<p>Seu aplicativo está funcionando e escutando no <code>localhost</code>, mas você precisa configurar uma forma dos seus usuários acesssarem ele. Vamos configurar o servidor Web Nginx como um proxy reverso com esse intuito.</p>
+
+<p>No tutorial pré-requisito, você definiu sua configuração do Nginx no arquivo <code>/etc/nginx/sites-available/<span class="highlight">example.com</span></code>. Abra este arquivo para edição:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Dentro do bloco <code>server</code>, você deve ter um bloco <code>location /</code> existente. Substitua o conteúdo desse bloco com a seguinte configuração. Se seu aplicativo for configurado para escutar em uma porta diferente, atualize a parte em destaque com o número de porta correto:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code langs="">server {
+...
+    location / {
+        proxy_pass http://localhost:<span class="highlight">3000</span>;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+...
+}
+</code></pre>
+<p>Isso configura o servidor para responder a pedidos em sua raiz. Supondo que nosso servidor esteja disponível em <code><span class="highlight">example.com</span></code>, acessar <code>https://<span class="highlight">example.com</span>/</code> através de um navegador Web enviaria o pedido para <code>hello.js</code>, escutando na porta <code>3000</code> no <code>localhost</code>.</p>
+
+<p>Você pode adicionar blocos <code>location</code> adicionais ao mesmo bloco de servidor para fornecer acesso a outros aplicativos no mesmo servidor. Por exemplo, se você também estivesse executando outro aplicativo Node.js na porta <code>3001</code>, você poderia adicionar este bloco de localização para permitir o acesso a ele através de <code>https://<span class="highlight">example.com</span>/<span class="highlight">app2</span></code>:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com — Optional">/etc/nginx/sites-available/example.com — Optional</div><pre class="code-pre "><code langs="">server {
+...
+    location /<span class="highlight">app2</span> {
+        proxy_pass http://localhost:<span class="highlight">3001</span>;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+...
+}
+</code></pre>
+<p>Assim que terminar de adicionar os blocos de localização para seus aplicativos, salve o arquivo e saia do seu editor.</p>
+
+<p>Verifique se não cometeu erros de sintaxe, digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Reinicie o Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Supondo que o seu aplicativo Node.js esteja funcionando e o seu aplicativo e as configurações do Nginx estejam corretos, agora você deverá poder acessar seu aplicativo via proxy reverso do Nginx. Teste acessando o URL do seu servidor (seu endereço IP público ou nome de domínio).</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Parabéns! Agora, você tem seu aplicativo Node.js funcionando atrás de um proxy reverso Nginx em um servidor Ubuntu 18.04. Esta configuração de proxy reverso é suficientemente flexível para fornecer para os seus usuários o acesso a outros aplicativos ou conteúdos Web estáticos que você queira compartilhar.</p>

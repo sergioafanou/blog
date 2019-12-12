@@ -1,0 +1,524 @@
+---
+layout: post
+title: How To Set Up Django with Postgres, Nginx, and Gunicorn on Ubuntu 18.04
+network: digitalocean
+date: December 12, 2019 at 08:12PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-django-with-postgres-nginx-and-gunicorn-on-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/django_gunicorn_nginx_1804/django_index.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O Django é um framework Web poderoso, que pode ajudar o seu aplicativo Python ou site a decolar. O Django inclui um servidor de desenvolvimento simplificado para testar seu código localmente, mas para qualquer coisa ligeiramente relacionada com produção, é necessário um servidor Web mais seguro e poderoso.</p>
+
+<p>Neste guia, vamos demonstrar como instalar e configurar alguns componentes no Ubuntu 18.04 para apoiar e servir aplicativos do Django. Vamos configurar um banco de dados PostgreSQL ao invés de usar o banco de dados padrão SQLite. Vamos configurar o servidor do aplicativo Gunicorn para interagir com nossos aplicativos. Então, vamos configurar o Nginx como proxy reverso do Gunicorn, dando-nos acesso aos seus recursos de segurança e desempenho para servir nossos aplicativos.</p>
+
+<h2 id="pré-requisitos-e-objetivos">Pré-requisitos e objetivos</h2>
+
+<p>Para completar este guia, você deve ter uma nova instância de servidor Ubuntu 18.04 com um firewall básico e um usuário não raiz com privilégios <code>sudo</code> configurados. Você pode aprender como configurar isso examinando nosso <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guia de configuração inicial do servidor</a>.</p>
+
+<p>Vamos instalar o Django em um ambiente virtual. Instalar o Django em um ambiente específico do seu projeto permitirá que seus projetos e seus requisitos sejam tratados separadamente.</p>
+
+<p>Assim que tivermos nosso banco de dados e aplicativo funcionando, vamos instalar e configurar o servidor do aplicativo Gunicorn. Isso servirá como uma interface para nosso aplicativo, traduzindo os pedidos do cliente de HTTP para chamadas Python que nosso aplicativo consegue processar. Então, vamos configurar o Nginx na frente do Gunicorn para aproveitar seus mecanismos de gerenciamento de conexão de alta performance e seus recursos de segurança fáceis de implementar.</p>
+
+<p>Vamos começar.</p>
+
+<h2 id="instalando-os-pacotes-dos-repositórios-do-ubuntu">Instalando os pacotes dos repositórios do Ubuntu</h2>
+
+<p>Para começar o processo, vamos baixar e instalar todos os itens que precisamos dos repositórios do Ubuntu. Vamos usar o gerenciador de pacotes Python <code>pip</code> para instalar componentes adicionais um pouco mais tarde.</p>
+
+<p>Precisamos atualizar o índice de pacotes local <code>apt</code> e, em seguida, baixar e instalar os pacotes. Os pacotes que instalamos dependem da versão do Python que seu projeto usará.</p>
+
+<p>Se estiver usando o Django com o <strong>Python 3</strong>, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install python3-pip python3-dev libpq-dev postgresql postgresql-contrib nginx curl
+</li></ul></code></pre>
+<p>O Django 1.11 é a última versão do Django que suportará o Python 2. Se você estiver começando novos projetos, é altamente recomendado que escolha o Python 3. Se ainda for necessário usar o <strong>Python 2</strong>, digite:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install python-pip python-dev libpq-dev postgresql postgresql-contrib nginx curl
+</li></ul></code></pre>
+<p>Isso instalará o <code>pip</code>, os arquivos de desenvolvimento do Python necessários para criar o Gunicorn mais tarde, o sistema de banco de dados Postgres e as bibliotecas necessárias para interagir com ele, e o servidor Web Nginx.</p>
+
+<h2 id="criando-o-banco-de-dados-e-o-usuário-postgresql">Criando o banco de dados e o usuário PostgreSQL</h2>
+
+<p>Vamos ir direto e criar um banco de dados e um usuário do banco de dados para nosso aplicativo Django.</p>
+
+<p>Por padrão, o Postgres usa um esquema de autenticação chamado de &ldquo;autenticação por peer&rdquo; para conexões locais. Basicamente, isso significa que se o nome de usuário do sistema operacional do usuário corresponder a um nome de usuário do Postgres válido, o usuário pode logar-se sem autenticação adicional.</p>
+
+<p>Durante a instalação do Postgres, um usuário do sistema operacional chamado <code>postgres</code> foi criado para corresponder ao usuário administrativo <code>postgres</code> do PostgreSQL. Precisamos usar este usuário para realizar tarefas administrativas. Podemos usar o sudo e passar o nome de usuário com a opção <code>-u</code>.</p>
+
+<p>Logue-se em uma sessão interativa do Postgres digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u postgres psql
+</li></ul></code></pre>
+<p>Você receberá um prompt do PostgreSQL onde podemos configurar nossos requisitos.</p>
+
+<p>Primeiramente, crie um banco de dados para seu projeto:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">CREATE DATABASE <span class="highlight">myproject</span>;
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Cada declaração do Postgres deve terminar com um ponto e vírgula, para garantir que seu comando termine com um, caso esteja passando por problemas.<br></span></p>
+
+<p>Em seguida, crie um usuário do banco de dados para nosso projeto. Certifique-se de selecionar uma senha segura:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">CREATE USER <span class="highlight">myprojectuser</span> WITH PASSWORD '<span class="highlight">password</span>';
+</li></ul></code></pre>
+<p>Depois disso, vamos modificar alguns dos parâmetros de conexão para o usuário que acabamos de criar. Isso irá acelerar as operações do banco de dados para que os valores corretos não tenham que ser consultados e definidos cada vez que uma conexão for estabelecida.</p>
+
+<p>Estamos definindo a codificação padrão para <code>UTF-8</code>, que é a que o Django espera. Também estamos definindo o esquema padrão de isolamento de transação para &ldquo;ler confirmados&rdquo;, que bloqueia a leitura de transações não confirmadas. Por fim, vamos definir o fuso horário. Por padrão, nossos projetos Django serão configurados para usar o <code>UTC</code>. Essas são todas recomendações do <a href="https://docs.djangoproject.com/en/2.0/ref/databases/#optimizing-postgresql-s-configuration">projeto Django em si</a>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">ALTER ROLE <span class="highlight">myprojectuser</span> SET client_encoding TO 'utf8';
+</li><li class="line" prefix="postgres=#">ALTER ROLE <span class="highlight">myprojectuser</span> SET default_transaction_isolation TO 'read committed';
+</li><li class="line" prefix="postgres=#">ALTER ROLE <span class="highlight">myprojectuser</span> SET timezone TO 'UTC';
+</li></ul></code></pre>
+<p>Agora, podemos dar ao nosso novo usuário acesso para administrar nosso novo banco de dados:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">GRANT ALL PRIVILEGES ON DATABASE <span class="highlight">myproject</span> TO <span class="highlight">myprojectuser</span>;
+</li></ul></code></pre>
+<p>Quando tiver terminado, saia do prompt do PostgreSQL digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">\q
+</li></ul></code></pre>
+<p>O Postgres agora está configurado para que o Django possa se conectar ao seu banco de dados e gerenciar suas informações.</p>
+
+<h2 id="criando-um-ambiente-virtual-python-para-seu-projeto">Criando um Ambiente Virtual Python para seu Projeto</h2>
+
+<p>Agora que temos nosso banco de dados, podemos começar a preparar o resto dos nossos requisitos do projeto. Vamos instalar nossos requisitos do Python em um ambiente virtual para fácil gerenciamento.</p>
+
+<p>Para isso, precisamos primeiro acessar o comando <code>virtualenv</code>. Podemos instalar isso com o <code>pip</code>.</p>
+
+<p>Se estiver usando o <strong>Python 3</strong>, atualize o <code>pip</code> e instale o pacote digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -H pip3 install --upgrade pip
+</li><li class="line" prefix="$">sudo -H pip3 install virtualenv
+</li></ul></code></pre>
+<p>Se estiver usando o <strong>Python 2</strong>, atualize o <code>pip</code> e instale o pacote digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -H pip install --upgrade pip
+</li><li class="line" prefix="$">sudo -H pip install virtualenv
+</li></ul></code></pre>
+<p>Com o <code>virtualenv</code> instalado, podemos começar a formar nosso projeto. Crie um diretório onde possamos manter nossos arquivos do projeto e vá até ele:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/<span class="highlight">myprojectdir</span>
+</li><li class="line" prefix="$">cd ~/<span class="highlight">myprojectdir</span>
+</li></ul></code></pre>
+<p>Dentro do diretório do projeto, crie um ambiente virtual do Python digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">virtualenv <span class="highlight">myprojectenv</span>
+</li></ul></code></pre>
+<p>Isso criará um diretório chamado <code><span class="highlight">myprojectenv</span></code> dentro do seu diretório <code><span class="highlight">myprojectdir</span></code>. Lá dentro, ele instalará uma versão local do Python e uma versão local do <code>pip.</code> Podemos usar isso para instalar e configurar um ambiente Python isolado para nosso projeto.</p>
+
+<p>Antes de instalarmos os requisitos Python do nosso projeto, precisamos ativar o ambiente virtual. Você pode fazer isso digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">myprojectenv</span>/bin/activate
+</li></ul></code></pre>
+<p>Seu prompt deverá mudar para indicar que você agora está operando em um ambiente virtual Python. Eles se parecerão com isso: <code>(<span class="highlight">myprojectenv</span>)<span class="highlight">user</span>@<span class="highlight">host</span>:~/<span class="highlight">myprojectdir</span>$</code>.</p>
+
+<p>Com seu ambiente virtual ativo, instale o Django, Gunicorn, e o adaptador do PostgreSQL <code>psycopg2</code> com a instância local do <code>pip</code>:</p>
+
+<p><span class='note'><strong>Nota:</strong> Quando o ambiente virtual for ativado (quando seu prompt tiver <code>(myprojectenv)</code> antecedendo ele) use o <code>pip</code> ao invés do <code>pip3</code>, mesmo se estiver usando o Python 3. A cópia da ferramenta do ambiente virtual é sempre chamada de <code>pip</code>, independente da versão Python.<br></span></p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">pip install django gunicorn psycopg2-binary
+</li></ul></code></pre>
+<p>Agora, você deve ter todos os softwares necessários para iniciar um projeto Django.</p>
+
+<h2 id="criando-e-configurando-um-projeto-django-novo">Criando e Configurando um Projeto Django Novo</h2>
+
+<p>Com nossos componentes Python instalados, podemos criar os arquivos do projeto Django em si.</p>
+
+<h3 id="criando-o-projeto-django">Criando o Projeto Django</h3>
+
+<p>Como já temos um diretório de projeto, vamos dizer ao Django para instalar os arquivos aqui. Ele criará um diretório de segundo nível com o código real, o que é normal, e colocará um script de gerenciamento neste diretório. A chave para isso é que estamos definindo o diretório explicitamente ao invés de permitir que o Django tome decisões sobre nosso diretório atual:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">django-admin.py startproject <span class="highlight">myproject</span> ~/<span class="highlight">myprojectdir</span>
+</li></ul></code></pre>
+<p>Neste ponto, seu diretório de projeto (<code>~/<span class="highlight">myprojectdir</span></code> no nosso caso) deve ter o seguinte conteúdo:</p>
+
+<ul>
+<li><code>~/myprojectdir/manage.py</code>: um script de gerenciamento de projeto Django.</li>
+<li><code>~/myprojectdir/myproject/</code>: o pacote do projeto Django. Isso deve conter os arquivos <code>__init__.py</code>, <code>settings.py</code>, <code>urls.py</code> e <code>wsgi.py</code>.</li>
+<li><code>~/myprojectdir/myprojectenv/</code>: o diretório do ambiente virtual que criamos anteriormente.</li>
+</ul>
+
+<h3 id="ajustando-as-configurações-do-projeto">Ajustando as configurações do Projeto</h3>
+
+<p>A primeira coisa que devemos fazer com nossos arquivos de projeto recém-criados é ajustar as configurações. Abra as configurações no seu editor de texto:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">nano ~/<span class="highlight">myprojectdir</span>/<span class="highlight">myproject</span>/settings.py
+</li></ul></code></pre>
+<p>Comece locando a diretriz <code>ALLOWED_HOSTS</code>. Isso define uma lista dos endereços ou nomes de domínio do servidor que podem ser usados para se conectar à instância Django. Qualquer pedido recebido com um cabeçalho <strong>Host</strong> que não está nesta lista irá criar uma exceção. O Django exige que você defina isso para prevenir uma certa classe de vulnerabilidade de segurança.</p>
+
+<p>Dentro dos colchetes, liste os endereços IP ou nomes de domínio associados ao seu servidor do Django. Cada item deve ser listado entre aspas, com entradas separadas divididas por uma vírgula. Se você quiser pedidos para um domínio inteiro e quaisquer subdomínios, anteceda um período ao início da entrada. No trecho abaixo, há alguns exemplos comentados usados como demonstração:</p>
+
+<p><span class='note'><strong>Nota:</strong> Certifique-se de incluir o <code>localhost</code> como uma das opções, uma vez que vamos estar passando conexões por um proxy através de uma instância local do Nginx.<br></span></p>
+<div class="code-label " title="~/myprojectdir/myproject/settings.py">~/myprojectdir/myproject/settings.py</div><pre class="code-pre "><code langs="">. . .
+# The simplest case: just add the domain name(s) and IP addresses of your Django server
+# ALLOWED_HOSTS = [ 'example.com', '203.0.113.5']
+# To respond to 'example.com' and any subdomains, start the domain with a dot
+# ALLOWED_HOSTS = ['.example.com', '203.0.113.5']
+ALLOWED_HOSTS = ['<span class="highlight">your_server_domain_or_IP</span>', '<span class="highlight">second_domain_or_IP</span>', <span class="highlight">. . .</span>, 'localhost']
+</code></pre>
+<p>Em seguida, encontre a seção que configura o acesso ao banco de dados. Ela começará com <code>DATABASES</code>. A configuração no arquivo é para um banco de dados SQLite. Já criamos um banco de dados PostgreSQL para nosso projeto, então precisamos ajustar as configurações.</p>
+
+<p>Altere as configurações com as informações do seu banco de dados PostgreSQL. Diremos ao Django para usar o adaptador <code>psycopg2</code> que instalamos com o <code>pip</code>. Precisamos  fornecer o nome do banco de dados, o nome de usuário do banco de dados, a senha do usuário do banco de dados, e então especificar que o banco de dados está localizado no computador local. Você pode deixar a configuração <code>PORT</code> como uma string vazia:</p>
+<div class="code-label " title="~/myprojectdir/myproject/settings.py">~/myprojectdir/myproject/settings.py</div><pre class="code-pre "><code langs="">. . .
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.<span class="highlight">postgresql_psycopg2</span>',
+        'NAME': '<span class="highlight">myproject</span>',
+        'USER': '<span class="highlight">myprojectuser</span>',
+        'PASSWORD': '<span class="highlight">password</span>',
+        'HOST': 'localhost',
+        'PORT': '',
+    }
+}
+
+. . .
+</code></pre>
+<p>Em seguida, vá até o final do arquivo e adicione uma configuração indicando onde os arquivos estáticos devem ser colocados. Isso é necessário para que o Nginx possa lidar com pedidos para esses itens. A seguinte linha diz ao Django para colocá-los em um diretório chamado <code>static</code> no diretório base do projeto:</p>
+<div class="code-label " title="~/myprojectdir/myproject/settings.py">~/myprojectdir/myproject/settings.py</div><pre class="code-pre "><code langs="">. . .
+
+STATIC_URL = '/static/'
+<span class="highlight">STATIC_ROOT = os.path.join(BASE_DIR, 'static/')</span>
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<h3 id="completando-a-configuração-inicial-do-projeto">Completando a Configuração Inicial do Projeto</h3>
+
+<p>Agora, podemos migrar o esquema inicial do banco de dados para nosso banco de dados PostgreSQL usando o script de gerenciamento:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">~/<span class="highlight">myprojectdir</span>/manage.py makemigrations
+</li><li class="line" prefix="(myprojectenv) $">~/<span class="highlight">myprojectdir</span>/manage.py migrate
+</li></ul></code></pre>
+<p>Crie um usuário administrativo para o projeto digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">~/<span class="highlight">myprojectdir</span>/manage.py createsuperuser
+</li></ul></code></pre>
+<p>Você terá que selecionar um nome de usuário, fornecer um endereço e-mail, e escolher uma senha e confirmá-la.</p>
+
+<p>Podemos coletar todos o conteúdo estático no local do diretório que configuramos digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">~/<span class="highlight">myprojectdir</span>/manage.py collectstatic
+</li></ul></code></pre>
+<p>Você terá que confirmar a operação. Os arquivos estáticos serão então colocados em um diretório chamado <code>static</code> dentro do seu diretório.</p>
+
+<p>Se seguiu o guia de configuração inicial do servidor, você deve ter um firewall UFW protegendo seu servidor. Para testar o servidor de desenvolvimento, vamos ter que permitir o acesso à porta que iremos usar.</p>
+
+<p>Crie uma exceção para a porta 8000 digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">sudo ufw allow 8000
+</li></ul></code></pre>
+<p>Finalmente, você pode testar nosso projeto iniciando o servidor de desenvolvimento Django com este comando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">~/<span class="highlight">myprojectdir</span>/manage.py runserver 0.0.0.0:8000
+</li></ul></code></pre>
+<p>No seu navegador Web, visite o nome de domínio ou endereço IP do seu servidor seguido de <code>:8000</code>:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">server_domain_or_IP</span>:8000
+</code></pre>
+<p>Você deve ver a página inicial padrão do Django:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/django_gunicorn_nginx_1804/django_index.png" alt="Django index page"></p>
+
+<p>Se adicionar <code>/admin</code> no final do URL na barra de endereço, você será solicitado a colocar o nome de usuário administrativo e a senha que criou com o comando <code>createsuperuser</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/django_gunicorn_nginx_1804/admin_login.png" alt="Django admin login"></p>
+
+<p>Após a autenticação, você pode acessar a interface de admin do Django padrão:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/django_gunicorn_nginx_1804/admin_interface.png" alt="Django admin interface"></p>
+
+<p>Quando você terminar de explorar, clique em <strong>CTRL-C</strong> na janela do terminal para fechar o servidor de desenvolvimento.</p>
+
+<h3 id="testando-a-capacidade-do-gunicorn-para-servir-o-projeto">Testando a capacidade do Gunicorn para servir o projeto</h3>
+
+<p>A última coisa que queremos fazer antes de deixar nosso ambiente virtual é testar o Gunicorn para garantir que ele possa servir o aplicativo. Podemos fazer isso entrando no nosso diretório de projeto e usando o <code>gunicorn</code> para carregar o módulo WSGI do projeto:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">cd ~/<span class="highlight">myprojectdir</span>
+</li><li class="line" prefix="(myprojectenv) $">gunicorn --bind 0.0.0.0:8000 <span class="highlight">myproject</span>.wsgi
+</li></ul></code></pre>
+<p>Isso irá iniciar o Gunicorn na mesma interface em que o servidor de desenvolvimento do Django estava sendo executado. Você pode voltar e testar o aplicativo novamente.</p>
+
+<p><span class='note'><strong>Nota:</strong> A interface admin não terá qualquer um dos estilos aplicados, uma vez que o Gunicorn não sabe como encontrar o conteúdo CSS estático responsável por isso.<br></span></p>
+
+<p>Passamos um módulo ao Gunicorn especificando o caminho de diretório relativo para o arquivo <code>wsgi.py</code> do Django, que é o ponto de entrada para nosso aplicativo, usando a sintaxe do módulo do Python. Dentro deste arquivo, é definida uma função chamada de <code>application</code>, que é usada para se comunicar com o aplicativo. Para aprender mais sobre a especificação WSGI, clique <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-uwsgi-and-nginx-to-serve-python-apps-on-ubuntu-14-04#definitions-and-concepts">aqui</a>.</p>
+
+<p>Quando terminar os testes, clique em <strong>CTRL-C</strong> na janela do terminal para interromper o Gunicorn.</p>
+
+<p>Agora, acabamos de configurar nosso aplicativo Django. Podemos sair do nosso ambiente virtual digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(myprojectenv) $">deactivate
+</li></ul></code></pre>
+<p>O indicador do ambiente virtual no seu prompt será removido.</p>
+
+<h2 id="criando-arquivos-de-socket-e-de-serviço-systemd-para-o-gunicorn">Criando arquivos de socket e de serviço systemd para o Gunicorn</h2>
+
+<p>Nós testamos que o Gunicorn pode interagir com nosso aplicativo Django, mas devemos implementar uma maneira mais robusta de começar e parar o servidor do aplicativo. Para isso, vamos fazer arquivos de serviço e de socket do systemd.</p>
+
+<p>O socket Gunicorn será criado no boot e escutará as conexões. Quando ocorrer uma conexão, o systemd irá iniciar o processo Gunicorn automaticamente para lidar com a conexão.</p>
+
+<p>Comece criando e abrindo um arquivo de socket do systemd para o Gunicorn com privilégios <code>sudo</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/gunicorn.socket
+</li></ul></code></pre>
+<p>Dentro, vamos criar uma seção <code>[Unit]</code> para descrever o socket, uma seção <code>[Socket]</code> para definir a localização do socket e uma seção <code>[Install]</code> para garantir que o socket seja criado no momento certo:</p>
+<div class="code-label " title="/etc/systemd/system/gunicorn.socket">/etc/systemd/system/gunicorn.socket</div><pre class="code-pre "><code langs="">[Unit]
+Description=gunicorn socket
+
+[Socket]
+ListenStream=/run/gunicorn.sock
+
+[Install]
+WantedBy=sockets.target
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<p>Em seguida, crie e abra um arquivo de serviço do systemd para o Gunicorn com privilégios <code>sudo</code> no seu editor de texto. O nome do arquivo de serviço deve corresponder ao nome do arquivo do socket com exceção da extensão:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/gunicorn.service
+</li></ul></code></pre>
+<p>Comece com a seção <code>[Unit]</code>, que é usada para especificar os metadados e dependências. Vamos colocar uma descrição do nosso serviço aqui e dizer ao sistema init para iniciar isso somente após o objetivo da rede ter sido alcançado. Uma vez que nosso serviço se baseia no socket do arquivo do socket, precisamos incluir uma diretriz <code>Requires</code> para indicar essa relação:</p>
+<div class="code-label " title="/etc/systemd/system/gunicorn.service">/etc/systemd/system/gunicorn.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=gunicorn daemon
+Requires=gunicorn.socket
+After=network.target
+</code></pre>
+<p>Em seguida, vamos abrir a seção <code>[Service]</code>. Nós especificaremos o usuário e o grupo em que queremos que o processo seja executado. Vamos dar à nossa conta de usuário regular a posse do processo uma vez que ela possui todos os arquivos relevantes. Vamos atribuir a posse do grupo ao grupo <code>www-data</code> para que o Nginx possa se comunicar facilmente com o Gunicorn.</p>
+
+<p>Então, vamos mapear o diretório em funcionamento e especificar o comando a ser usado para iniciar o serviço. Neste caso, precisaremos especificar o caminho completo para o executável do Gunicorn, que está instalado dentro do nosso ambiente virtual. Vamos ligar o processo ao socket Unix que criamos dentro do diretório <code>/run</code> para que o processo possa se comunicar com o Nginx. Nós registramos todos os dados na saída padrão para que o processo <code>journald</code> possa recolher os registros do Gunicorn. Também podemos especificar quaisquer ajustes opcionais no Gunicorn aqui. Por exemplo, especificamos 3 processos de trabalho neste caso:</p>
+<div class="code-label " title="/etc/systemd/system/gunicorn.service">/etc/systemd/system/gunicorn.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=gunicorn daemon
+Requires=gunicorn.socket
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+WorkingDirectory=/home/<span class="highlight">sammy</span>/<span class="highlight">myprojectdir</span>
+ExecStart=/home/<span class="highlight">sammy</span>/<span class="highlight">myprojectdir</span>/<span class="highlight">myprojectenv</span>/bin/gunicorn \
+          --access-logfile - \
+          --workers 3 \
+          --bind unix:/run/gunicorn.sock \
+          <span class="highlight">myproject</span>.wsgi:application
+</code></pre>
+<p>Finalmente, adicionaremos uma seção <code>[Install]</code>. Isso dirá ao systemd o que ligar a este serviço se nós habilitarmos que ele seja iniciado no boot. Queremos que este serviço comece quando o sistema regular de vários usuários estiver funcionando:</p>
+<div class="code-label " title="/etc/systemd/system/gunicorn.service">/etc/systemd/system/gunicorn.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=gunicorn daemon
+Requires=gunicorn.socket
+After=network.target
+
+[Service]
+User=<span class="highlight">sammy</span>
+Group=www-data
+WorkingDirectory=/home/<span class="highlight">sammy</span>/<span class="highlight">myprojectdir</span>
+ExecStart=/home/<span class="highlight">sammy</span>/<span class="highlight">myprojectdir</span>/<span class="highlight">myprojectenv</span>/bin/gunicorn \
+          --access-logfile - \
+          --workers 3 \
+          --bind unix:/run/gunicorn.sock \
+          <span class="highlight">myproject</span>.wsgi:application
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>Com isso, nosso arquivo de serviço systemd está completo. Salve e feche-o agora.</p>
+
+<p>Agora, podemos iniciar e habilitar o socket do Gunicorn. Isso criará o arquivo do socket em <code>/run/gunicorn.sock</code> agora e no boot. Quando uma conexão for feita no socket, o systemd irá iniciar o <code>gunicorn.service</code> automaticamente para lidar com ela:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start gunicorn.socket
+</li><li class="line" prefix="$">sudo systemctl enable gunicorn.socket
+</li></ul></code></pre>
+<p>Podemos confirmar que a operação foi bem sucedida verificando o arquivo do socket.</p>
+
+<h2 id="verificando-o-arquivo-de-socket-do-gunicorn">Verificando o arquivo de socket do Gunicorn</h2>
+
+<p>Verifique o status do processo para descobrir se ele foi capaz de iniciar:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status gunicorn.socket
+</li></ul></code></pre>
+<p>Em seguida, verifique a existência do arquivo <code>gunicorn.sock</code> dentro do diretório <code>/run</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">file /run/gunicorn.sock
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/run/gunicorn.sock: socket
+</code></pre>
+<p>Se o comando <code>systemctl status</code> indicou que um erro ocorreu ou se você não encontrou o arquivo <code>gunicorn.sock</code> no diretório, é uma indicação de que o socket do Gunicorn não foi  criado corretamente. Verifique os registros do socket do Gunicorn digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo journalctl -u gunicorn.socket
+</li></ul></code></pre>
+<p>Veja novamente o seu arquivo <code>/etc/systemd/system/gunicorn.socket</code> para corrigir qualquer problema antes de continuar.</p>
+
+<h2 id="testando-a-ativação-do-socket">Testando a ativação do socket</h2>
+
+<p>Se tiver iniciado apenas a unidade <code>gunicorn.socket</code>, o <code>gunicorn.service</code> ainda não estará ativo, já que o socket ainda não recebeu nenhuma conexão. Você pode verificar isso digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status gunicorn
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● gunicorn.service - gunicorn daemon
+   Loaded: loaded (/etc/systemd/system/gunicorn.service; disabled; vendor preset: enabled)
+   <span class="highlight">Active: inactive (dead)</span>
+</code></pre>
+<p>Para testar o mecanismo de ativação do socket, podemos enviar uma conexão para o socket através do <code>curl</code> digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl --unix-socket /run/gunicorn.sock localhost
+</li></ul></code></pre>
+<p>Você deve ver a saída HTML do seu aplicativo no terminal. Isso indica que o Gunicorn foi iniciado e conseguiu servir seu aplicativo Django. Você pode verificar se o serviço Gunicorn está funcionando digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status gunicorn
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● gunicorn.service - gunicorn daemon
+   Loaded: loaded (/etc/systemd/system/gunicorn.service; disabled; vendor preset: enabled)
+   <span class="highlight">Active: active (running)</span> since Mon 2018-07-09 20:00:40 UTC; 4s ago
+ Main PID: 1157 (gunicorn)
+    Tasks: 4 (limit: 1153)
+   CGroup: /system.slice/gunicorn.service
+           ├─1157 /home/sammy/myprojectdir/myprojectenv/bin/python3 /home/sammy/myprojectdir/myprojectenv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/run/gunicorn.sock myproject.wsgi:application
+           ├─1178 /home/sammy/myprojectdir/myprojectenv/bin/python3 /home/sammy/myprojectdir/myprojectenv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/run/gunicorn.sock myproject.wsgi:application
+           ├─1180 /home/sammy/myprojectdir/myprojectenv/bin/python3 /home/sammy/myprojectdir/myprojectenv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/run/gunicorn.sock myproject.wsgi:application
+           └─1181 /home/sammy/myprojectdir/myprojectenv/bin/python3 /home/sammy/myprojectdir/myprojectenv/bin/gunicorn --access-logfile - --workers 3 --bind unix:/run/gunicorn.sock myproject.wsgi:application
+
+Jul 09 20:00:40 django1 systemd[1]: Started gunicorn daemon.
+Jul 09 20:00:40 django1 gunicorn[1157]: [2018-07-09 20:00:40 +0000] [1157] [INFO] Starting gunicorn 19.9.0
+Jul 09 20:00:40 django1 gunicorn[1157]: [2018-07-09 20:00:40 +0000] [1157] [INFO] Listening at: unix:/run/gunicorn.sock (1157)
+Jul 09 20:00:40 django1 gunicorn[1157]: [2018-07-09 20:00:40 +0000] [1157] [INFO] Using worker: sync
+Jul 09 20:00:40 django1 gunicorn[1157]: [2018-07-09 20:00:40 +0000] [1178] [INFO] Booting worker with pid: 1178
+Jul 09 20:00:40 django1 gunicorn[1157]: [2018-07-09 20:00:40 +0000] [1180] [INFO] Booting worker with pid: 1180
+Jul 09 20:00:40 django1 gunicorn[1157]: [2018-07-09 20:00:40 +0000] [1181] [INFO] Booting worker with pid: 1181
+Jul 09 20:00:41 django1 gunicorn[1157]:  - - [09/Jul/2018:20:00:41 +0000] "GET / HTTP/1.1" 200 16348 "-" "curl/7.58.0"
+</code></pre>
+<p>Se o resultado do <code>curl</code> ou o resultado do <code>systemctl status</code> indicar que um problema ocorreu, verifique os registros para mais detalhes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo journalctl -u gunicorn
+</li></ul></code></pre>
+<p>Verifique seu arquivo <code>/etc/systemd/gunicorn.service</code> quanto a problemas. Se fizer alterações no arquivo <code>/etc/systemd/system/gunicorn.service</code>, recarregue o daemon para reler a definição do serviço e reinicie o processo do Gunicorn digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl daemon-reload
+</li><li class="line" prefix="$">sudo systemctl restart gunicorn
+</li></ul></code></pre>
+<p>Certifique-se de que você tenha resolvido os problemas acima antes de continuar.</p>
+
+<h2 id="configurar-o-nginx-para-passagem-de-proxy-para-o-gunicorn">Configurar o Nginx para passagem de proxy para o Gunicorn</h2>
+
+<p>Agora que o Gunicorn está configurado, precisamos configurar o Nginx para passar o tráfego para o processo.</p>
+
+<p>Inicie criando e abrindo um novo bloco de servidor no diretório <code>sites-available</code> do Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">myproject</span>
+</li></ul></code></pre>
+<p>Lá dentro, abra um novo bloco de servidor. Vamos começar especificando que este bloco deve escutar a porta normal 80 e que ele deve responder ao nome de domínio ou endereço IP do nosso servidor:</p>
+<div class="code-label " title="/etc/nginx/sites-available/myproject">/etc/nginx/sites-available/myproject</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    server_name <span class="highlight">server_domain_or_IP</span>;
+}
+</code></pre>
+<p>Em seguida, vamos dizer ao Nginx para ignorar todos os problemas ao encontrar um favicon. Também vamos dizer a ele onde encontrar os ativos estáticos que coletamos no nosso diretório <code>~/<span class="highlight">myprojectdir</span>/static</code> Todos esses arquivos têm um prefixo URI padrão &ldquo;/static&rdquo;, então podemos criar um bloco de localização para corresponder a esses pedidos:</p>
+<div class="code-label " title="/etc/nginx/sites-available/myproject">/etc/nginx/sites-available/myproject</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    server_name <span class="highlight">server_domain_or_IP</span>;
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location /static/ {
+        root /home/<span class="highlight">sammy</span>/<span class="highlight">myprojectdir</span>;
+    }
+}
+</code></pre>
+<p>Por fim, vamos criar um bloco <code>location / {}</code> para corresponder a todos os outros pedidos. Dentro deste local, vamos incluir o arquivo <code>proxy_params</code> padrão incluído na instalação do Nginx e então vamos passar o tráfego diretamente para o socket do Gunicorn:</p>
+<div class="code-label " title="/etc/nginx/sites-available/myproject">/etc/nginx/sites-available/myproject</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    server_name <span class="highlight">server_domain_or_IP</span>;
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location /static/ {
+        root /home/<span class="highlight">sammy</span>/<span class="highlight">myprojectdir</span>;
+    }
+
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:/run/gunicorn.sock;
+    }
+}
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar. Agora, podemos habilitar o arquivo ligando-o ao diretório <code>sites-enabled</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">myproject</span> /etc/nginx/sites-enabled
+</li></ul></code></pre>
+<p>Teste sua configuração do Nginx para erros de sintaxe digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Se nenhum erro for reportado, vá em frente e reinicie o Nginx digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Por fim, precisamos abrir nosso firewall para o tráfego normal na porta 80. Como já não precisamos mais acessar o servidor de desenvolvimento, podemos remover também a regra para abrir a porta 8000:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete allow 8000
+</li><li class="line" prefix="$">sudo ufw allow 'Nginx Full'
+</li></ul></code></pre>
+<p>Agora, você deve conseguir ir ao domínio ou endereço IP do seu servidor para ver seu aplicativo.</p>
+
+<span class='note'><p>
+<strong>Nota:</strong> Depois de configurar o Nginx, o próximo passo deve ser proteger o tráfego para o servidor usando SSL/TLS. Isso é importante, pois sem ele, todas as informações, incluindo senhas são enviadas para a rede em texto simples.</p>
+
+<p>Se você tiver um nome de domínio, a maneira mais fácil de obter um certificado SSL para proteger seu tráfego é usando o Let&rsquo;s Encrypt. Siga <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">este guia</a> para configurar o Let&rsquo;s Encrypt com o Nginx no Ubuntu 18.04. Siga o procedimento usando o bloco de servidor do Nginx que criamos neste guia.</p>
+
+<p>Se você não tiver um nome de domínio, ainda é possível proteger seu site como teste e aprendizado com um <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-nginx-in-ubuntu-18-04">certificado SSL autoassinado</a>. Novamente, siga o procedimento usando o bloco de servidor do Nginx que criamos neste tutorial.<br></p></span>
+
+<h2 id="solucionando-problemas-do-nginx-e-do-gunicorn">Solucionando problemas do Nginx e do Gunicorn</h2>
+
+<p>Se este último passo não mostrar o seu aplicativo, será necessário resolver o problema da sua instalação.</p>
+
+<h3 id="nginx-está-mostrando-a-página-padrão-ao-invés-do-aplicativo-django">Nginx está mostrando a página padrão ao invés do aplicativo Django</h3>
+
+<p>Se o Nginx mostra a página padrão em vez de transferir via proxy para seu aplicativo, isso geralmente significa que você precisa ajustar o <code>server_name</code> dentro do arquivo <code>/etc/nginx/sites-available/<span class="highlight">myproject</span></code> para apontar ao endereço IP ou nome de domínio do seu servidor.</p>
+
+<p>O Nginx usa o <code>server_name</code> para determinar qual bloco de servidor usar para responder aos pedidos. Se você estiver vendo a página padrão do Nginx, é um sinal de que o Nginx não conseguiu corresponder ao pedido a um bloco de servidor explicitamente, então ele está recorrendo ao bloco padrão definido em <code>/etc/nginx/sites-available/default</code>.</p>
+
+<p>O <code>server_name</code> no bloco de servidor do seu projeto deve ser mais específico do que aquele no bloco de servidor padrão para ser selecionado.</p>
+
+<h3 id="nginx-está-exibindo-um-erro-502-bad-gateway-ao-invés-do-aplicativo-django">Nginx está exibindo um erro 502 Bad Gateway ao invés do aplicativo Django</h3>
+
+<p>Um erro 502 indica que o Nginx é incapaz de atuar como proxy  para o pedido com sucesso. Uma ampla gama de problemas de configuração se expressam com um erro 502, então é necessário mais informações para resolver o problema corretamente.</p>
+
+<p>O primeiro lugar para procurar mais informações é nos registros de erro do Nginx. Geralmente, isso irá dizer-lhe quais condições causaram problemas durante o evento de proxy. Vá até os registros de erro do Nginx, digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo tail -F /var/log/nginx/error.log
+</li></ul></code></pre>
+<p>Agora, faça outro pedido no seu navegador para gerar um novo erro (tente atualizar a página). Você deve ver uma nova mensagem de erro escrita no registro. Se olhar para a mensagem, ela deve ajudar você a estreitar o problema.</p>
+
+<p>Pode ser que você veja algumas dessas mensagens:</p>
+
+<p><strong>connect() to unix:/run/gunicorn.sock failed (2: No such file or directory)</strong></p>
+
+<p>Isso indica que o Nginx foi incapaz de encontrar o arquivo <code>gunicorn.sock</code> no local indicado. Você deve comparar a localização do <code>proxy_pass</code> definida dentro do arquivo <code>/etc/nginx/sites-available/myproject</code> com a localização real do arquivo <code>gunicorn.sock</code> gerado pela unidade systemd <code>gunicorn.socket</code>.</p>
+
+<p>Se você não puder encontrar um arquivo <code>gunicorn.sock</code> dentro do diretório <code>/run</code>, isso signica geralmente que o arquivo de socket do systemd foi incapaz de criá-lo. Volte para a <a href="#checking-for-the-gunicorn-socket-file">seção sobre checar o arquivo de socket do Gunicorn</a> para seguir as etapas de solução de problemas para o Gunicorn.</p>
+
+<p><strong>connect() to unix:/run/gunicorn.sock failed (13: Permission denied)</strong></p>
+
+<p>Isso indica que o Nginx foi incapaz de se conectar ao socket do Gunicorn devido a problemas de permissão. Isso pode acontecer quando o procedimento é seguido usando o usuário raiz ao invés de um usuário <code>sudo</code>. Embora o systemd seja capaz de criar o arquivo de socket do Gunicorn, o Nginx é incapaz de acessá-lo.</p>
+
+<p>Isso pode acontecer se houver permissões limitadas em qualquer ponto entre o diretório raiz (<code>/</code>) e o arquivo <code>gunicorn.sock</code>. Podemos ver as permissões e os valores de posse do arquivo de socket e cada um dos seus diretórios pais passando o caminho absoluto para nosso arquivo de socket pelo comando <code>namei</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">namei -l /run/gunicorn.sock
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>f: /run/gunicorn.sock
+drwxr-xr-x root root /
+drwxr-xr-x root root run
+srw-rw-rw- root root gunicorn.sock
+</code></pre>
+<p>O resultado mostra as permissões de cada um dos componentes do diretório. Ao olhar para as permissões (primeira coluna), proprietário (segunda coluna) e proprietário do grupo (terceiro coluna), podemos descobrir qual tipo de acesso é permitido ao arquivo de socket.</p>
+
+<p>No exemplo acima, o arquivo de socket e cada um dos diretórios que levam ao arquivo de socket têm permissões de leitura e execução global (a coluna de permissões para os diretórios termina com <code>r-x</code> ao invés de <code>---</code>). O processo Nginx deve ser capaz de acessar o socket com sucesso.</p>
+
+<p>Se qualquer um dos diretórios que levam ao socket não tiverem permissão de leitura e execução global, o Nginx não poderá acessar o socket sem permitir permissões de leitura e execução globais ou garantir que o proprietário do grupo seja dado a um grupo do qual o Nginx faça parte.</p>
+
+<h3 id="django-está-exibindo-quot-could-not-connect-to-server-connection-refused-quot">Django está exibindo: &ldquo;could not connect to server: Connection refused&rdquo;</h3>
+
+<p>Uma mensagem que você pode ver do Django ao tentar acessar partes do aplicativo no navegador Web é:</p>
+<pre class="code-pre "><code langs="">OperationalError at /admin/login/
+could not connect to server: Connection refused
+    Is the server running on host "localhost" (127.0.0.1) and accepting
+    TCP/IP connections on port 5432?
+</code></pre>
+<p>Isso indica que o Django é incapaz de se conectar ao banco de dados do Postgres. Certifique-se de que a instância do Postgres está sendo executada digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status postgresql
+</li></ul></code></pre>
+<p>Se não estiver, você pode iniciá-la e habilitá-la para iniciar automaticamente no boot (se ela ainda não estiver configurada para fazer isso) digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start postgresql
+</li><li class="line" prefix="$">sudo systemctl enable postgresql
+</li></ul></code></pre>
+<p>Se ainda estiver tendo problemas, certifique-se de que as configurações do banco de dados definidas no arquivo <code>~/myprojectdir/myproject/settings.py</code> estão corretas.</p>
+
+<h3 id="soluções-de-problemas-adicionais">Soluções de problemas adicionais</h3>
+
+<p>Para soluções de problemas adicionais, os registros podem ajudar a reduzir os problemas de raiz. Verifique cada um deles individualmente e procure mensagens que indiquem áreas de problemas.</p>
+
+<p>Os registros a seguir podem ser úteis:</p>
+
+<ul>
+<li>Verifique os registros de processo do Nginx digitando: <code>sudo journalctl -u nginx</code></li>
+<li>Verifique os registros de acesso do Nginx digitando: <code>sudo less /var/log/nginx/access.log</code></li>
+<li>Verifique os registros de erro do Nginx digitando: <code>sudo less /var/log/nginx/error.log</code></li>
+<li>Verifique os registros do aplicativo Gunicorn digitando: <code>sudo journalctl -u gunicorn</code></li>
+<li>Verifique os registros do socket do Gunicorn digitando: <code>sudo journalctl -u gunicorn.socket</code></li>
+</ul>
+
+<p>Conforme atualiza sua configuração ou aplicativo, provavelmente precisará reiniciar os processos para ajustá-los às suas alterações.</p>
+
+<p>Se atualizar seu aplicativo Django, você pode reiniciar o processo Gunicorn para aplicar as alterações, digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart gunicorn
+</li></ul></code></pre>
+<p>Se alterar o socket ou arquivos de serviço do Gunicorn, recarregue o daemon e reinicie o processo, digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl daemon-reload
+</li><li class="line" prefix="$">sudo systemctl restart gunicorn.socket gunicorn.service
+</li></ul></code></pre>
+<p>Se alterar a configuração do bloco de servidor do Nginx, teste a configuração e então o Nginx digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t &amp;&amp; sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Estes comandos são úteis para aplicar as alterações conforme você ajusta sua configuração.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste guia, configuramos um projeto Django em seu próprio ambiente virtual. Configuramos o Gunicorn para traduzir pedidos de clientes para que o Django possa lidar com eles. Depois disso, configuramos o Nginx para agir como um proxy reverso para lidar com conexões de clientes e servir o projeto correto, dependendo da solicitação do cliente.</p>
+
+<p>O Django torna a criação de projetos e aplicativos simples, fornecendo muitas peças comuns, permitindo que você se concentre nos elementos únicos. Ao utilizar a cadeia de ferramentas geral descrita neste artigo, você pode servir facilmente os aplicativos que criar a partir de um único servidor.</p>

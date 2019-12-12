@@ -1,0 +1,101 @@
+---
+layout: post
+title: Como Instalar o Python 3 e Configurar um Ambiente de Programação no Ubuntu 18.04 [Quickstart]
+network: digitalocean
+date: December 12, 2019 at 07:53PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-programming-environment-on-ubuntu-18-04-quickstart-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O Python é uma linguagem de programação flexível e versátil, com vantagens em script, automação, análise de dados, aprendizado de máquina e desenvolvimento back-end.</p>
+
+<p>Este tutorial irá guiá-lo através da instalação do Python e configuração de um ambiente de programação em um servidor Ubuntu 18.04. Para uma versão mais detalhada deste tutorial, com explicações melhores de cada passo, por favor, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-programming-environment-on-an-ubuntu-18-04-server">Como Instalar o Python 3 e Configurar um Ambiente de Programação em um Servidor Ubuntu 18.04</a>.</p>
+
+<h2 id="passo-1-—-atualizar">Passo 1 — Atualizar</h2>
+
+<p>Logado no seu servidor Ubuntu 18.04, como um usuário sudo não-root, primeiro atualize seu sistema para garantir que sua versão enviada do Python 3 está em dia.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt -y upgrade
+</li></ul></code></pre>
+<p>Confirme a instalação se o solicitado a fazer isso.</p>
+
+<h2 id="passo-2-—-conferir-a-versão-do-python">Passo 2 — Conferir a Versão do Python</h2>
+
+<p>Verifique qual versão do Python 3 está instalada digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3 -V
+</li></ul></code></pre>
+<p>Você receberá um resultado similar ao seguinte, dependendo de quando tiver atualizado seu sistema.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Python <span class="highlight">3.6.7</span>
+</code></pre>
+<h2 id="passo-3-—-instalar-o-pip">Passo 3 — Instalar o pip</h2>
+
+<p>Para gerenciar os pacotes de software para o Python, instale o <strong>pip</strong>, uma ferramenta que irá instalar e gerenciar bibliotecas ou módulos para usar em seus projetos.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install -y python3-pip
+</li></ul></code></pre>
+<p>Os pacotes Python podem ser instalados digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pip3 install <span class="highlight">package_name</span>
+</li></ul></code></pre>
+<p>Aqui, o <code><span class="highlight">package_name</span></code> pode se referir a qualquer pacote ou biblioteca Python, assim como o Django para o desenvolvimento Web ou o NumPy para a computação científica. Então, se você quiser instalar o NumPy, você pode fazer isso com o comando <code>pip3 install numpy</code>.</p>
+
+<h2 id="passo-4-—-instalar-ferramentas-adicionais">Passo 4 — Instalar Ferramentas Adicionais</h2>
+
+<p>Há mais alguns pacotes e ferramentas de desenvolvimento a serem instalados para garantir que teremos uma configuração robusta para nosso ambiente de programação:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install build-essential libssl-dev libffi-dev python3-dev
+</li></ul></code></pre>
+<h2 id="passo-5-—-instalar-o-venv">Passo 5 — Instalar o venv</h2>
+
+<p>Ambientes virtuais permitem que você tenha um espaço isolado no seu servidor para projetos Python. Vamos usar o <strong>venv</strong>, parte da biblioteca padrão do Python 3, que podemos instalar digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install -y python3-venv
+</li></ul></code></pre>
+<h2 id="passo-6-—-criar-um-ambiente-virtual">Passo 6 — Criar um Ambiente Virtual</h2>
+
+<p>Você pode criar um novo ambiente com o comando <code>pyvenv</code>. Aqui, vamos chamar nosso novo ambiente de <code><span class="highlight">my_env</span></code>, mas você pode chamar o seu como quiser.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">python3.6 -m venv <span class="highlight">my_env</span>
+</li></ul></code></pre>
+<h2 id="passo-7-—-ativar-o-ambiente-virtual">Passo 7 — Ativar o Ambiente Virtual</h2>
+
+<p>Ative o ambiente utilizando o comando abaixo, onde <code><span class="highlight">my_env</span></code> é o nome do seu ambiente de programação.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<p>Seu prompt de comando agora será prefixo com o nome do seu ambiente:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@ubuntu:~/environments$">
+</li></ul></code></pre>
+<h2 id="passo-8-—-testar-o-ambiente-virtual">Passo 8 — Testar o Ambiente Virtual</h2>
+
+<p>Abra o intérprete Python:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@ubuntu:~/environments$">python
+</li></ul></code></pre>
+<p>Note que dentro do ambiente virtual do Python 3, você pode usar o comando <code>python</code> ao invés de <code>python3</code>, e <code>pip</code> ao invés de &ldquo;pip3.</p>
+
+<p>Você saberá que você está no intérprete quando receber o seguinte resultado:</p>
+<pre class="code-pre "><code langs="">Python 3.6.5 (default, Apr  1 2018, 05:46:30) 
+[GCC 7.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+&gt;&gt;&gt; 
+</code></pre>
+<p>Agora, utilize a função <code>print()</code> para criar o programa tradicional Olá, Mundo:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;&gt;&gt;">print("Hello, World!")
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+</code></pre>
+<h2 id="passo-9-—-desativar-o-ambiente-virtual">Passo 9 — Desativar o Ambiente Virtual</h2>
+
+<p>Saia do intérprete Python:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;&gt;&gt;">quit()
+</li></ul></code></pre>
+<p>Então saia do ambiente virtual:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@ubuntu:~/environments$">deactivate
+</li></ul></code></pre>
+<h2 id="leitura-adicional">Leitura Adicional</h2>
+
+<p>Aqui estão alguns links para tutoriais mais detalhados relacionados a este guia:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-programming-environment-on-an-ubuntu-18-04-server">Como Instalar o Python 3 e Configurar um Ambiente de Programação em um Servidor Ubuntu 18.04</a></li>
+<li><a href="https://do.co/python-book">Ebook gratuito <em>Como Programar em Python 3</em></a></li>
+<li><a href="https://www.digitalocean.com/community/tags/project?type=tutorials">Tutoriais de Projetos de Programação</a></li>
+</ul>

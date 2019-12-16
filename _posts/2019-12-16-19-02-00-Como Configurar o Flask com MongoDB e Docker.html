@@ -1,0 +1,672 @@
+---
+layout: post
+title: Como Configurar o Flask com MongoDB e Docker
+network: digitalocean
+date: December 16, 2019 at 07:02PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-flask-with-mongodb-and-docker-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>O autor escolheu o <a href="https://www.brightfunds.org/organizations/internet-archive">Internet Archive</a> para receber uma doação como parte do programa <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="introdução">Introdução</h3>
+
+<p>O desenvolvimento de aplicações web pode se tornar complexo e demorado ao criar e manter várias tecnologias diferentes. A consideração de opções de menor peso projetadas para reduzir a complexidade e o tempo de produção da sua aplicação pode resultar em uma solução mais flexível e escalável. Como um micro web framework construído em <a href="https://www.python.org/">Python</a>, o <a href="http://flask.pocoo.org/docs/1.0/">Flask</a> fornece uma maneira extensível para os desenvolvedores crescerem suas aplicações através de extensões que podem ser integradas em projetos. Para continuar a escalabilidade da pilha de tecnologia de um desenvolvedor, o <a href="https://www.mongodb.com/">MongoDB</a> é um banco de dados NoSQL projetado para escalar e trabalhar com alterações frequentes. Os desenvolvedores podem usar o <a href="https://docs.docker.com/">Docker</a> para simplificar o processo de empacotamento e deploy de suas aplicações.</p>
+
+<p>O <a href="https://docs.docker.com/compose/">Docker Compose</a> simplificou ainda mais o ambiente de desenvolvimento, permitindo definir sua infraestrutura, incluindo serviços de aplicações, volumes de rede e montagens, em um único arquivo. O uso do Docker Compose fornece facilidade de uso ao executar vários comandos <code>docker container run</code>. Ele permite definir todos os seus serviços em um único arquivo Compose e, com um único comando, você cria e inicia todos os serviços a partir da sua configuração. Isso garante que haja controle de versão em toda a infraestrutura de container. O Docker Compose usa um nome de projeto para isolar ambientes um do outro, permitindo executar vários ambientes em um único host.</p>
+
+<p>Neste tutorial, você criará, empacotará e executará sua aplicação web de lista de tarefas com o Flask, Nginx e MongoDB dentro de <a href="https://www.docker.com/what-container">containers</a> Docker. Você definirá toda a configuração da pilha em um arquivo <code>docker-compose.yml</code>, juntamente com os arquivos de configuração para Python, MongoDB e Nginx. O Flask requer um servidor web para atender solicitações HTTP, portanto você também usará o <a href="https://gunicorn.org/">Gunicorn</a>, que é um servidor HTTP Python WSGI, para atender à aplicação. O Nginx atua como um servidor de proxy reverso que encaminha solicitações ao Gunicorn para processamento.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para seguir este tutorial, você precisará do seguinte:</p>
+
+<ul>
+<li>Um usuário não-root com privilégios <code>sudo</code> configurado seguindo os passos do tutorial <a href="https://www.digitalocean.com/community/tutorial_collections/16">Configuração inicial do servidor</a>.</li>
+<li>O Docker instalado com as instruções dos Passos 1 e 2 de <a href="https://www.digitalocean.com/community/tutorial_collections/39">Como instalar e usar o Docker</a>.</li>
+<li>Docker Compose instalado com as instruções do Passo 1 de <a href="https://www.digitalocean.com/community/tutorial_collections/48">Como instalar o Docker Compose</a>.</li>
+</ul>
+
+<h2 id="passo-1-—-escrevendo-a-configuração-da-pilha-no-docker-compose">Passo 1 — Escrevendo a Configuração da Pilha no Docker Compose</h2>
+
+<p>A construção de suas aplicações no Docker permite o versionamento da infraestrutura facilmente, dependendo das alterações de configuração feitas no Docker Compose. A infraestrutura pode ser definida em um único arquivo e criada com um único comando. Neste passo, você configurará o arquivo <code>docker-compose.yml</code> para executar sua aplicação Flask.</p>
+
+<p>O arquivo <code>docker-compose.yml</code> permite definir sua infraestrutura de aplicações como serviços individuais. Os serviços podem ser conectados entre si e cada um pode ter um <em>volume</em> anexado a ele para armazenamento persistente. Os volumes são armazenados em uma parte do sistema de arquivos do host gerenciado pelo Docker (<code>/var/lib/docker/volumes/</code> no Linux).</p>
+
+<p>Os volumes são a melhor maneira de persistir os dados no Docker, pois os dados nos volumes podem ser exportados ou compartilhados com outras aplicações. Para obter informações adicionais sobre o compartilhamento de dados no Docker, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-share-data-between-the-docker-container-and-the-host">How To Share Data Between the Docker Container and the Host</a>.</p>
+
+<p>Para começar, crie um diretório para a aplicação no diretório home do seu servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir flaskapp
+</li></ul></code></pre>
+<p>Mova para o diretório recém-criado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd flaskapp
+</li></ul></code></pre>
+<p>Em seguida, crie o arquivo <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>O arquivo <code>docker-compose.yml</code> começa com um número de versão que identifica a <a href="https://docs.docker.com/compose/compose-file/">versão do arquivo Docker Compose</a>. A versão <code>3</code> do arquivo do Docker Compose é direcionada à versão do Docker Engine <code>1.13.0+</code>, que é um pré-requisito para esta configuração. Você também adicionará a tag <code>services</code> que você definirá no próximo passo:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yml"><code langs="">version: '3'
+services:
+</code></pre>
+<p>Agora você definirá o <code>flask</code> como o primeiro serviço no seu arquivo <code>docker-compose.yml</code>. Adicione o seguinte código para definir o serviço Flask:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yml"><code langs="">. . .
+  flask:
+    build:
+      context: app
+      dockerfile: Dockerfile
+    container_name: flask
+    image: digitalocean.com/flask-python:3.6
+    restart: unless-stopped
+    environment:
+      APP_ENV: "prod"
+      APP_DEBUG: "False"
+      APP_PORT: 5000
+      MONGODB_DATABASE: flaskdb
+      MONGODB_USERNAME: <span class="highlight">flaskuser</span>
+      MONGODB_PASSWORD: <span class="highlight">sua_senha_do_mongodb</span>
+      MONGODB_HOSTNAME: mongodb
+    volumes:
+      - appdata:/var/www
+    depends_on:
+      - mongodb
+    networks:
+      - frontend
+      - backend
+</code></pre>
+<p>A propriedade <code>build</code> define o contexto do build. Nesse caso, a pasta <code>app</code> que conterá o <code>Dockerfile</code>.</p>
+
+<p>Você usa a propriedade <code>container_name</code> para definir um nome para cada container. A propriedade <code>image</code> especifica o nome da imagem e como a imagem do Docker será identificada ou <em>tagueada</em>. A propriedade <code>restart</code> define como o container deve ser reiniciado — no seu caso é <code>unless-stopped</code>. Isso significa que seus containers serão parados apenas quando o Docker Engine for parado/reiniciado ou quando você os interromper explicitamente. O benefício de usar a propriedade <code>unless-stopped</code> é que os containers serão iniciados automaticamente assim que o Docker Engine for reiniciado ou ocorrer algum erro.</p>
+
+<p>A propriedade <code>environment</code> contém as variáveis de ambiente que são passadas para o container. Você precisa fornecer uma senha segura para a variável de ambiente <code>MONGODB_PASSWORD</code>. A propriedade <code>volumes</code> define os volumes que o serviço está usando. No seu caso, o volume <code>appdata</code> é montado dentro do container no diretório <code>/var/www</code>. A propriedade <code>depends_on</code> define um serviço do qual o Flask depende para funcionar corretamente. Nesse caso, o serviço <code>flask</code> dependerá do <code>mongodb</code>, pois o serviço <code>mongodb</code> atua como o banco de dados da sua aplicação. O <code>depends_on</code> garante que o serviço <code>flask</code> seja executado apenas se o serviço <code>mongodb</code> estiver sendo executado.</p>
+
+<p>A propriedade <code>networks</code> especifica <code>frontend</code> e <code>backend</code> como as redes às quais o serviço<code>flask</code> terá acesso.</p>
+
+<p>Com o serviço <code>flask</code> definido, você está pronto para adicionar a configuração do MongoDB ao arquivo. Neste exemplo, você usará a imagem <code>mongo</code> oficial na versão <code>4.0.8</code>. Adicione o seguinte código ao seu arquivo <code>docker-compose.yml</code> seguindo o <code>flask service</code>:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yml"><code langs="">. . .
+  mongodb:
+    image: mongo:4.0.8
+    container_name: mongodb
+    restart: unless-stopped
+    command: mongod --auth
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: <span class="highlight">mongodbuser</span>
+      MONGO_INITDB_ROOT_PASSWORD: <span class="highlight">senha_do_root_do_mongodb</span>
+      MONGO_INITDB_DATABASE: flaskdb
+      MONGODB_DATA_DIR: /data/db
+      MONDODB_LOG_DIR: /dev/null
+    volumes:
+      - mongodbdata:/data/db
+    networks:
+      - backend
+</code></pre>
+<p>O <code>container_name</code> para este serviço é <code>mongodb</code> com uma política de reinicialização <code>unless-stopped</code>. Você usa a propriedade <code>command</code> para definir o comando que será executado quando o container for iniciado. O comando <code>mongod --auth</code> desativará o logon no shell do MongoDB sem credenciais, o que protegerá o MongoDB exigindo autenticação.</p>
+
+<p>As variáveis de ambiente <code>MONGO_INITDB_ROOT_USERNAME</code> e <code>MONGO_INITDB_ROOT_PASSWORD</code> criam um usuário root com as credenciais fornecidas, portanto, substitua o espaço reservado por uma senha forte.</p>
+
+<p>O MongoDB armazena seus dados em <code>/data/db</code> por padrão, portanto os dados na pasta <code>/data/db</code> serão gravados no volume nomeado <code>mongodbdata</code> para persistência. Como resultado, você não perderá seus bancos de dados em caso de reinicialização. O serviço <code>mongoDB</code> não expõe nenhuma porta, portanto, o serviço estará acessível apenas através da rede <code>backend</code>.</p>
+
+<p>Em seguida, você definirá o servidor web para sua aplicação. Adicione o seguinte código ao seu arquivo <code>docker-compose.yml</code> para configurar o Nginx:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yml"><code langs="">. . .
+  webserver:
+    build:
+      context: nginx
+      dockerfile: Dockerfile
+    image: digitalocean.com/webserver:latest
+    container_name: webserver
+    restart: unless-stopped
+    environment:
+      APP_ENV: "prod"
+      APP_NAME: "webserver"
+      APP_DEBUG: "false"
+      SERVICE_NAME: "webserver"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginxdata:/var/log/nginx
+    depends_on:
+      - flask
+    networks:
+      - frontend
+</code></pre>
+<p>Aqui você definiu o <code>context</code> do <code>build</code>, que é a pasta <code>nginx</code> que contém o <code>Dockerfile</code>. Com a propriedade <code>image</code>, você especifica a imagem usada para <em>taguear</em> e executar o container. A propriedade <code>ports</code> configurará o serviço Nginx para ser acessível publicamente através das portas <code>:80</code> e <code>:443</code> e <code>volumes</code> montam o volume <code>nginxdata</code> dentro do container no diretório <code>/var/log/nginx</code>.</p>
+
+<p>Você definiu o serviço do qual o serviço do servidor web <code>depends_on</code> como <code>flask</code>. Finalmente, a propriedade <code>networks</code> define que o serviço do servidor web terá acesso à rede <code>frontend</code>.</p>
+
+<p>Em seguida, você criará <em>bridge networks</em> para permitir que os containers se comuniquem. Acrescente as seguintes linhas ao final do seu arquivo:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yml"><code langs="">. . .
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+</code></pre>
+<p>Você definiu duas redes — <code>frontend</code> e <code>backend</code> — para os serviços aos quais se conectar. Os serviços de front-end, como o Nginx, se conectam à rede <code>front-end</code>, pois precisa ser acessível ao público. Serviços de back-end, como o MongoDB, serão conectados à rede <code>back-end</code> para impedir o acesso não autorizado ao serviço.</p>
+
+<p>Em seguida, você usará os volumes para persistir os arquivos de banco de dados, aplicação e configuração. Como sua aplicação usará os bancos de dados e arquivos, é imperativo persistir as alterações feitas neles. Os volumes são gerenciados pelo Docker e armazenados no sistema de arquivos. Adicione este código ao arquivo <code>docker-compose.yml</code> para configurar os volumes:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yml"><code langs="">. . .
+volumes:
+  mongodbdata:
+    driver: local
+  appdata:
+    driver: local
+  nginxdata:
+    driver: local
+</code></pre>
+<p>A seção <code>volumes</code> declara os volumes que a aplicação usará para persistir os dados. Aqui você definiu os volumes <code>mongodbdata</code>, <code>appdata</code> e <code>nginxdata</code> para persistir seus bancos de dados MongoDB, dados da aplicação Flask e logs do servidor web Nginx, respectivamente. Todos esses volumes usam um driver <code>local</code> para armazenar os dados localmente. Os volumes são usados para persistir esses dados, para que dados como os bancos de dados MongoDB e os logs do servidor web Nginx possam ser perdidos depois que você reiniciar os containers.</p>
+
+<p>Seu arquivo <code>docker-compose.yml</code> completo terá a seguinte aparência:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yml"><code langs="">version: '3'
+services:
+
+  flask:
+    build:
+      context: app
+      dockerfile: Dockerfile
+    container_name: flask
+    image: digitalocean.com/flask-python:3.6
+    restart: unless-stopped
+    environment:
+      APP_ENV: "prod"
+      APP_DEBUG: "False"
+      APP_PORT: 5000
+      MONGODB_DATABASE: flaskdb
+      MONGODB_USERNAME: <span class="highlight">flaskuser</span>
+      MONGODB_PASSWORD: <span class="highlight">sua_senha_do_mongodb</span>
+      MONGODB_HOSTNAME: mongodb
+    volumes:
+      - appdata:/var/www
+    depends_on:
+      - mongodb
+    networks:
+      - frontend
+      - backend
+
+  mongodb:
+    image: mongo:4.0.8
+    container_name: mongodb
+    restart: unless-stopped
+    command: mongod --auth
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: <span class="highlight">mongodbuser</span>
+      MONGO_INITDB_ROOT_PASSWORD: <span class="highlight">senha_do_root_do_mongodb</span>
+      MONGO_INITDB_DATABASE: flaskdb
+      MONGODB_DATA_DIR: /data/db
+      MONDODB_LOG_DIR: /dev/null
+    volumes:
+      - mongodbdata:/data/db
+    networks:
+      - backend
+
+  webserver:
+    build:
+      context: nginx
+      dockerfile: Dockerfile
+    image: digitalocean.com/webserver:latest
+    container_name: webserver
+    restart: unless-stopped
+    environment:
+      APP_ENV: "prod"
+      APP_NAME: "webserver"
+      APP_DEBUG: "true"
+      SERVICE_NAME: "webserver"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginxdata:/var/log/nginx
+    depends_on:
+      - flask
+    networks:
+      - frontend
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+
+volumes:
+  mongodbdata:
+    driver: local
+  appdata:
+    driver: local
+  nginxdata:
+    driver: local
+</code></pre>
+<p>Salve o arquivo e saia do editor após verificar sua configuração.</p>
+
+<p>Você definiu a configuração do Docker para toda a pilha de aplicações no arquivo <code>docker-compose.yml</code>. Agora você passará a escrever os Dockerfiles para o Flask e o servidor web.</p>
+
+<h2 id="passo-2-—-escrevendo-os-dokerfiles-para-o-flask-e-para-o-servidor-web">Passo 2 — Escrevendo os Dokerfiles para o Flask e para o Servidor Web</h2>
+
+<p>Com o Docker, você pode criar containers para executar suas aplicações a partir de um arquivo chamado <em>Dockerfile</em>. O Dockerfile é uma ferramenta que permite criar imagens personalizadas que você pode usar para instalar o software exigido pela sua aplicação e configurar seus containers com base em seus requisitos. Você pode enviar as imagens personalizadas que você criou para o <a href="https://hub.docker.com/">Docker Hub</a> ou qualquer registro privado.</p>
+
+<p>Neste passo, você escreverá os Dockerfiles para os serviços do Flask e do servidor web. Para começar, crie o diretório <code>app</code> para o sua alicação Flask:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir app
+</li></ul></code></pre>
+<p>Em seguida, crie o <code>Dockerfile</code> para a sua aplicação Flask no diretório <code>app</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app/Dockerfile
+</li></ul></code></pre>
+<p>Adicione o seguinte código ao arquivo para personalizar seu container do Flask:</p>
+<div class="code-label " title="app/Dockerfile">app/Dockerfile</div><pre class="code-pre docker"><code langs="">FROM python:3.6.8-alpine3.9
+
+LABEL MAINTAINER="<span class="highlight">Nome Sobrenome</span> <span class="highlight">&lt;example@domain.com&gt;</span>"
+
+ENV GROUP_ID=1000 \
+    USER_ID=1000
+
+WORKDIR /var/www/
+</code></pre>
+<p>Neste <code>Dockerfile</code>, você está criando uma imagem com base na <a href="https://hub.docker.com/_/python/">imagem <code>3.6.8-alpine3.9</code></a>, que é baseada no Alpine 3.9 com Python 3.6.8 pré-instalado.</p>
+
+<p>A diretiva <code>ENV</code> é usada para definir as variáveis de ambiente para o nosso grupo e ID do usuário. A <a href="http://refspecs.linux-foundation.org/LSB_5.0.0/LSB-Core-generic/LSB-Core-generic/usernames.html">Linux Standard Base (LSB)</a> especifica que <a href="https://www.debian.org/doc/debian-policy/ch-opersys.html#uid-and-gid-classes">UIDs e GIDs 0-99</a> são alocados estaticamente pelo sistema. <a href="https://www.debian.org/doc/debian-policy/ch-opersys.html#uid-and-gid-classes">UIDs 100-999</a> devem ser alocados dinamicamente para usuários e grupos do sistema. <a href="https://www.debian.org/doc/debian-policy/ch-opersys.html#uid-and-gid-classes">UIDs 1000-59999</a> devem ser alocados dinamicamente para contas de usuário. Tendo isso em mente, você pode atribuir com segurança um UID e GID de <code>1000</code>, além disso, você pode alterar o UID/GID atualizando o <code>GROUP_ID</code> e o <code>USER_ID</code> para atender aos seus requisitos.</p>
+
+<p>A diretiva <code>WORKDIR</code> define o diretório de trabalho do container. Certifique-se     de substituir o campo <code>LABEL MAINTAINER</code> pelo seu nome e endereço de e-mail.</p>
+
+<p>Adicione o seguinte bloco de código para copiar o aplicativo Flask no container e instalar as dependências necessárias:</p>
+<div class="code-label " title="app/Dockerfile">app/Dockerfile</div><pre class="code-pre docker"><code langs="">. . .
+ADD ./requirements.txt /var/www/requirements.txt
+RUN pip install -r requirements.txt
+ADD . /var/www/
+RUN pip install gunicorn
+</code></pre>
+<p>O código a seguir usará a diretiva <code>ADD</code> para copiar arquivos do diretório local <code>app</code> para o diretório <code>/var/www</code> no container. Em seguida, o Dockerfile usará a diretiva <code>RUN</code> para instalar o Gunicorn e os pacotes especificados no arquivo <code>requirements.txt</code>, que você criará posteriormente no tutorial.</p>
+
+<p>O seguinte bloco de código adiciona um novo usuário e grupo e inicializa a aplicação:</p>
+<div class="code-label " title="app/Dockerfile">app/Dockerfile</div><pre class="code-pre docker"><code langs="">. . .
+RUN addgroup -g $GROUP_ID www
+RUN adduser -D -u $USER_ID -G www www -s /bin/sh
+
+USER www
+
+EXPOSE 5000
+
+CMD [ "gunicorn", "-w", "4", "--bind", "0.0.0.0:5000", "wsgi"]
+</code></pre>
+<p>Por padrão, os containers Docker são executados como o usuário <strong>root</strong>. O usuário <strong>root</strong> tem acesso a tudo no sistema, portanto, as implicações de uma violação de segurança podem ser desastrosas. Para mitigar esse risco de segurança, isso criará um novo usuário e grupo que terá acesso apenas ao diretório  <code>/var/www</code>.</p>
+
+<p>Este código usará primeiro o comando <code>addgroup</code> para criar um novo grupo chamado <code>www</code>. A flag <code>-g</code> definirá o ID do grupo para a variável <code>ENV GROUP_ID=1000</code>, definida anteriormente no <code>Dockerfile</code>.</p>
+
+<p>A linha <code>adduser -D -u $USER_ID -G www www -s /bin/sh</code> cria um usuário <code>www</code> com um ID de usuário <code>1000</code>, conforme definido pela variável <code>ENV</code>. A flag <code>-s</code> cria o diretório home do usuário se ele não existir e define o shell de login padrão como <code>/bin/sh</code>. A flag <code>-G</code> é usada para definir o grupo de login inicial do usuário como <code>www</code>, que foi criado pelo comando anterior.</p>
+
+<p>O comando <code>USER</code> define que os programas executados no container usarão o usuário <code>www</code>. O Gunicorn escutará na porta <code>:5000</code>, então você abrirá esta porta com o comando <code>EXPOSE</code>.</p>
+
+<p>Finalmente a linha <code>CMD [ "gunicorn", "-w", "4", "--bind", "0.0.0.0:5000", "wsgi"]</code> executa o comando para iniciar o servidor Gunicorn com quatro workers escutando na porta <code>5000</code>. O número geralmente deve estar entre 2 a 4 workers por núcleo no servidor. A documentação do Gunicorn recomenda <a href="https://docs.gunicorn.org/en/stable/design.html#how-many-workers"><code>(2 x $num_cores) + 1</code></a> como o número de workers para começar.</p>
+
+<p>O seu <code>Dockerfile</code> completo terá a seguinte aparência:</p>
+<div class="code-label " title="app/Dockerfile">app/Dockerfile</div><pre class="code-pre docker"><code langs="">FROM python:3.6.8-alpine3.9
+
+LABEL MAINTAINER="<span class="highlight">Nome Sobrenome</span> <span class="highlight">&lt;example@domain.com&gt;</span>"
+
+ENV GROUP_ID=1000 \
+    USER_ID=1000
+
+WORKDIR /var/www/
+
+ADD . /var/www/
+RUN pip install -r requirements.txt
+RUN pip install gunicorn
+
+RUN addgroup -g $GROUP_ID www
+RUN adduser -D -u $USER_ID -G www www -s /bin/sh
+
+USER www
+
+EXPOSE 5000
+
+CMD [ "gunicorn", "-w", "4", "--bind", "0.0.0.0:5000", "wsgi"]
+</code></pre>
+<p>Salve o arquivo e saia do editor de texto.</p>
+
+<p>Em seguida, crie um novo diretório para manter sua configuração do Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir nginx
+</li></ul></code></pre>
+<p>Depois, crie o <code>Dockerfile</code> para o seu servidor web Nginx no diretório <code>nginx</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx/Dockerfile
+</li></ul></code></pre>
+<p>Adicione o seguinte código ao arquivo para criar o Dockerfile que criará a imagem para seu container Nginx:</p>
+<div class="code-label " title="nginx/Dockerfile">nginx/Dockerfile</div><pre class="code-pre docker"><code langs="">FROM digitalocean.com/alpine:latest
+
+LABEL MAINTAINER="<span class="highlight">Nome Sobrenome</span> <span class="highlight">&lt;example@domain.com&gt;</span>"
+
+RUN apk --update add nginx &amp;&amp; \
+    ln -sf /dev/stdout /var/log/nginx/access.log &amp;&amp; \
+    ln -sf /dev/stderr /var/log/nginx/error.log &amp;&amp; \
+    mkdir /etc/nginx/sites-enabled/ &amp;&amp; \
+    mkdir -p /run/nginx &amp;&amp; \
+    rm -rf /etc/nginx/conf.d/default.conf &amp;&amp; \
+    rm -rf /var/cache/apk/*
+
+COPY conf.d/app.conf /etc/nginx/conf.d/app.conf
+
+EXPOSE 80 443
+CMD ["nginx", "-g", "daemon off;"]
+</code></pre>
+<p>Este <code>Dockerfile</code> de Nginx usa uma imagem base <code>alpine</code>, que é uma pequena distribuição Linux com uma superfície de ataque mínima criada para segurança.</p>
+
+<p>Na diretiva <code>RUN</code>, você está instalando o <code>nginx</code> e criando links simbólicos para publicar os logs de erro e de acesso na saída padrão de erro (<code>/dev/stderr</code>) e na saída padrão (<code>/dev/stdout</code>). A publicação de erros na saída padrão de erro e na saída padrão é uma prática recomendada, pois os containers são efêmeros. Dessa forma, os logs são enviados para os logs do docker e, a partir daí, você pode encaminhar seus logs para um serviço de log como a pilha Elastic para persistência. Depois disso feito, são executados comandos para remover o <code>default.conf</code> e <code>/var/cache/apk/*</code> para reduzir o tamanho da imagem resultante. A execução de todos esses comandos em um único <code>RUN</code> diminui o número de camadas na imagem, o que também reduz o tamanho da imagem resultante.</p>
+
+<p>A diretiva <code>COPY</code> copia a configuração <code>app.conf</code> do servidor web dentro do container. A diretiva <code>EXPOSE</code> garante que os containers escutem nas portas <code>:80</code> e <code>:443</code>, pois sua aplicação será executada na porta <code>:80</code> com a <code>:443</code> como porta segura.</p>
+
+<p>Finalmente, a diretiva <code>CMD</code> define o comando para iniciar o servidor Nginx.</p>
+
+<p>Salve o arquivo e saia do editor de texto.</p>
+
+<p>Agora que o <code>Dockerfile</code> está pronto, você está pronto para configurar o proxy reverso do Nginx para rotear o tráfego para a aplicação Flask.</p>
+
+<h2 id="passo-3-—-configurando-o-proxy-reverso-nginx">Passo 3 — Configurando o Proxy Reverso Nginx</h2>
+
+<p>Neste passo, você configurará o Nginx como um proxy reverso para encaminhar solicitações ao Gunicorn na porta <code>:5000</code>. Um servidor de proxy reverso é usado para direcionar solicitações de clientes ao servidor de back-end apropriado. Ele fornece uma camada adicional de abstração e controle para garantir o fluxo suave do tráfego de rede entre clientes e servidores.</p>
+
+<p>Comece criando o diretório <code>nginx/conf.d</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir nginx/conf.d
+</li></ul></code></pre>
+<p>Para configurar o Nginx, você precisa criar um arquivo <code>app.conf</code> com a seguinte configuração na pasta <code>nginx/conf.d/</code>. O arquivo <code>app.conf</code> contém a configuração que o proxy reverso precisa para encaminhar as solicitações ao Gunicorn.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx/conf.d/app.conf
+</li></ul></code></pre>
+<p>Coloque o seguinte conteúdo no arquivo <code>app.conf</code>:</p>
+<div class="code-label " title="nginx/conf.d/app.conf">nginx/conf.d/app.conf</div><pre class="code-pre "><code class="code-highlight language-nginx">upstream app_server {
+    server flask:5000;
+}
+
+server {
+    listen 80;
+    server_name _;
+    error_log  /var/log/nginx/error.log;
+    access_log /var/log/nginx/access.log;
+    client_max_body_size 64M;
+
+    location / {
+        try_files $uri @proxy_to_app;
+    }
+
+    location @proxy_to_app {
+        gzip_static on;
+
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $http_host;
+        proxy_buffering off;
+        proxy_redirect off;
+        proxy_pass http://app_server;
+    }
+}
+</code></pre>
+<p>Isso primeiro definirá o <a href="http://nginx.org/en/docs/http/ngx_http_upstream_module.html">servidor upstream</a>, que normalmente é usado para especificar um servidor web ou servidor de aplicação para roteamento ou balanceamento de carga.</p>
+
+<p>Seu servidor upstream, <code>app_server</code>, define o endereço do servidor com a diretiva <code>server</code>, que é identificada pelo nome do container <code>flask:5000</code>.</p>
+
+<p>A configuração do servidor web Nginx é definida no bloco <code>server</code>. A diretiva <code>listen</code> define o número da porta na qual o servidor escutará as solicitações recebidas. As diretivas <code>error_log</code> e <code>access_log</code> definem os arquivos para gravar logs. A diretiva <code>proxy_pass</code> é usada para configurar o servidor upstream para encaminhar os pedidos para <code>http://<span class="highlight">app_server</span></code>.</p>
+
+<p>Salve e feche o arquivo.</p>
+
+<p>Com o servidor web Nginx configurado, é possível criar a API da lista de tarefas do Flask.</p>
+
+<h2 id="passo-4-—-criando-a-api-da-lista-de-tarefas-do-flask">Passo 4 — Criando a API da Lista de Tarefas do Flask</h2>
+
+<p>Agora que você construiu seu ambiente, você está pronto para criar sua aplicação. Neste passo, você escreverá uma aplicação de API da lista de tarefas que salvará e exibirá as notas de tarefas enviadas de uma solicitação POST.</p>
+
+<p>Comece criando o arquivo <code>requirements.txt</code> no diretório <code>app</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app/requirements.txt
+</li></ul></code></pre>
+<p>Este arquivo é usado para instalar as dependências para sua aplicação. A implementação deste tutorial usará o <a href="http://flask.pocoo.org/"><code>Flask</code></a>, <a href="https://flask-pymongo.readthedocs.io/en/latest/"><code>Flask-PyMongo</code></a>, e <a href="http://flask.pocoo.org/docs/1.0/reqcontext/"><code>requests</code></a>. Adicione o seguinte ao arquivo <code>requirements.txt</code>:</p>
+<div class="code-label " title="app/requirements.txt">app/requirements.txt</div><pre class="code-pre plain"><code langs="">Flask==1.0.2
+Flask-PyMongo==2.2.0
+requests==2.20.1
+</code></pre>
+<p>Salve o arquivo e saia do editor após inserir os requisitos.</p>
+
+<p>Em seguida, crie o arquivo <code>app.py</code> para conter o código da aplicação Flask no diretório <code>app</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app/app.py
+</li></ul></code></pre>
+<p>No seu novo arquivo <code>app.py</code>, digite este código para importar as dependências:</p>
+<div class="code-label " title="app/app.py">app/app.py</div><pre class="code-pre "><code class="code-highlight language-python">import os
+from flask import Flask, request, jsonify
+from flask_pymongo import PyMongo
+</code></pre>
+<p>O pacote <code>os</code> é usado para importar as variáveis de ambiente. Da biblioteca <code>flask</code>, você importou os objetos <code>Flask</code>, <code>request</code> e <code>jsonify</code> para instanciar a aplicação, tratar solicitações e enviar respostas JSON, respectivamente. Do <code>flask_pymongo</code>, você importou o objeto <code>PyMongo</code> para interagir com o MongoDB.</p>
+
+<p>Em seguida, adicione o código necessário para conectar-se ao MongoDB:</p>
+<div class="code-label " title="app/app.py">app/app.py</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+application = Flask(__name__)
+
+application.config["MONGO_URI"] = 'mongodb://' + os.environ['MONGODB_USERNAME'] + ':' + os.environ['MONGODB_PASSWORD'] + '@' + os.environ['MONGODB_HOSTNAME'] + ':27017/' + os.environ['MONGODB_DATABASE']
+
+mongo = PyMongo(application)
+db = mongo.db
+</code></pre>
+<p>O <code>Flask (__ name __)</code> carrega o objeto da aplicação na variável <code>application</code>. A seguir, o código cria a string de conexão ao MongoDB a partir das variáveis de ambiente usando o <code>os.environ</code>. Passar o objeto <code>application</code> para o método <code>PyMongo()</code> fornecerá a você o objeto <code>mongo</code>, que por sua vez fornece o objeto <code>db</code> em <code>mongo.db</code>.</p>
+
+<p>Agora você adicionará o código para criar uma mensagem de index:</p>
+<div class="code-label " title="app/app.py">app/app.py</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+@application.route('/')
+def index():
+    return jsonify(
+        status=True,
+        message='Welcome to the Dockerized Flask MongoDB app!'
+    )
+</code></pre>
+<p>O <code>@application.route('/')</code> define a rota GET <code>/</code> da sua API. Aqui sua função <code>index()</code> retorna uma string JSON usando o método <code>jsonify</code>.</p>
+
+<p>Em seguida, adicione a rota <code>/todo</code> para listar todas as tarefas a fazer:</p>
+<div class="code-label " title="app/app.py">app/app.py</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+@application.route('/todo')
+def todo():
+    _todos = db.todo.find()
+
+    item = {}
+    data = []
+    for todo in _todos:
+        item = {
+            'id': str(todo['_id']),
+            'todo': todo['todo']
+        }
+        data.append(item)
+
+    return jsonify(
+        status=True,
+        data=data
+    )
+</code></pre>
+<p>O <code>@application.route('/todo')</code> define a rota GET <code>/todo</code> da sua API, que retorna as tarefas no banco de dados. O método <code>db.todo.find()</code> retorna todas as tarefas a fazer no banco de dados. A seguir, você itera sobre <code>_todos</code> para construir um <code>item</code> que inclui apenas o <code>id</code> e <code>todo</code> dos objetos anexando-os a uma matriz <code>data</code> e finalmente os retorna como JSON.</p>
+
+<p>Em seguida, adicione o código para criar a tarefa:</p>
+<div class="code-label " title="app/app.py">app/app.py</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+@application.route('/todo', methods=['POST'])
+def createTodo():
+    data = request.get_json(force=True)
+    item = {
+        'todo': data['todo']
+    }
+    db.todo.insert_one(item)
+
+    return jsonify(
+        status=True,
+        message='To-do saved successfully!'
+    ), 201
+</code></pre>
+<p>O <code>@application.route('/todo')</code> define a rota POST <code>/todo</code> da sua API, que cria uma nota de tarefa no banco de dados. O <code>request.get_json(force=True)</code> obtém o JSON que você publica na rota e o <code>item</code> é usado para construir o JSON que será salvo na tarefa. O <code>db.todo.insert_one(item)</code> é usado para inserir um item no banco de dados. Depois que a tarefa é salva no banco de dados, você retorna uma resposta JSON com um código de status <code>201 CREATED</code>.</p>
+
+<p>Agora você adiciona o código para executar a aplicação:</p>
+<div class="code-label " title="app/app.py">app/app.py</div><pre class="code-pre "><code class="code-highlight language-python">. . .
+if __name__ == "__main__":
+    ENVIRONMENT_DEBUG = os.environ.get("APP_DEBUG", True)
+    ENVIRONMENT_PORT = os.environ.get("APP_PORT", 5000)
+    application.run(host='0.0.0.0', port=ENVIRONMENT_PORT, debug=ENVIRONMENT_DEBUG)
+</code></pre>
+<p>A condição <code>__name__ == "__main__"</code> é usada para verificar se a variável global, <code>__name__</code>, no módulo é o entry point para o seu programa, é <code>"__main__"</code> e, em seguida, executar a aplicação. Se <code>__name__</code> for igual a <code>"__main__"</code>, então o código dentro do bloco <code>if</code> executará a aplicação usando este comando <code>application.run(host='0.0.0.0', port=ENVIRONMENT_PORT, debug=ENVIRONMENT_DEBUG)</code>.</p>
+
+<p>A seguir, obtemos os valores para <code>ENVIRONMENT_DEBUG</code> e <code>ENVIRONMENT_PORT</code> das variáveis de ambiente usando <code>os.environ.get()</code>, usando a chave como primeiro parâmetro e o valor padrão como o segundo parâmetro. O <code>application.run()</code> define os valores <code>host</code>, <code>port</code> e <code>debug</code> para a aplicação.</p>
+
+<p>O arquivo <code>app.py</code> completo ficará assim:</p>
+<div class="code-label " title="app/app.py">app/app.py</div><pre class="code-pre "><code class="code-highlight language-python">import os
+from flask import Flask, request, jsonify
+from flask_pymongo import PyMongo
+
+application = Flask(__name__)
+
+application.config["MONGO_URI"] = 'mongodb://' + os.environ['MONGODB_USERNAME'] + ':' + os.environ['MONGODB_PASSWORD'] + '@' + os.environ['MONGODB_HOSTNAME'] + ':27017/' + os.environ['MONGODB_DATABASE']
+
+mongo = PyMongo(application)
+db = mongo.db
+
+@application.route('/')
+def index():
+    return jsonify(
+        status=True,
+        message='Welcome to the Dockerized Flask MongoDB app!'
+    )
+
+@application.route('/todo')
+def todo():
+    _todos = db.todo.find()
+
+    item = {}
+    data = []
+    for todo in _todos:
+        item = {
+            'id': str(todo['_id']),
+            'todo': todo['todo']
+        }
+        data.append(item)
+
+    return jsonify(
+        status=True,
+        data=data
+    )
+
+@application.route('/todo', methods=['POST'])
+def createTodo():
+    data = request.get_json(force=True)
+    item = {
+        'todo': data['todo']
+    }
+    db.todo.insert_one(item)
+
+    return jsonify(
+        status=True,
+        message='To-do saved successfully!'
+    ), 201
+
+if __name__ == "__main__":
+    ENVIRONMENT_DEBUG = os.environ.get("APP_DEBUG", True)
+    ENVIRONMENT_PORT = os.environ.get("APP_PORT", 5000)
+    application.run(host='0.0.0.0', port=ENVIRONMENT_PORT, debug=ENVIRONMENT_DEBUG)
+</code></pre>
+<p>Salve o arquivo e saia do editor.</p>
+
+<p>Em seguida, crie o arquivo <code>wsgi.py</code> no diretório <code>app</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app/wsgi.py
+</li></ul></code></pre>
+<p>O arquivo <code>wsgi.py</code> cria um objeto de aplicação (ou que pode ser chamado) para que o servidor possa usá-lo. Cada vez que uma solicitação é recebida, o servidor usa esse objeto de aplicação para executar os manipuladores de solicitação da aplicação ao fazer o parse da URL.</p>
+
+<p>Coloque o seguinte conteúdo no arquivo <code>wsgi.py</code>, salve o arquivo e saia do editor de texto:</p>
+<div class="code-label " title="app/wsgi.py">app/wsgi.py</div><pre class="code-pre "><code class="code-highlight language-python">from app import application
+
+if __name__ == "__main__":
+  application.run()
+</code></pre>
+<p>Este arquivo <code>wsgi.py</code> importa o objeto da aplicação do arquivo <code>app.py</code> e cria um objeto de aplicação para o servidor Gunicorn.</p>
+
+<p>A aplicação de lista de tarefas já está em vigor, então você está pronto para começar a executar a aplicação em containers.</p>
+
+<h2 id="passo-5-—-criando-e-executando-os-containers">Passo 5 — Criando e Executando os Containers</h2>
+
+<p>Agora que você definiu todos os serviços no seu arquivo <code>docker-compose.yml</code> e suas configurações, você pode iniciar os containers.</p>
+
+<p>Como os serviços são definidos em um único arquivo, você precisa emitir um único comando para iniciar os containers, criar os volumes e configurar as redes. Este comando também cria a imagem para a sua aplicação Flask e o servidor web Nginx. Execute o seguinte comando para criar os containers:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Ao executar o comando pela primeira vez, ele fará o download de todas as imagens necessárias do Docker, o que pode levar algum tempo. Depois que as imagens são baixadas e armazenadas na sua máquina local, o <code>docker-compose</code> criará seus containers. A flag <code>-d</code> roda o processo como um daemon, o que permite que ele seja executado como um processo em segundo plano.</p>
+
+<p>Use o comando a seguir para listar os containers em execução quando o processo de compilação estiver concluído:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps
+</li></ul></code></pre>
+<p>Você verá uma saída semelhante à seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE                           COMMAND                  CREATED             STATUS              PORTS                                      NAMES
+f20e9a7fd2b9        digitalocean.com/webserver:latest   "nginx -g 'daemon of&hellip;"   2 weeks ago         Up 2 weeks          0.0.0.0:80-&gt;80/tcp, 0.0.0.0:443-&gt;443/tcp   webserver
+3d53ea054517        digitalocean.com/flask-python:3.6   "gunicorn -w 4 --bin&hellip;"   2 weeks ago         Up 2 weeks          5000/tcp                                   flask
+96f5a91fc0db        mongo:4.0.8                     "docker-entrypoint.s&hellip;"   2 weeks ago         Up 2 weeks          27017/tcp                                  mongodb
+</code></pre>
+<p>O <code>CONTAINER ID</code> é um identificador exclusivo usado para acessar containers. <code>IMAGE</code> define o nome da imagem para o container especificado. O campo <code>NAMES</code> é o nome do serviço sob o qual os containers são criados. Semelhante ao <code>CONTAINER ID</code>, eles podem ser usados para acessar containers. Finalmente, <code>STATUS</code> fornece informações sobre o estado do container, seja ele executando, reiniciando ou parado.</p>
+
+<p>Você usou o comando <code>docker-compose</code> para criar seus containers a partir de seus arquivos de configuração. No próximo passo, você criará um usuário MongoDB para sua aplicação.</p>
+
+<h2 id="passo-6-—-criando-um-usuário-para-o-seu-banco-de-dados-mongodb">Passo 6 — Criando um Usuário para o seu Banco de Dados MongoDB</h2>
+
+<p>Por padrão, o MongoDB permite que os usuários efetuem login sem credenciais e concede privilégios ilimitados. Neste passo, você protegerá seu banco de dados MongoDB criando um usuário dedicado para acessá-lo.</p>
+
+<p>Para fazer isso, você precisará do nome de usuário e senha raiz definidos nas variáveis de ambiente do arquivo <code>docker-compose.yml</code>, que são <code>MONGO_INITDB_ROOT_USERNAME</code> e <code>MONGO_INITDB_ROOT_PASSWORD</code> para o serviço <code>mongodb</code>. Em geral, é melhor evitar o uso da conta administrativa root ao interagir com o banco de dados. Em vez disso, você criará um usuário de banco de dados dedicado para sua aplicação Flask, bem como um novo banco de dados que a aplicação Flask terá permissão para acessar.</p>
+
+<p>Para criar um novo usuário, primeiro inicie um shell interativo no container <code>mongodb</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker exec -it <span class="highlight">mongodb</span> bash
+</li></ul></code></pre>
+<p>Você usa o comando <code>docker exec</code> para executar um comando dentro de um container em execução junto com a flag <code>-it</code> para executar um shell interativo dentro do container.</p>
+
+<p>Uma vez dentro do container, efetue login na conta administrativa <strong>root</strong> do MongoDB:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@96f5a91fc0db:/#">mongo -u <span class="highlight">mongodbuser</span> -p
+</li></ul></code></pre>
+<p>Você será solicitado pela senha digitada como o valor da variável <code>MONGO_INITDB_ROOT_PASSWORD</code> no arquivo <code>docker-compose.yml</code>. A senha pode ser alterada definindo um novo valor para <code>MONGO_INITDB_ROOT_PASSWORD</code> no serviço <code>mongodb</code>, nesse caso você terá que executar novamente o comando <code>docker-compose up -d</code></p>
+
+<p>Execute o comando <code>show dbs;</code> para listar todos os bancos de dados:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mongodb&gt;">show dbs;
+</li></ul></code></pre>
+<p>Você verá a seguinte saída:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>admin    0.000GB
+config   0.000GB
+local    0.000GB
+5 rows in set (0.00 sec)
+</code></pre>
+<p>O banco de dados <code>admin</code> é um banco de dados especial que concede permissões administrativas aos usuários. Se um usuário tiver acesso de leitura ao banco de dados <code>admin</code>, ele terá permissões de leitura e gravação em todos os outros bancos de dados. Como a saída lista o banco de dados <code>admin</code>, o usuário tem acesso a esse banco de dados e, portanto, pode ler e gravar em todos os outros bancos de dados.</p>
+
+<p>Salvando a primeira nota de tarefa a executar automaticamente <a href="https://docs.mongodb.com/manual/core/databases-and-collections/#create-a-database">criará o banco de dados MongoDB</a>. O MongoDB permite que você alterne para um banco de dados que não existe usando o comando <code>use <span class="highlight">database</span></code>. Ele cria um banco de dados quando um documento é salvo em uma coleção. Portanto, o banco de dados não é criado aqui; isso acontecerá quando você salvar sua primeira nota de tarefa no banco de dados a partir da API. Execute o comando <code>use</code> para alternar para o banco de dados <code><span class="highlight">flaskdb</span></code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mongodb&gt;">use flaskdb
+</li></ul></code></pre>
+<p>Em seguida, crie um novo usuário com permissão para acessar este banco de dados:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mongodb&gt;">db.createUser({user: '<span class="highlight">flaskuser</span>', pwd: '<span class="highlight">your password</span>', roles: [{role: 'readWrite', db: '<span class="highlight">flaskdb</span>'}]})
+</li><li class="line" prefix="mongodb&gt;">exit
+</li></ul></code></pre>
+<p>Este comando cria um usuário chamado <span class="highlight"><strong>flaskuser</strong></span> com acesso <code>readWrite</code> ao banco de dados <code>flaskdb</code>. Certifique-se de usar uma senha segura no campo <code>pwd</code>. O <code>user</code> e a <code>pwd</code> aqui são os valores que você definiu no arquivo <code>docker-compose.yml</code> na seção de variáveis de ambiente para o serviço <code>flask</code>.</p>
+
+<p>Efetue login no banco de dados autenticado com o seguinte comando:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mongo -u <span class="highlight">flaskuser</span> -p <span class="highlight">your password</span> --authenticationDatabase flaskdb
+</li></ul></code></pre>
+<p>Agora que você adicionou o usuário, efetue logout do banco de dados.</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mongodb&gt;">exit
+</li></ul></code></pre>
+<p>E, finalmente, saia do container:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@96f5a91fc0db:/#">exit
+</li></ul></code></pre>
+<p>Agora você configurou um banco de dados dedicado e uma conta de usuário para sua aplicação Flask. Os componentes do banco de dados estão prontos, portanto, agora você pode executar a aplicação de lista de tarefas do Flask.</p>
+
+<h2 id="passo-7-—-executando-a-aplicação-de-lista-de-tarefas-do-flask">Passo 7 — Executando a Aplicação de Lista de Tarefas do Flask</h2>
+
+<p>Agora que seus serviços estão configurados e em execução, você pode testar sua aplicação navegando até <code>http://<span class="highlight">ip_do_seu_servidor</span></code> em um navegador. Além disso, você pode executar <code>curl</code> para ver a resposta JSON do Flask:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -i http://<span class="highlight">ip_do_seu_servidor</span>
+</li></ul></code></pre>
+<p>Você receberá a seguinte resposta:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{"message":"Welcome to the Dockerized Flask MongoDB app!","status":true}
+</code></pre>
+<p>A configuração para a aplicação Flask é passada para a aplicação a partir do arquivo <code>docker-compose.yml</code>. A configuração referente à conexão com o banco de dados é definida usando as variáveis <code>MONGODB_*</code> definidas na seção <code>environment</code> do serviço <code>flask</code>.</p>
+
+<p>Para testar tudo, crie uma nota de tarefa usando a API do Flask. Você pode fazer isso com uma solicitação <code>POST</code> no curl para a rota <code>/todo</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -i -H "Content-Type: application/json" -X POST -d '{"todo": "Dockerize Flask application with MongoDB backend"}' http://<span class="highlight">ip_do_seu_servidor</span>/todo
+</li></ul></code></pre>
+<p>Essa solicitação resulta em uma resposta com um código de status <code>201 CREATED</code> quando o item de tarefa é salvo no MongoDB:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{"message":"To-do saved successfully!","status":true}
+</code></pre>
+<p>Você pode listar todas as notas de tarefas do MongoDB com uma solicitação GET para a rota <code>/todo</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -i <span class="highlight">http://ip_do_seu_servidor/todo</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{"data":[{"id":"5c9fa25591cb7b000a180b60","todo":"Dockerize Flask application with MongoDB backend"}],"status":true}
+</code></pre>
+<p>Com isso, você <em>Dockerizou</em> uma API do Flask executando um back-end do MongoDB com o Nginx como um proxy reverso <em>deployado</em> em seus servidores. Para um ambiente de produção, você pode usar o <code>sudo systemctl enable docker</code> para garantir que o serviço Docker seja iniciado automaticamente em tempo de execução ou runtime.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste tutorial, você fez o deloy de uma aplicação Flask com Docker, MongoDB, Nginx e Gunicorn. Agora você tem uma aplicação de API stateless moderna e funcional que pode ser escalada. Embora você possa alcançar esse resultado usando um comando como <code>docker container run</code>, o <code>docker-compose.yml</code> simplifica seu trabalho, pois essa pilha pode ser colocada no controle de versão e atualizada conforme necessário.</p>
+
+<p>A partir daqui, você também pode dar uma olhada em nossos <a href="https://www.digitalocean.com/community/tags/python-frameworks?type=tutorials">tutoriais de Framework do Python</a>.</p>

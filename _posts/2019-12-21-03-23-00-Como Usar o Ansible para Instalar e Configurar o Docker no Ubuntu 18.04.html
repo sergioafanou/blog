@@ -1,0 +1,220 @@
+---
+layout: post
+title: Como Usar o Ansible para Instalar e Configurar o Docker no Ubuntu 18.04
+network: digitalocean
+date: December 21, 2019 at 03:23AM
+url: https://www.digitalocean.com/community/tutorials/how-to-use-ansible-to-install-and-set-up-docker-on-ubuntu-18-04-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>A automação de servidores desempenha agora um papel essencial na administração de sistemas, devido à natureza descartável dos ambientes das aplicações modernas. Ferramentas de <a href="https://www.digitalocean.com/community/tutorial_series/getting-started-with-configuration-management">Gerenciamento de configuração</a> tais como o <a href="https://ansible.com">Ansible</a> são normalmente usadas para otimizar o processo de automatização da configuração do servidor, estabelecendo procedimentos padrão para novos servidores e reduzindo também o erro humano associado às configurações manuais.</p>
+
+<p>O Ansible oferece uma arquitetura simples que não requer a instalação de software especial nos nodes. Ele também fornece um conjunto robusto de recursos e módulos internos que facilitam a criação de scripts de automação.</p>
+
+<p>Este guia explica como usar o Ansible para automatizar os passos contidos em nosso guia  <a href="https://www.digitalocean.com/community/tutorials/como-instalar-e-usar-o-docker-no-ubuntu-18-04-pt">Como Instalar e Usar o Docker no Ubuntu 18.04</a>. O <a href="https://www.docker.com/">Docker</a> é uma aplicação que simplifica o processo de gerenciamento de <em>containers</em>, que são processos isolados de recursos que se comportam de maneira semelhante às máquinas virtuais, mas são mais portáteis, mais amigáveis e dependem mais do sistema operacional do host.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para executar a configuração automatizada fornecida pelo playbook que estamos discutindo neste guia, você precisará de:</p>
+
+<ul>
+<li><strong>Um node de controle Ansible</strong>: uma máquina Ubuntu 18.04 com o Ansible instalado e configurado para conectar aos seus hosts Ansible usando chaves SSH. Certifique-se de que o node de controle possui um usuário regular com permissões sudo e um firewall ativado, conforme explicado em nosso guia <a href="https://www.digitalocean.com/community/tutorials/configuracao-inicial-de-servidor-com-ubuntu-18-04-pt">Configuração Inicial de servidor</a>. Para configurar o Ansible, siga nosso guia <a href="https://www.digitalocean.com/community/tutorials/como-instalar-e-configurar-o-ansible-no-ubuntu-18-04-pt">Como instalar e configurar o Ansible no Ubuntu 18.04</a>.</li>
+<li><strong>Um ou mais Hosts Ansible</strong>: um ou mais servidores remotos Ubuntu 18.04 previamente configurados, seguindo o guia <a href="https://www.digitalocean.com/community/tutorials/how-to-use-ansible-to-automate-initial-server-setup-on-ubuntu-18-04">How to Use Ansible to Automate Initial Server Setup on Ubuntu 18.04</a>.</li>
+</ul>
+
+<p><span class='note'>Antes de continuar, primeiro você precisa garantir que o node de controle do Ansible possa conectar e executar comandos no(s) host(s) Ansible. Para um teste de conexão, verifique o passo 3 de <a href="https://www.digitalocean.com/community/tutorials/como-instalar-e-configurar-o-ansible-no-ubuntu-18-04-pt">Como instalar e configurar o Ansible no Ubuntu 18.04</a>.<br></span></p>
+
+<h2 id="o-que-este-playbook-faz">O que Este Playbook Faz?</h2>
+
+<p>Este Playbook Ansible fornece uma alternativa à execução manual do procedimento descrito em nosso guia sobre <a href="https://www.digitalocean.com/community/tutorials/como-instalar-e-usar-o-docker-no-ubuntu-18-04-pt">Como Instalar e Usar o Docker no Ubuntu 18.04</a>.</p>
+
+<p>A execução deste playbook executará as seguintes ações nos hosts Ansible:</p>
+
+<ol>
+<li>Instalar o <code>aptitude</code>, que é preferido pelo Ansible como uma alternativa ao gerenciador de pacotes <code>apt</code>.</li>
+<li>Instalar os pacotes de sistema necessários.</li>
+<li>Instalar a chave GPG do Docker para o APT.</li>
+<li>Adicionar o repositório oficial do Docker às fontes <code>apt</code>.</li>
+<li>Instalar o Docker.</li>
+<li>Instalar o módulo Python do Docker via <code>pip</code>.</li>
+<li>Baixar a imagem padrão especificada por <code>default_container_image</code> do Docker Hub.</li>
+<li>Criar o número de containers definidos pela variável <code>create_containers</code>, cada um usando a imagem definida por <code>default_container_image</code> e executar o comando definido em <code>default_container_command</code> em cada novo container.</li>
+</ol>
+
+<p>Após a execução do playbook, você terá vários containers criados com base nas opções definidas nas suas variáveis de configuração.</p>
+
+<h2 id="como-usar-este-playbook">Como Usar Este Playbook</h2>
+
+<p>A primeira coisa que precisamos fazer é obter o playbook do Docker e suas dependências no repositório <a href="https://github.com/do-community/ansible-playbooks">do-community/ansible-playbooks</a>. Precisamos clonar esse repositório em uma pasta local dentro do Node de Controle Ansible. </p>
+
+<p>Caso você tenha clonado este repositório antes, enquanto seguia um guia diferente, acesse sua cópia existente do <code>ansible-playbooks</code> e execute um comando <code>git pull</code> para garantir que você tenha conteúdo atualizado:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/ansible-playbooks
+</li><li class="line" prefix="$">git pull
+</li></ul></code></pre>
+<p>Se esta é sua primeira vez usando o repositório <code>do-community/ansible-playbooks</code>, você deve começar clonando o repositório na sua pasta home com:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">git clone https://github.com/do-community/ansible-playbooks.git
+</li><li class="line" prefix="$">cd ansible-playbooks
+</li></ul></code></pre>
+<p>Os arquivos em que estamos interessados estão localizados dentro da pasta <code>docker_ubuntu1804</code>, que possui a seguinte estrutura:</p>
+<pre class="code-pre "><code langs="">docker_ubuntu1804
+├── vars
+│   └── default.yml
+├── playbook.yml
+└── readme.md
+</code></pre>
+<p>Aqui está o que cada um desses arquivos representa:</p>
+
+<ul>
+<li><code>vars/default.yml</code>: Arquivo de variáveis para personalizar as configurações do playbook.</li>
+<li><code>playbook.yml</code>: O arquivo do playbook, contendo as tarefas a serem executadas nos servidores remotos.</li>
+<li><code>readme.md</code>: Um arquivo de texto contendo informações sobre este playbook.</li>
+</ul>
+
+<p>Editaremos o arquivo de variáveis do playbook para personalizar nossa configuração do Docker. Acesse o diretório <code>docker_ubuntu1804</code> e abra o arquivo <code>vars/default.yml</code> usando o editor de linha de comando de sua escolha:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd docker_ubuntu1804
+</li><li class="line" prefix="$">nano vars/default.yml
+</li></ul></code></pre>
+<p>Este arquivo contém algumas variáveis que requerem sua atenção:</p>
+<div class="code-label " title="vars/default.yml">vars/default.yml</div><pre class="code-pre yaml local-environment"><code langs="">---
+create_containers: <span class="highlight">4</span>
+default_container_name: <span class="highlight">docker</span>
+default_container_image: <span class="highlight">ubuntu</span>
+default_container_command: <span class="highlight">sleep 1d</span>
+</code></pre>
+<p>A lista a seguir contém uma breve explicação de cada uma dessas variáveis e como você pode alterá-las:</p>
+
+<ul>
+<li><code>create_containers</code>: O número de containers a serem criados.</li>
+<li><code>default_container_name</code>: Nome padrão do container.</li>
+<li><code>default_container_image</code>: Imagem padrão do Docker a ser usada ao criar containers. </li>
+<li><code>default_container_command</code>: Comando padrão para executar em novos containers.</li>
+</ul>
+
+<p>Quando terminar de atualizar as variáveis dentro de <code>vars/default.yml</code>, salve e feche este arquivo. Se você usou <code>nano</code>, faça isso pressionando <code>CTRL + X</code>, <code>Y</code>, e, em seguida, <code>ENTER</code>.</p>
+
+<p>Agora você está pronto para executar este playbook em um ou mais servidores. A maioria dos playbooks está configurada para ser executada em todos os servidores do seu inventário, por padrão. Podemos usar a flag <code>-l</code> para garantir que apenas um subconjunto de servidores ou um único servidor seja afetado pelo playbook. Também podemos usar a flag <code>-u</code> para especificar qual usuário no servidor remoto que estamos usando para conectar e executar os comandos do playbook nos hosts remotos.</p>
+
+<p>Para executar o playbook apenas no servidor <code><span class="highlight">server1</span></code>, conectando-se como <code><span class="highlight">sammy</span></code>, você pode usar o seguinte comando:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible-playbook playbook.yml -l <span class="highlight">server1</span> -u <span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Você obterá uma saída semelhante a esta:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+TASK [Add Docker GPG apt Key] ********************************************************************************************************************
+changed: [server1]
+
+TASK [Add Docker Repository] *********************************************************************************************************************
+changed: [server1]
+
+TASK [Update apt and install docker-ce] **********************************************************************************************************
+changed: [server1]
+
+TASK [Install Docker Module for Python] **********************************************************************************************************
+changed: [server1]
+
+TASK [Pull default Docker image] *****************************************************************************************************************
+changed: [server1]
+
+TASK [Create default containers] *****************************************************************************************************************
+changed: [server1] =&gt; (item=1)
+changed: [server1] =&gt; (item=2)
+changed: [server1] =&gt; (item=3)
+changed: [server1] =&gt; (item=4)
+
+PLAY RECAP ***************************************************************************************************************************************
+server1                  : ok=9    changed=8    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
+
+</code></pre>
+<p><span class='note'><strong>Nota</strong>: Para obter mais informações sobre como executar os playbooks Ansible, consulte nosso guia de referência <a href="https://www.digitalocean.com/community/tutorials/how-to-use-ansible-cheat-sheet-guide">Ansible Cheat Sheet Guide</a>.<br></span></p>
+
+<p>Quando o playbook terminar de executar, efetue login via SSH no servidor provisionado pelo Ansible e execute <code>docker ps -a</code> para verificar se os containers foram criados com sucesso:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo docker ps -a
+</li></ul></code></pre>
+<p>Você deve ver uma saída semelhante a esta:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+a3fe9bfb89cf        ubuntu              "sleep 1d"          5 minutes ago       Created                                 docker4
+8799c16cde1e        ubuntu              "sleep 1d"          5 minutes ago       Created                                 docker3
+ad0c2123b183        ubuntu              "sleep 1d"          5 minutes ago       Created                                 docker2
+b9350916ffd8        ubuntu              "sleep 1d"          5 minutes ago       Created                                 docker1
+</code></pre>
+<p>Isso significa que os containers definidos no playbook foram criados com sucesso. Como essa foi a última tarefa do playbook, também confirma que o playbook foi totalmente executado neste servidor.</p>
+
+<h2 id="o-conteúdo-do-playbook">O Conteúdo do Playbook</h2>
+
+<p>Você pode encontrar a configuração do servidor Docker apresentada neste tutorial na pasta <a href="https://github.com/do-community/ansible-playbooks/tree/master/docker_ubuntu1804"><code>docker_ubuntu1804</code></a> dentro do repositório <a href="https://github.com/do-community/ansible-playbooks">DigitalOcean Community Playbooks</a>. Para copiar ou baixar o conteúdo do script diretamente, clique no botão <strong>Raw</strong> na parte superior de cada script.</p>
+
+<p>O conteúdo completo do playbook, bem como seus arquivos associados, também estão incluídos aqui para sua conveniência.</p>
+
+<h3 id="vars-default-yml">vars/default.yml</h3>
+
+<p>O arquivo de variáveis <code>default.yml</code> contém valores que serão usados ao configurar o Docker no seu servidor.</p>
+<div class="code-label " title="vars/default.yml">vars/default.yml</div><pre class="code-pre yaml local-environment"><code langs="">---
+create_containers: <span class="highlight">4</span>
+default_container_name: <span class="highlight">docker</span>
+default_container_image: <span class="highlight">ubuntu</span>
+default_container_command: <span class="highlight">sleep 1d</span>
+</code></pre>
+<h3 id="playbook-yml">playbook.yml</h3>
+
+<p>O arquivo <code>playbook.yml</code> é onde todas as tarefas desta configuração são definidas. Ele começa definindo o grupo de servidores que deve ser o alvo dessa configuração (<code>all</code>), após o qual ele usa <code>become: true</code> para definir que as tarefas devem ser executadas com escalação de privilégios (<code>sudo</code>) por padrão. Em seguida, inclui o arquivo de variáveis <code>vars/default.yml</code> para carregar as opções de configuração.</p>
+<div class="code-label " title="playbook.yml">playbook.yml</div><pre class="code-pre yaml local-environment"><code langs="">---
+- hosts: all
+  become: true
+  vars_files:
+    - vars/default.yml
+
+  tasks:
+    - name: Install aptitude using apt
+      apt: name=aptitude state=latest update_cache=yes force_apt_get=yes
+
+    - name: Install required system packages
+      apt: name={{ item }} state=latest update_cache=yes
+      loop: [ 'apt-transport-https', 'ca-certificates', 'curl', 'software-properties-common', 'python3-pip', 'virtualenv', 'python3-setuptools']
+
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu bionic stable
+        state: present
+
+    - name: Update apt and install docker-ce
+      apt: update_cache=yes name=docker-ce state=latest
+
+    - name: Install Docker Module for Python
+      pip:
+        name: docker
+
+    - name: Pull default Docker image
+      docker_image:
+        name: "{{ default_container_image }}"
+        source: pull
+
+    # Creates the number of containers defined by the variable create_containers, using values from vars file
+    - name: Create default containers
+      docker_container:
+        name: "{{ default_container_name }}{{ item }}"
+        image: "{{ default_container_image }}"
+        command: "{{ default_container_command }}"
+        state: present
+      with_sequence: count={{ create_containers }}
+
+</code></pre>
+<p>Sinta-se à vontade para modificar este playbook para melhor atender às suas necessidades individuais dentro do seu próprio fluxo de trabalho. Por exemplo, você pode usar o módulo <a href="https://docs.ansible.com/ansible/2.6/modules/docker_image_module.html#docker-image-module"><code>docker_image</code></a> para enviar imagens ao Docker Hub ou ao módulo <a href="https://docs.ansible.com/ansible/2.6/modules/docker_container_module.html#docker-container-module"><code>docker_container</code></a> para configurar redes de containers.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>A automação da configuração da sua infraestrutura não apenas poupa tempo, mas também ajuda a garantir que seus servidores sigam uma configuração padrão que pode ser personalizada de acordo com suas necessidades. Com a natureza distribuída das aplicações modernas e a necessidade de consistência entre os diferentes ambientes de preparação ou staging, uma automação como essa se tornou um componente central nos processos de desenvolvimento de muitas equipes.</p>
+
+<p>Neste guia, demonstramos como usar o Ansible para automatizar o processo de instalação e configuração do Docker em um servidor remoto. Como cada pessoa normalmente tem necessidades diferentes ao trabalhar com containers, recomendamos que você verifique a <a href="https://docs.ansible.com/ansible/2.6/modules/docker_container_module.html#docker-container-module">documentação oficial do Ansible</a> para obter mais informações e casos de uso do módulo <code>docker_container</code> do Ansible.</p>
+
+<p>Se você deseja incluir outras tarefas neste playbook para personalizar ainda mais sua configuração inicial de servidor, consulte nosso guia introdutório de Ansible em <a href="https://www.digitalocean.com/community/tutorials/configuration-management-101-writing-ansible-playbooks">Configuration Management 101: Writing Ansible Playbooks</a>.</p>

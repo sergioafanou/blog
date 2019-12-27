@@ -1,0 +1,803 @@
+---
+layout: post
+title: Containerizing a Ruby on Rails Application for Development with Docker Compose
+network: digitalocean
+date: December 20, 2019 at 06:50PM
+url: https://www.digitalocean.com/community/tutorials/containerizing-a-ruby-on-rails-application-for-development-with-docker-compose
+image: https://assets.digitalocean.com/articles/rails-sidekiq/sidekiq_home.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p>If you are actively developing an application, using <a href="https://www.docker.com/">Docker</a> can simplify your workflow and the process of deploying your application to production. Working with containers in development offers the following benefits:</p>
+
+<ul>
+<li>Environments are consistent, meaning that you can choose the languages and dependencies you want for your project without worrying about system conflicts.</li>
+<li>Environments are isolated, making it easier to troubleshoot issues and onboard new team members.</li>
+<li>Environments are portable, allowing you to package and share your code with others.</li>
+</ul>
+
+<p>This tutorial will show you how to set up a development environment for a <a href="https://rubyonrails.org">Ruby on Rails</a> application using Docker. You will create multiple containers – for the application itself, the <a href="https://www.postgresql.org/">PostgreSQL</a> database, <a href="https://redis.io/">Redis</a>, and a <a href="https://sidekiq.org/">Sidekiq</a> service – with <a href="https://docs.docker.com/compose/">Docker Compose</a>. The setup will do the following:</p>
+
+<ul>
+<li>Synchronize the application code on the host with the code in the container to facilitate changes during development.</li>
+<li>Persist application data between container restarts.</li>
+<li>Configure Sidekiq workers to process jobs as expected.</li>
+</ul>
+
+<p>At the end of this tutorial, you will have a working shark information application running on Docker containers:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails-sidekiq/sidekiq_home.png" alt="Sidekiq App Home"></p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>To follow this tutorial, you will need:</p>
+
+<ul>
+<li>A local development machine or server running Ubuntu 18.04, along with a non-root user with <code>sudo</code> privileges and an active firewall. For guidance on how to set these up, please see this <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Initial Server Setup guide</a>.</li>
+<li>Docker installed on your local machine or server, following Steps 1 and 2 of <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04">How To Install and Use Docker on Ubuntu 18.04</a>.</li>
+<li>Docker Compose installed on your local machine or server, following Step 1 of <a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">How To Install Docker Compose on Ubuntu 18.04</a>.</li>
+</ul>
+
+<h2 id="step-1-—-cloning-the-project-and-adding-dependencies">Step 1 — Cloning the Project and Adding Dependencies</h2>
+
+<p>Our first step will be to clone the <a href="https://github.com/do-community/rails-sidekiq.git">rails-sidekiq</a> repository from the <a href="https://github.com/do-community">DigitalOcean Community GitHub account</a>. This repository includes the code from the setup described in <a href="https://www.digitalocean.com/community/tutorials/how-to-add-sidekiq-and-redis-to-a-ruby-on-rails-application">How To Add Sidekiq and Redis to a Ruby on Rails Application</a>, which explains how to add Sidekiq to an existing Rails 5 project. </p>
+
+<p>Clone the repository into a directory called <code><span class="highlight">rails-docker</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/do-community/rails-sidekiq.git <span class="highlight">rails-docker</span>
+</li></ul></code></pre>
+<p>Navigate to the <code><span class="highlight">rails-docker</span></code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">rails-docker</span>
+</li></ul></code></pre>
+<p>In this tutorial we will use PostgreSQL as a database. In order to work with PostgreSQL instead of SQLite 3, you will need to add the <a href="https://github.com/ged/ruby-pg"><code>pg</code> gem</a> to the project&rsquo;s dependencies, which are listed in its Gemfile. Open that file for editing using <code>nano</code> or your favorite editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano Gemfile
+</li></ul></code></pre>
+<p>Add the gem anywhere in the main project dependencies (above development dependencies):</p>
+<div class="code-label " title="~/rails-docker/Gemfile">~/rails-docker/Gemfile</div><pre class="code-pre "><code langs="">. . . 
+# Reduces boot times through caching; required in config/boot.rb
+gem 'bootsnap', '&gt;= 1.1.0', require: false
+gem 'sidekiq', '~&gt;6.0.0'
+<span class="highlight">gem 'pg', '~&gt;1.1.3'</span>
+
+group :development, :test do
+. . .
+</code></pre>
+<p>We can also comment out the <a href="https://github.com/sparklemotion/sqlite3-ruby"><code>sqlite</code> gem</a>, since we won&rsquo;t be using it anymore:</p>
+<div class="code-label " title="~/rails-docker/Gemfile">~/rails-docker/Gemfile</div><pre class="code-pre "><code langs="">. . . 
+# Use sqlite3 as the database for Active Record
+<span class="highlight">#</span> gem 'sqlite3'
+. . .
+</code></pre>
+<p>Finally, comment out the <a href="https://github.com/jonleighton/spring-watcher-listen"><code>spring-watcher-listen</code> gem</a> under <code>development</code>:</p>
+<div class="code-label " title="~/rails-docker/Gemfile">~/rails-docker/Gemfile</div><pre class="code-pre "><code langs="">. . . 
+gem 'spring'
+<span class="highlight">#</span> gem 'spring-watcher-listen', '~&gt; 2.0.0'
+. . .
+</code></pre>
+<p>If we do not disable this gem, we will see persistent error messages when accessing the Rails console. These error messages derive from the fact that this gem has Rails use <a href="https://github.com/guard/listen"><code>listen</code></a> to watch for changes in development, rather than polling the filesystem for changes. Because <a href="https://github.com/rails/rails/issues/32700">this gem watches the root of the project</a>, including the <code>node_modules</code> directory, it will throw error messages about which directories are being watched, cluttering the console. If you are concerned about conserving CPU resources, however, disabling this gem may not work for you. In this case, it may be a good idea to upgrade your Rails application to Rails 6.</p>
+
+<p>Save and close the file when you are finished editing.</p>
+
+<p>With your project repository in place, the <code>pg</code> gem added to your Gemfile, and the <code>spring-watcher-listen</code> gem commented out, you are ready to configure your application to work with PostgreSQL. </p>
+
+<h2 id="step-2-—-configuring-the-application-to-work-with-postgresql-and-redis">Step 2 — Configuring the Application to Work with PostgreSQL and Redis</h2>
+
+<p>To work with PostgreSQL and Redis in development, we will want to do the following: </p>
+
+<ul>
+<li>Configure the application to work with PostgreSQL as the default adapter.</li>
+<li>Add an <code>.env</code> file to the project with our database username and password and Redis host.</li>
+<li>Create an <code>init.sql</code> script to create a <code>sammy</code> user for the database.</li>
+<li>Add an <a href="https://guides.rubyonrails.org/v2.3/configuring.html#using-initializers">initializer</a> for Sidekiq so that it can work with our containerized <code>redis</code> service.</li>
+<li>Add the <code>.env</code> file and other relevant files to the project&rsquo;s <code>gitignore</code> and <code>dockerignore</code> files.</li>
+<li>Create database seeds so that our application has some records for us to work with when we start it up.</li>
+</ul>
+
+<p>First, open your database configuration file, located at <code>config/database.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano config/database.yml
+</li></ul></code></pre>
+<p>Currently, the file includes the following <code>default</code> settings, which are applied in the absence of other settings:</p>
+<div class="code-label " title="~/rails-docker/config/database.yml">~/rails-docker/config/database.yml</div><pre class="code-pre "><code langs="">default: &amp;default
+  adapter: sqlite3
+  pool: &lt;%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %&gt;
+  timeout: 5000
+</code></pre>
+<p>We need to change these to reflect the fact that we will use the <code>postgresql</code> adapter, since we will be creating a PostgreSQL service with Docker Compose to persist our application data.</p>
+
+<p>Delete the code that sets SQLite as the adapter and replace it with the following settings, which will set the adapter appropriately and the other variables necessary to connect: </p>
+<div class="code-label " title="~/rails-docker/config/database.yml">~/rails-docker/config/database.yml</div><pre class="code-pre "><code langs="">default: &amp;default
+  adapter: <span class="highlight">postgresql</span>
+  <span class="highlight">encoding: unicode</span>
+  <span class="highlight">database: &lt;%= ENV['DATABASE_NAME'] %&gt;</span>
+  <span class="highlight">username: &lt;%= ENV['DATABASE_USER'] %&gt;</span>
+  <span class="highlight">password: &lt;%= ENV['DATABASE_PASSWORD'] %&gt;</span>
+  <span class="highlight">port: &lt;%= ENV['DATABASE_PORT'] || '5432' %&gt;</span>
+  <span class="highlight">host: &lt;%= ENV['DATABASE_HOST'] %&gt;</span>
+  pool: &lt;%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %&gt;
+  timeout: 5000
+. . .
+</code></pre>
+<p>Next, we&rsquo;ll modify the setting for the <code>development</code> environment, since this is the environment we&rsquo;re using in this setup.</p>
+
+<p>Delete the existing SQLite database configuration so that section looks like this:</p>
+<div class="code-label " title="~/rails-docker/config/database.yml">~/rails-docker/config/database.yml</div><pre class="code-pre "><code langs="">. . . 
+development:
+  &lt;&lt;: *default
+. . .
+</code></pre>
+<p>Finally, delete the <code>database</code> settings for the <code>production</code> and <code>test</code> environments as well:</p>
+<div class="code-label " title="~/rails-docker/config/database.yml">~/rails-docker/config/database.yml</div><pre class="code-pre "><code langs="">. . . 
+test:
+  &lt;&lt;: *default
+
+production:
+  &lt;&lt;: *default
+. . . 
+</code></pre>
+<p>These modifications to our default database settings will allow us to set our database information dynamically using environment variables defined in <code>.env</code> files, which will not be committed to version control. </p>
+
+<p>Save and close the file when you are finished editing.</p>
+
+<p>Note that if you are creating a Rails project from scratch, you can set the adapter with the <code>rails new</code> command, as described in <a href="https://www.digitalocean.com/community/tutorials/how-to-use-postgresql-with-your-ruby-on-rails-application-on-ubuntu-18-04#step-3-%E2%80%93-creating-a-new-rails-application">Step 3</a> of <a href="https://www.digitalocean.com/community/tutorials/how-to-use-postgresql-with-your-ruby-on-rails-application-on-ubuntu-18-04">How To Use PostgreSQL with Your Ruby on Rails Application on Ubuntu 18.04</a>. This will set your adapter in <code>config/database.yml</code> and automatically add the <code>pg</code> gem to the project. </p>
+
+<p>Now that we have referenced our environment variables, we can create a file for them with our preferred settings. Extracting configuration settings in this way is part of the <a href="https://12factor.net/config">12 Factor approach</a> to application development, which defines best practices for application resiliency in distributed environments. Now, when we are setting up our production and test environments in the future, configuring our database settings will involve creating additional <code>.env</code> files and referencing the appropriate file in our Docker Compose files.</p>
+
+<p>Open an <code>.env</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .env
+</li></ul></code></pre>
+<p>Add the following values to the file:</p>
+<div class="code-label " title="~/rails-docker/.env">~/rails-docker/.env</div><pre class="code-pre "><code langs="">DATABASE_NAME=rails_development
+DATABASE_USER=sammy
+DATABASE_PASSWORD=shark
+DATABASE_HOST=database
+REDIS_HOST=redis
+</code></pre>
+<p>In addition to setting our database name, user, and password, we&rsquo;ve also set a value for the <code>DATABASE_HOST</code>.  The value, <code>database</code>, refers to the <code>database</code> PostgreSQL service we will create using Docker Compose. We&rsquo;ve also set a <code>REDIS_HOST</code> to specify our <code>redis</code> service.</p>
+
+<p>Save and close the file when you are finished editing.</p>
+
+<p>To create the <code>sammy</code> database user, we can write an <code>init.sql</code> script that we can then mount to the database container when it starts.</p>
+
+<p>Open the script file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano init.sql
+</li></ul></code></pre>
+<p>Add the following code to create a <code>sammy</code> user with administrative privileges:</p>
+<div class="code-label " title="~/rails-docker/init.sql">~/rails-docker/init.sql</div><pre class="code-pre "><code langs="">CREATE USER sammy;
+ALTER USER sammy WITH SUPERUSER;
+</code></pre>
+<p>This script will create the appropriate user on the database and grant this user administrative privileges. </p>
+
+<p>Set appropriate permissions on the script:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod +x init.sql
+</li></ul></code></pre>
+<p>Next, we&rsquo;ll configure Sidekiq to work with our containerized <code>redis</code> service. We can add an initializer to the <code>config/initializers</code> directory, where Rails looks for configuration settings once frameworks and plugins are loaded, that sets a value for a Redis host. </p>
+
+<p>Open a <code>sidekiq.rb</code> file to specify these settings:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano config/initializers/sidekiq.rb
+</li></ul></code></pre>
+<p>Add the following code to the file to specify values for a <code>REDIS_HOST</code> and <code>REDIS_PORT</code>:</p>
+<div class="code-label " title="~/rails-docker/config/initializers/sidekiq.rb">~/rails-docker/config/initializers/sidekiq.rb</div><pre class="code-pre "><code langs="">Sidekiq.configure_server do |config|
+  config.redis = {
+    host: ENV['REDIS_HOST'],
+    port: ENV['REDIS_PORT'] || '6379'
+  }
+end
+
+Sidekiq.configure_client do |config|
+  config.redis = {
+    host: ENV['REDIS_HOST'],
+    port: ENV['REDIS_PORT'] || '6379'
+  }
+end
+</code></pre>
+<p>Much like our database configuration settings, these settings give us the ability to set our host and port parameters dynamically, allowing us to substitute the appropriate values at runtime without having to modify the application code itself. In addition to a <code>REDIS_HOST</code>, we have a default value set for <code>REDIS_PORT</code> in case it is not set elsewhere.</p>
+
+<p>Save and close the file when you are finished editing.</p>
+
+<p>Next, to ensure that our application&rsquo;s sensitive data is not copied to version control, we can add <code>.env</code> to our project&rsquo;s <code>.gitignore</code> file, which tells Git which files to ignore in our project. Open the file for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .gitignore
+</li></ul></code></pre>
+<p>At the bottom of the file, add an entry for <code>.env</code>:</p>
+<div class="code-label " title="~/rails-docker/.gitignore">~/rails-docker/.gitignore</div><pre class="code-pre "><code langs="">yarn-debug.log*
+.yarn-integrity
+<span class="highlight">.env</span>
+</code></pre>
+<p>Save and close the file when you are finished editing.</p>
+
+<p>Next, we&rsquo;ll create a <code>.dockerignore</code> file to set what should not be copied to our containers. Open the file for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">.dockerignore
+</li></ul></code></pre>
+<p>Add the following code to the file, which tells Docker to ignore some of the things we don&rsquo;t need copied to our containers:</p>
+<div class="code-label " title="~/rails-docker/.dockerignore">~/rails-docker/.dockerignore</div><pre class="code-pre "><code langs="">.DS_Store
+.bin
+.git
+.gitignore
+.bundleignore
+.bundle
+.byebug_history
+.rspec
+tmp
+log
+test
+config/deploy
+public/packs
+public/packs-test
+node_modules
+yarn-error.log
+coverage/
+</code></pre>
+<p>Add <code>.env</code> to the bottom of this file as well:</p>
+<div class="code-label " title="~/rails-docker/.dockerignore">~/rails-docker/.dockerignore</div><pre class="code-pre "><code langs="">. . .
+yarn-error.log
+coverage/
+<span class="highlight">.env</span>
+</code></pre>
+<p>Save and close the file when you are finished editing.</p>
+
+<p>As a final step, we will create some seed data so that our application has a few records when we start it up. </p>
+
+<p>Open a file for the seed data in the <code>db</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano db/seeds.rb
+</li></ul></code></pre>
+<p>Add the following code to the file to create four demo sharks and one sample post:</p>
+<div class="code-label " title="~/rails-docker/db/seeds.rb">~/rails-docker/db/seeds.rb</div><pre class="code-pre "><code langs=""># Adding demo sharks
+sharks = Shark.create([{ name: 'Great White', facts: 'Scary' }, { name: 'Megalodon', facts: 'Ancient' }, { name: 'Hammerhead', facts: 'Hammer-like' }, { name: 'Speartooth', facts: 'Endangered' }])
+Post.create(body: 'These sharks are misunderstood', shark: sharks.first)
+</code></pre>
+<p>This seed data will create four sharks and one post that is associated with the first shark.</p>
+
+<p>Save and close the file when you are finished editing.</p>
+
+<p>With your application configured to work with PostgreSQL and your environment variables created, you are ready to write your application Dockerfile.</p>
+
+<h2 id="step-3-—-writing-the-dockerfile-and-entrypoint-scripts">Step 3 — Writing the Dockerfile and Entrypoint Scripts</h2>
+
+<p>Your Dockerfile specifies what will be included in your application container when it is created. Using a Dockerfile allows you to define your container environment and avoid discrepancies with dependencies or runtime versions.</p>
+
+<p>Following these <a href="https://www.digitalocean.com/community/tutorials/building-optimized-containers-for-kubernetes">guidelines on building optimized containers</a>, we will make our image as efficient as possible by using an <a href="https://alpinelinux.org/">Alpine base</a> and attempting to minimize our image layers generally.</p>
+
+<p>Open a Dockerfile in your current directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano Dockerfile
+</li></ul></code></pre>
+<p>Docker images are created using a succession of layered images that build on one another. Our first step will be to add the <em>base image</em> for our application, which will form the starting point of the application build.</p>
+
+<p>Add the following code to the file to add the <a href="https://hub.docker.com/_/ruby">Ruby alpine image</a> as a base:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">FROM ruby:2.5.1-alpine
+</code></pre>
+<p>The <code>alpine</code> image is derived from the Alpine Linux project, and will help us keep our image size down. For more information about whether or not the <code>alpine</code> image is the right choice for your project, please see the full discussion under the <strong>Image Variants</strong> section of the <a href="https://hub.docker.com/_/ruby">Docker Hub Ruby image page</a>. </p>
+
+<p>Some factors to consider when using <code>alpine</code> in development: </p>
+
+<ul>
+<li>Keeping image size down will decrease page and resource load times, particularly if you also keep volumes to a minimum. This helps keep your user experience in development quick and closer to what it would be if you were working locally in a non-containerized environment.</li>
+<li>Having parity between development and production images facilitates successful deployments. Since teams often opt to use Alpine images in production for speed benefits, developing with an Alpine base helps offset issues when moving to production.</li>
+</ul>
+
+<p>Next, set an environment variable to specify the <a href="https://bundler.io/">Bundler</a> version:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . .
+ENV BUNDLER_VERSION=2.0.2
+</code></pre>
+<p>This is one of the steps we will take to avoid version conflicts between the default <code>bundler</code> version available in our environment and our application code, which requires Bundler 2.0.2.</p>
+
+<p>Next, add the packages that you need to work with the application to the Dockerfile:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . . 
+RUN apk add --update --no-cache \
+      binutils-gold \
+      build-base \
+      curl \
+      file \
+      g++ \
+      gcc \
+      git \
+      less \
+      libstdc++ \
+      libffi-dev \
+      libc-dev \ 
+      linux-headers \
+      libxml2-dev \
+      libxslt-dev \
+      libgcrypt-dev \
+      make \
+      netcat-openbsd \
+      nodejs \
+      openssl \
+      pkgconfig \
+      postgresql-dev \
+      python \
+      tzdata \
+      yarn 
+</code></pre>
+<p>These packages include <code>nodejs</code> and <code>yarn</code>, among others. Since our application <a href="https://www.digitalocean.com/community/tutorials/how-to-add-stimulus-to-a-ruby-on-rails-application#step-4-%E2%80%94-installing-stimulus">serves assets with webpack</a>, we need to include <a href="https://nodejs.org/">Node.js</a> and <a href="https://yarnpkg.com/">Yarn</a> for the application to work as expected. </p>
+
+<p>Keep in mind that the <code>alpine</code> image is extremely minimal: the packages listed here are not exhaustive of what you might want or need in development when you are containerizing your own application. </p>
+
+<p>Next, install the appropriate <code>bundler</code> version:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . . 
+RUN gem install bundler -v 2.0.2
+</code></pre>
+<p>This step will guarantee parity between our containerized environment and the specifications in this project&rsquo;s <code>Gemfile.lock</code> file.</p>
+
+<p>Now set the working directory for the application on the container:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . .
+WORKDIR /app
+</code></pre>
+<p>Copy over your <code>Gemfile</code> and <code>Gemfile.lock</code>:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . .
+COPY Gemfile Gemfile.lock ./
+</code></pre>
+<p>Copying these files as an independent step, followed by <code>bundle install</code>, means that the project gems do not need to be rebuilt every time you make changes to your application code. This will work in conjunction with the gem volume that we will include in our Compose file, which will mount gems to your application container in cases where the service is recreated but project gems remain the same.</p>
+
+<p>Next, set the configuration options for the <code>nokogiri</code> gem build:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . . 
+RUN bundle config build.nokogiri --use-system-libraries
+. . .
+</code></pre>
+<p>This step builds <code>nokigiri</code> <a href="https://nokogiri.org/tutorials/installing_nokogiri.html#install-with-system-libraries">with the <code>libxml2</code> and <code>libxslt</code> library versions</a> that we added to the application container in the <code>RUN apk add&hellip;</code> step above.</p>
+
+<p>Next, install the project gems:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . . 
+RUN bundle check || bundle install
+</code></pre>
+<p>This instruction checks that the gems are not already installed before installing them. </p>
+
+<p>Next, we&rsquo;ll repeat the same procedure that we used with gems with our JavaScript packages and dependencies. First we’ll copy package metadata, then we’ll install dependencies, and finally we’ll copy the application code into the container image.</p>
+
+<p>To get started with the Javascript section of our Dockerfile, copy <code>package.json</code> and <code>yarn.lock</code> from your current project directory on the host to the container:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . . 
+COPY package.json yarn.lock ./
+</code></pre>
+<p>Then install the required packages with <code>yarn install</code>:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . . 
+RUN yarn install --check-files
+</code></pre>
+<p>This instruction includes a <code>--check-files</code> flag with the <code>yarn</code> command, a feature that makes sure any previously installed files have not been removed. As in the case of our gems, we will manage the persistence of the packages in the <code>node_modules</code> directory with a volume when we write our Compose file.</p>
+
+<p>Finally, copy over the rest of the application code and start the application with an entrypoint script:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">. . . 
+COPY . ./ 
+
+ENTRYPOINT ["./entrypoints/docker-entrypoint.sh"]
+</code></pre>
+<p>Using an entrypoint script allows us to <a href="https://docs.docker.com/engine/reference/builder/#entrypoint">run the container as an executable</a>. </p>
+
+<p>The final Dockerfile will look like this:</p>
+<div class="code-label " title="~/rails-docker/Dockerfile">~/rails-docker/Dockerfile</div><pre class="code-pre "><code langs="">FROM ruby:2.5.1-alpine
+
+ENV BUNDLER_VERSION=2.0.2
+
+RUN apk add --update --no-cache \
+      binutils-gold \
+      build-base \
+      curl \
+      file \
+      g++ \
+      gcc \
+      git \
+      less \
+      libstdc++ \
+      libffi-dev \
+      libc-dev \ 
+      linux-headers \
+      libxml2-dev \
+      libxslt-dev \
+      libgcrypt-dev \
+      make \
+      netcat-openbsd \
+      nodejs \
+      openssl \
+      pkgconfig \
+      postgresql-dev \
+      python \
+      tzdata \
+      yarn 
+
+RUN gem install bundler -v 2.0.2
+
+WORKDIR /app
+
+COPY Gemfile Gemfile.lock ./
+
+RUN bundle config build.nokogiri --use-system-libraries
+
+RUN bundle check || bundle install 
+
+COPY package.json yarn.lock ./
+
+RUN yarn install --check-files
+
+COPY . ./ 
+
+ENTRYPOINT ["./entrypoints/docker-entrypoint.sh"]
+</code></pre>
+<p>Save and close the file when you are finished editing.</p>
+
+<p>Next, create a directory called <code>entrypoints</code> for the entrypoint scripts:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir entrypoints
+</li></ul></code></pre>
+<p>This directory will include our main entrypoint script and a script for our Sidekiq service.  </p>
+
+<p>Open the file for the application entrypoint script:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano entrypoints/docker-entrypoint.sh
+</li></ul></code></pre>
+<p>Add the following code to the file:</p>
+<div class="code-label " title="rails-docker/entrypoints/docker-entrypoint.sh">rails-docker/entrypoints/docker-entrypoint.sh</div><pre class="code-pre "><code langs="">#!/bin/sh
+
+set -e
+
+if [ -f tmp/pids/server.pid ]; then
+  rm tmp/pids/server.pid
+fi
+
+bundle exec rails s -b 0.0.0.0
+</code></pre>
+<p>The first important line is <code>set -e</code>, which tells the <code>/bin/sh</code> shell that runs the script to fail fast if there are any problems later in the script. Next, the script checks that <code>tmp/pids/server.pid</code> is not present to ensure that there won&rsquo;t be server conflicts when we start the application. Finally, the script starts the Rails server with the <code>bundle exec rails s</code> command. We use the <code>-b</code> option with this command to bind the server to all IP addresses rather than to the default, <code>localhost</code>. This invocation makes the Rails server route incoming requests to the container IP rather than to the default <code>localhost</code>. </p>
+
+<p>Save and close the file when you are finished editing.</p>
+
+<p>Make the script executable:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod +x entrypoints/docker-entrypoint.sh
+</li></ul></code></pre>
+<p>Next, we will create a script to start our <code>sidekiq</code> service, which will process our Sidekiq jobs. For more information about how this application uses Sidekiq, please see <a href="https://www.digitalocean.com/community/tutorials/how-to-add-sidekiq-and-redis-to-a-ruby-on-rails-application">How To Add Sidekiq and Redis to a Ruby on Rails Application</a>.</p>
+
+<p>Open a file for the Sidekiq entrypoint script:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano entrypoints/sidekiq-entrypoint.sh
+</li></ul></code></pre>
+<p>Add the following code to the file to start Sidekiq:</p>
+<div class="code-label " title="~/rails-docker/entrypoints/sidekiq-entrypoint.sh">~/rails-docker/entrypoints/sidekiq-entrypoint.sh</div><pre class="code-pre "><code langs="">#!/bin/sh
+
+set -e
+
+if [ -f tmp/pids/server.pid ]; then
+  rm tmp/pids/server.pid
+fi
+
+bundle exec sidekiq
+</code></pre>
+<p>This script starts Sidekiq in the context of our application bundle. </p>
+
+<p>Save and close the file when you are finished editing. Make it executable:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod +x entrypoints/sidekiq-entrypoint.sh
+</li></ul></code></pre>
+<p>With your entrypoint scripts and Dockerfile in place, you are ready to define your services in your Compose file.</p>
+
+<h2 id="step-4-—-defining-services-with-docker-compose">Step 4 — Defining Services with Docker Compose</h2>
+
+<p>Using Docker Compose, we will be able to run the multiple containers required for our setup. We will define our Compose <em>services</em> in our main <code>docker-compose.yml</code> file. A service in Compose is a running container, and service definitions — which you will include in your <code>docker-compose.yml</code> file — contain information about how each container image will run. The Compose tool allows you to define multiple services to build multi-container applications.</p>
+
+<p>Our application setup will include the following services:</p>
+
+<ul>
+<li>The application itself</li>
+<li>The PostgreSQL database</li>
+<li>Redis</li>
+<li>Sidekiq</li>
+</ul>
+
+<p>We will also include a bind mount as part of our setup, so that any code changes we make during development will be immediately synchronized with the containers that need access to this code.</p>
+
+<p>Note that we are <em>not</em> defining a <code>test</code> service, since testing is outside of the scope of this tutorial and <a href="https://www.digitalocean.com/community/tutorial_series/rails-on-containers">series</a>, but you could do so by following the precedent we are using here for the  <code>sidekiq</code> service.</p>
+
+<p>Open the <code>docker-compose.yml</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>First, add the application service definition:</p>
+<div class="code-label " title="~/rails-docker/docker-compose.yml">~/rails-docker/docker-compose.yml</div><pre class="code-pre "><code langs="">version: '3.4'
+
+services:
+  app: 
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - database
+      - redis
+    ports: 
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - gem_cache:/usr/local/bundle/gems
+      - node_modules:/app/node_modules
+    env_file: .env
+    environment:
+      RAILS_ENV: development
+</code></pre>
+<p>The <code>app</code> service definition includes the following options:</p>
+
+<ul>
+<li><code>build</code>: This defines the configuration options, including the <code>context</code> and <code>dockerfile</code>, that will be applied when Compose builds the application image. If you wanted to use an existing image from a registry like <a href="https://hub.docker.com/">Docker Hub</a>, you could use the <a href="https://docs.docker.com/compose/compose-file/#image"><code>image</code> instruction</a> instead, with information about your username, repository, and image tag.</li>
+<li><code>context</code>: This defines the build context for the image build — in this case, the current project directory.</li>
+<li><code>dockerfile</code>: This specifies the <code>Dockerfile</code> in your current project directory as the file Compose will use to build the application image.</li>
+<li><code>depends_on</code>: This sets up the <code>database</code> and <code>redis</code> containers first so that they are up and running before <code>app</code>. </li>
+<li><code>ports</code>: This maps port <code>3000</code> on the host to port <code>3000</code> on the container.</li>
+<li><code>volumes</code>: We are including two types of mounts here:
+
+<ul>
+<li>The first is a <a href="https://docs.docker.com/storage/bind-mounts/">bind mount</a> that mounts our application code on the host to the <code>/app</code> directory on the container. This will facilitate rapid development, since any changes you make to your host code will be populated immediately in the container.</li>
+<li>The second is a named <a href="https://docs.docker.com/storage/volumes/">volume</a>, <code>gem_cache</code>. When the <code>bundle install</code> instruction runs in the container, it will install the project gems. Adding this volume means that if you recreate the container, the gems will be mounted to the new container. This mount presumes that there haven&rsquo;t been any changes to the project, so if you <em>do</em> make changes to your project gems in development, you will need to remember to delete this volume before recreating your application service. </li>
+<li>The third volume is a named volume for the <code>node_modules</code> directory. Rather than having <code>node_modules</code> mounted to the host, which can lead to package discrepancies and permissions conflicts in development, this volume will ensure that the packages in this directory are persisted and reflect the current state of the project. Again, if you modify the project&rsquo;s Node dependencies, you will need to remove and recreate this volume.</li>
+</ul></li>
+<li><code>env_file</code>: This tells Compose that we would like to add environment variables from a file called <code>.env</code> located in the build context.</li>
+<li><code>environment</code>: Using this option allows us to set a non-sensitive environment variable, passing information about the Rails environment to the container.</li>
+</ul>
+
+<p>Next, below the <code>app</code> service definition, add the following code to define your <code>database</code> service:</p>
+<div class="code-label " title="~/rails-docker/docker-compose.yml">~/rails-docker/docker-compose.yml</div><pre class="code-pre "><code langs="">. . .
+  database:
+    image: postgres:12.1
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+</code></pre>
+<p>Unlike the <code>app</code> service, the <code>database</code> service pulls a <code>postgres</code> image directly from <a href="https://hub.docker.com/">Docker Hub</a>. Note that we&rsquo;re also pinning the version here, rather than setting it to <code>latest</code> or not specifying it (which defaults to <code>latest</code>). This way, we can ensure that this setup works with the versions specified here and avoid unexpected surprises with breaking code changes to the image. </p>
+
+<p>We are also including a <code>db_data</code> volume here, which will persist our application data in between container starts. Additionally, we&rsquo;ve mounted our <code>init.sql</code> startup script to the appropriate directory, <code>docker-entrypoint-initdb.d/</code> on the container, in order to create our <code>sammy</code> database user. After the image entrypoint creates the default <code>postgres</code> user and database, it will run any scripts found in the <code>docker-entrypoint-initdb.d/</code> directory, which you can use for necessary initialization tasks. For more details, look at the <strong>Initialization scripts</strong> section of the <a href="https://hub.docker.com/_/postgres">PostgreSQL image documentation</a></p>
+
+<p>Next, add the <code>redis</code> service definition:</p>
+<div class="code-label " title="~/rails-docker/docker-compose.yml">~/rails-docker/docker-compose.yml</div><pre class="code-pre "><code langs="">. . .
+  redis:
+    image: redis:5.0.7
+</code></pre>
+<p>Like the <code>database</code> service, the <code>redis</code> service uses an image from Docker Hub. In this case, we are not persisting the Sidekiq job cache.</p>
+
+<p>Finally, add the <code>sidekiq</code> service definition:</p>
+<div class="code-label " title="~/rails-docker/docker-compose.yml">~/rails-docker/docker-compose.yml</div><pre class="code-pre "><code langs="">. . .
+  sidekiq:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - app      
+      - database
+      - redis
+    volumes:
+      - .:/app
+      - gem_cache:/usr/local/bundle/gems
+      - node_modules:/app/node_modules
+    env_file: .env
+    environment:
+      RAILS_ENV: development
+    entrypoint: ./entrypoints/sidekiq-entrypoint.sh
+</code></pre>
+<p>Our <code>sidekiq</code> service resembles our <code>app</code> service in a few respects: it uses the same build context and image, environment variables, and volumes. However, it is dependent on the <code>app</code>, <code>redis</code>, and <code>database</code> services, and so will be the last to start. Additionally, it uses an <code>entrypoint</code> that will override the entrypoint set in the Dockerfile. This <code>entrypoint</code> setting points to <code>entrypoints/sidekiq-entrypoint.sh</code>, which includes the appropriate command to start the <code>sidekiq</code> service.</p>
+
+<p>As a final step, add the volume definitions below the <code>sidekiq</code> service definition:</p>
+<div class="code-label " title="~/rails-docker/docker-compose.yml">~/rails-docker/docker-compose.yml</div><pre class="code-pre "><code langs="">. . .
+volumes:
+  gem_cache:
+  db_data:
+  node_modules:
+</code></pre>
+<p>Our top-level volumes key defines the volumes <code>gem_cache</code>, <code>db_data</code>, and <code>node_modules</code>. When Docker creates volumes, the contents of the volume are stored in a part of the host filesystem, <code>/var/lib/docker/volumes/</code>, that’s managed by Docker. The contents of each volume are stored in a directory under <code>/var/lib/docker/volumes/</code> and get mounted to any container that uses the volume. In this way, the shark information data that our users will create will persist in the <code>db_data</code> volume even if we remove and recreate the <code>database</code> service.</p>
+
+<p>The finished file will look like this:</p>
+<div class="code-label " title="~/rails-docker/docker-compose.yml">~/rails-docker/docker-compose.yml</div><pre class="code-pre "><code langs="">version: '3.4'
+
+services:
+  app: 
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:     
+      - database
+      - redis
+    ports: 
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - gem_cache:/usr/local/bundle/gems
+      - node_modules:/app/node_modules
+    env_file: .env
+    environment:
+      RAILS_ENV: development
+
+  database:
+    image: postgres:12.1
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  redis:
+    image: redis:5.0.7
+
+  sidekiq:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - app      
+      - database
+      - redis
+    volumes:
+      - .:/app
+      - gem_cache:/usr/local/bundle/gems
+      - node_modules:/app/node_modules
+    env_file: .env
+    environment:
+      RAILS_ENV: development
+    entrypoint: ./entrypoints/sidekiq-entrypoint.sh
+
+volumes:
+  gem_cache:
+  db_data:
+  node_modules:     
+</code></pre>
+<p>Save and close the file when you are finished editing.</p>
+
+<p>With your service definitions written, you are ready to start the application.</p>
+
+<h2 id="step-5-—-testing-the-application">Step 5 — Testing the Application</h2>
+
+<p>With your <code>docker-compose.yml</code> file in place, you can create your services with the <a href="https://docs.docker.com/compose/reference/up/"><code>docker-compose up</code></a> command and seed your database. You can also test that your data will persist by stopping and removing your containers with <a href="https://docs.docker.com/compose/reference/down/"><code>docker-compose down</code></a> and recreating them.</p>
+
+<p>First, build the container images and create the services by running <code>docker-compose up</code> with the <code>-d</code> flag, which will run the containers in the background:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>You will see output that your services have been created:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Creating rails-docker_database_1 ... done
+Creating rails-docker_redis_1    ... done
+Creating rails-docker_app_1      ... done
+Creating rails-docker_sidekiq_1  ... done
+</code></pre>
+<p>You can also get more detailed information about the startup processes by displaying the log output from the services:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose logs 
+</li></ul></code></pre>
+<p>You will see something like this if everything has started correctly:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>sidekiq_1   | 2019-12-19T15:05:26.365Z pid=6 tid=grk7r6xly INFO: Booting Sidekiq 6.0.3 with redis options {:host=&gt;"redis", :port=&gt;"6379", :id=&gt;"Sidekiq-server-PID-6", :url=&gt;nil}
+sidekiq_1   | 2019-12-19T15:05:31.097Z pid=6 tid=grk7r6xly INFO: Running in ruby 2.5.1p57 (2018-03-29 revision 63029) [x86_64-linux-musl]
+sidekiq_1   | 2019-12-19T15:05:31.097Z pid=6 tid=grk7r6xly INFO: See LICENSE and the LGPL-3.0 for licensing details.
+sidekiq_1   | 2019-12-19T15:05:31.097Z pid=6 tid=grk7r6xly INFO: Upgrade to Sidekiq Pro for more features and support: http://sidekiq.org
+app_1       | =&gt; Booting Puma
+app_1       | =&gt; Rails 5.2.3 application starting in development 
+app_1       | =&gt; Run `rails server -h` for more startup options
+app_1       | Puma starting in single mode...
+app_1       | * Version 3.12.1 (ruby 2.5.1-p57), codename: Llamas in Pajamas
+app_1       | * Min threads: 5, max threads: 5
+app_1       | * Environment: development
+app_1       | * Listening on tcp://0.0.0.0:3000
+app_1       | Use Ctrl-C to stop
+. . .
+database_1  | PostgreSQL init process complete; ready for start up.
+database_1  | 
+database_1  | 2019-12-19 15:05:20.160 UTC [1] LOG:  starting PostgreSQL 12.1 (Debian 12.1-1.pgdg100+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 8.3.0-6) 8.3.0, 64-bit
+database_1  | 2019-12-19 15:05:20.160 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+database_1  | 2019-12-19 15:05:20.160 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+database_1  | 2019-12-19 15:05:20.163 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+database_1  | 2019-12-19 15:05:20.182 UTC [63] LOG:  database system was shut down at 2019-12-19 15:05:20 UTC
+database_1  | 2019-12-19 15:05:20.187 UTC [1] LOG:  database system is ready to accept connections
+. . . 
+redis_1     | 1:M 19 Dec 2019 15:05:18.822 * Ready to accept connections
+</code></pre>
+<p>You can also check the status of your containers with <a href="https://docs.docker.com/compose/reference/ps/"><code>docker-compose ps</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose ps
+</li></ul></code></pre>
+<p>You will see output indicating that your containers are running:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>         Name                        Command               State           Ports         
+-----------------------------------------------------------------------------------------
+rails-docker_app_1        ./entrypoints/docker-resta ...   Up      0.0.0.0:3000-&gt;3000/tcp
+rails-docker_database_1   docker-entrypoint.sh postgres    Up      5432/tcp              
+rails-docker_redis_1      docker-entrypoint.sh redis ...   Up      6379/tcp              
+rails-docker_sidekiq_1    ./entrypoints/sidekiq-entr ...   Up                  
+</code></pre>
+<p>Next, create and seed your database and run migrations on it with the following <a href="https://docs.docker.com/compose/reference/exec/"><code>docker-compose exec</code> command</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec app bundle exec rake db:setup db:migrate
+</li></ul></code></pre>
+<p>The <code>docker-compose exec</code> command allows you to run commands in your services; we are using it here to run <code>rake db:setup</code> and <code>db:migrate</code> in the context of our application bundle to create and seed the database and run migrations. As you work in development, <code>docker-compose exec</code> will prove useful to you when you want to run migrations against your development database.</p>
+
+<p>You will see the following output after running this command:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Created database 'rails_development'
+Database 'rails_development' already exists
+-- enable_extension("plpgsql")
+   -&gt; 0.0140s
+-- create_table("endangereds", {:force=&gt;:cascade})
+   -&gt; 0.0097s
+-- create_table("posts", {:force=&gt;:cascade})
+   -&gt; 0.0108s
+-- create_table("sharks", {:force=&gt;:cascade})
+   -&gt; 0.0050s
+-- enable_extension("plpgsql")
+   -&gt; 0.0173s
+-- create_table("endangereds", {:force=&gt;:cascade})
+   -&gt; 0.0088s
+-- create_table("posts", {:force=&gt;:cascade})
+   -&gt; 0.0128s
+-- create_table("sharks", {:force=&gt;:cascade})
+   -&gt; 0.0072s
+</code></pre>
+<p>With your services running, you can visit <code>localhost:3000</code> or <code>http://your_server_ip:3000</code> in the browser. You will see a landing page that looks like this:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails-sidekiq/sidekiq_home.png" alt="Sidekiq App Home"></p>
+
+<p>We can now test data persistence. Create a new shark by clicking on <strong>Get Shark Info</strong> button, which will take you to the <code>sharks/index</code> route:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails_docker_dev/docker_dev_index.png" alt="Sharks Index Page with Seeded Data"></p>
+
+<p>To verify that the application is working, we can add some demo information to it. Click on <strong>New Shark</strong>. You will be prompted for a username (<strong>sammy</strong>) and password (<strong>shark</strong>), thanks to the project&rsquo;s <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-ruby-on-rails-application#step-%E2%80%94-adding-authentication">authentication settings</a>. </p>
+
+<p>On the <strong>New Shark</strong> page, input &ldquo;Mako&rdquo; into the <strong>Name</strong> field and &ldquo;Fast&rdquo; into the <strong>Facts</strong> field.</p>
+
+<p>Click on the <strong>Create Shark</strong> button to create the shark. Once you have created the shark, click <strong>Home</strong> on the site&rsquo;s navbar to get back to the main application landing page. We can now test that Sidekiq is working.</p>
+
+<p>Click on the <strong>Which Sharks Are in Danger?</strong> button. Since you have not uploaded any endangered sharks, this will take you to the <code>endangered</code> <code>index</code> view:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails-sidekiq/sidekiq_index.png" alt="Endangered Index View"></p>
+
+<p>Click on <strong>Import Endangered Sharks</strong> to import the sharks. You will see a status message telling you that the sharks have been imported:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails-sidekiq/begin_import.png" alt="Begin Import"></p>
+
+<p>You will also see the beginning of the import. Refresh your page to see the entire table:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails-sidekiq/refresh.png" alt="Refresh Table"></p>
+
+<p>Thanks to Sidekiq, our large batch upload of endangered sharks has succeeded without locking up the browser or interfering with other application functionality.</p>
+
+<p>Click on the <strong>Home</strong> button at the bottom of the page, which will bring you back to the application main page:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails-sidekiq/sidekiq_home.png" alt="Sidekiq App Home"></p>
+
+<p>From here, click on <strong>Which Sharks Are in Danger?</strong> again. You will see the uploaded sharks once again. </p>
+
+<p>Now that we know our application is working properly, we can test our data persistence. </p>
+
+<p>Back at your terminal, type the following command to stop and remove your containers:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose down
+</li></ul></code></pre>
+<p>Note that we are not including the <code>--volumes</code> option; hence, our <code>db_data</code> volume is not removed.</p>
+
+<p>The following output confirms that your containers and network have been removed:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Stopping rails-docker_sidekiq_1  ... done
+Stopping rails-docker_app_1      ... done
+Stopping rails-docker_database_1 ... done
+Stopping rails-docker_redis_1    ... done
+Removing rails-docker_sidekiq_1  ... done
+Removing rails-docker_app_1      ... done
+Removing rails-docker_database_1 ... done
+Removing rails-docker_redis_1    ... done
+Removing network rails-docker_default
+</code></pre>
+<p>Recreate the containers:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Open the Rails console on the <code>app</code> container with <code>docker-compose exec</code> and <code>bundle exec rails console</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec app bundle exec rails console
+</li></ul></code></pre>
+<p>At the prompt, inspect the <code>last</code> Shark record in the database:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="irb(main):001:0&gt;">Shark.last.inspect
+</li></ul></code></pre>
+<p>You will see the record you just created:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="IRB session">IRB session</div>  Shark Load (1.0ms)  SELECT  "sharks".* FROM "sharks" ORDER BY "sharks"."id" DESC LIMIT $1  [["LIMIT", 1]]
+=&gt; "#&lt;Shark id: 5, name: \"Mako\", facts: \"Fast\", created_at: \"2019-12-20 14:03:28\", updated_at: \"2019-12-20 14:03:28\"&gt;"
+</code></pre>
+<p>You can then check to see that your <code>Endangered</code> sharks have been persisted with the following command:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="irb(main):001:0&gt;">Endangered.all.count
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="IRB session">IRB session</div>   (0.8ms)  SELECT COUNT(*) FROM "endangereds"
+=&gt; 73
+</code></pre>
+<p>Your <code>db_data</code> volume was successfully mounted to the recreated <code>database</code> service, making it possible for your <code>app</code> service to access the saved data. If you navigate directly to the <code>index</code> <code>shark</code> page by visiting <code>localhost:3000/sharks</code> or <code>http://your_server_ip:3000/sharks</code> you will also see that record displayed:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails_docker_dev/index_mako.png" alt="Sharks Index Page with Mako"></p>
+
+<p>Your endangered sharks will also be at the <code>localhost:3000/endangered/data</code> or <code>http://your_server_ip:3000/endangered/data</code> view:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/rails-sidekiq/refresh.png" alt="Refresh Table"></p>
+
+<p>Your application is now running on Docker containers with data persistence and code synchronization enabled. You can go ahead and test out local code changes on your host, which will be synchronized to your container thanks to the bind mount we defined as part of the <code>app</code> service. </p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>By following this tutorial, you have created a development setup for your Rails application using Docker containers. You’ve made your project more <a href="https://12factor.net/config">modular and portable</a> by extracting sensitive information and decoupling your application’s state from your code. You have also configured a boilerplate <code>docker-compose.yml</code> file that you can revise as your development needs and requirements change.</p>
+
+<p>As you develop, you may be interested in learning more about designing applications for containerized and <a href="https://github.com/cncf/toc/blob/master/DEFINITION.md">Cloud Native</a> workflows. Please see <a href="https://www.digitalocean.com/community/tutorials/architecting-applications-for-kubernetes">Architecting Applications for Kubernetes</a> and <a href="https://www.digitalocean.com/community/tutorials/modernizing-applications-for-kubernetes">Modernizing Applications for Kubernetes</a> for more information on these topics. Or, if you would like to invest in a Kubernetes learning sequence, please have a look at out <a href="https://www.digitalocean.com/community/curriculums/kubernetes-for-full-stack-developers">Kubernetes for Full-Stack Developers curriculum</a>.</p>
+
+<p>To learn more about the application code itself, please see the other tutorials in this <a href="https://www.digitalocean.com/community/tutorial_series/rails-on-containers">series</a>:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-ruby-on-rails-application">How To Build a Ruby on Rails Application</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-create-nested-resources-for-a-ruby-on-rails-application">How To Create Nested Resources for a Ruby on Rails Application</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-add-stimulus-to-a-ruby-on-rails-application">How To Add Stimulus to a Ruby on Rails Application</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-add-bootstrap-to-a-ruby-on-rails-application">How To Add Bootstrap to a Ruby on Rails Application</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-add-sidekiq-and-redis-to-a-ruby-on-rails-application">How To Add Sidekiq and Redis to a Ruby on Rails Application</a></li>
+</ul>

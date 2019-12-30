@@ -1,0 +1,335 @@
+---
+layout: post
+title: How To Optimize MySQL Queries with ProxySQL Caching on Ubuntu 16.04
+network: digitalocean
+date: December 30, 2019 at 06:24PM
+url: https://www.digitalocean.com/community/tutorials/how-to-optimize-mysql-queries-with-proxysql-caching-on-ubuntu-16-04
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.fsf.org/">Free Software Foundation</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://github.com/sysown/proxysql/">ProxySQL</a> is a SQL-aware proxy server that can be positioned between your application and your database. It offers many features, such as <a href="https://www.digitalocean.com/community/tutorials/how-to-use-proxysql-as-a-load-balancer-for-mysql-on-ubuntu-16-04">load-balancing between multiple MySQL servers</a> and serving as a <em>caching layer</em> for queries. This tutorial will focus on ProxySQL&rsquo;s caching feature, and how it can optimize queries for your MySQL database. </p>
+
+<p><em>MySQL caching</em> occurs when the result of a query is stored so that, when that query is repeated, the result can be returned without needing to sort through the database. This can significantly increase the speed of common queries. But in many caching methods, developers must modify the code of their application, which could introduce a bug into the codebase. To avoid this error-prone practice, ProxySQL allows you to set up <em>transparent caching</em>. </p>
+
+<p>In transparent caching, only database administrators need to change the ProxySQL configuration to enable caching for the most common queries, and these changes can be done through the ProxySQL admin interface. All the developer needs to do is connect to the protocol-aware proxy, and the proxy will decide if the query can be served from the cache without hitting the back-end server.</p>
+
+<p>In this tutorial, you will use ProxySQL to set up transparent caching for a MySQL server on Ubuntu 16.04. You will then test its performance using <a href="https://www.digitalocean.com/community/tutorials/how-to-measure-mysql-query-performance-with-mysqlslap">mysqlslap</a> with and without caching to demonstrate the effect of caching and how much time it can save when executing many similar queries.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide you&rsquo;ll need the following:</p>
+
+<ul>
+<li>One Ubuntu 16.04 server with at least 2 GB of RAM, set up with a non-root user with sudo privileges and a firewall, as instructed in <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-16-04">our Ubuntu 16.04 Initial Server Setup guide</a>.</li>
+</ul>
+
+<h2 id="step-1-—-installing-and-setting-up-the-mysql-server">Step 1 — Installing and Setting Up the MySQL Server</h2>
+
+<p>First, you will install MySQL server and configure it to be used by ProxySQL as a back-end server for serving client queries.</p>
+
+<p>On Ubuntu 16.04, <code>mysql-server</code> can be installed using this command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install mysql-server
+</li></ul></code></pre>
+<p>Press <code>Y</code> to confirm the installation.</p>
+
+<p>You will then be prompted for your MySQL <strong>root</strong> user password. Enter a strong password and save it for later use.</p>
+
+<p>Now that you have your MySQL server ready, you will configure it for ProxySQL to work correctly. You need to add a <strong>monitor</strong> user for ProxySQL to monitor the MySQL server, since ProxySQL listens to the back-end server via the SQL protocol, rather than using a TCP connection or HTTP <code>GET</code> requests to make sure that the backend is running. <strong>monitor</strong> will use a dummy SQL connection to determine if the server is alive or not.</p>
+
+<p>First, log in to the MySQL shell:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -uroot -p
+</li></ul></code></pre>
+<p><code>-uroot</code> logs you in using the MySQL <strong>root</strong> user, and <code>-p</code> prompts for the <strong>root</strong> user&rsquo;s password. This <strong>root</strong> user is different from your server&rsquo;s <strong>root</strong> user, and the password is the one you entered when installing the <code>mysql-server</code> package.</p>
+
+<p>Enter the <strong>root</strong> password and press <code>ENTER</code>.</p>
+
+<p>Now you will create two users, one named <strong>monitor</strong> for ProxySQL and another that you will use to execute client queries and grant them the right privileges. This tutorial will name this user <strong>sammy</strong>.</p>
+
+<p>Create the <strong>monitor</strong> user:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">CREATE USER 'monitor'@'%' IDENTIFIED BY '<span class="highlight">monitor_password</span>';
+</li></ul></code></pre>
+<p>The <code>CREATE USER</code> query is used to create a new user that can connect from specific IPs. Using <code>%</code> denotes that the user can connect from any IP address. <code>IDENTIFIED BY</code> sets the password for the new user; enter whatever password you like, but make sure to remember it for later use.</p>
+
+<p>With the user <strong>monitor</strong> created, next make the <strong>sammy</strong> user:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">CREATE USER '<span class="highlight">sammy</span>'@'%' IDENTIFIED BY '<span class="highlight">sammy_password</span>';
+</li></ul></code></pre>
+<p>Next, grant privileges to your new users. Run the following command to configure <strong>monitor</strong>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">GRANT SELECT ON sys.* TO 'monitor'@'%';
+</li></ul></code></pre>
+<p>The <code>GRANT</code> query is used to give privileges to users. Here you granted only <code>SELECT</code> on all tables in the <code>sys</code> database to the <strong>monitor</strong> user; it only needs this privilege to listen to the back-end server.</p>
+
+<p>Now grant all privileges to all databases to the user <strong>sammy</strong>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">GRANT ALL PRIVILEGES on *.* TO '<span class="highlight">sammy</span>'@'%';
+</li></ul></code></pre>
+<p>This will allow <strong>sammy</strong> to make the necessary queries to test your database later.</p>
+
+<p>Apply the privilege changes by running the following:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">FLUSH PRIVILEGES;
+</li></ul></code></pre>
+<p>Finally, exit the <code>mysql</code> shell:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">exit;
+</li></ul></code></pre>
+<p>You&rsquo;ve now installed <code>mysql-server</code> and created a user to be used by ProxySQL to monitor your MySQL server, and another one to execute client queries. Next you will install and configure ProxySQL.</p>
+
+<h2 id="step-2-—-installing-and-configuring-proxysql-server">Step 2 — Installing and Configuring ProxySQL Server</h2>
+
+<p>Now you can install ProxySQL server, which will be used as a <em>caching layer</em> for your queries. A caching layer exists as a stop between your application servers and database back-end servers; it is used to connect to the database and to save the results of some queries in its memory for fast access later. </p>
+
+<p>The <a href="https://github.com/sysown/proxysql/releases">ProxySQL releases Github page</a> offers installation files for common Linux distributions. For this tutorial, you will use <code>wget</code> to download the ProxySQL version 2.0.4 Debian installation file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://github.com/sysown/proxysql/releases/download/v<span class="highlight">2.0.4</span>/proxysql_<span class="highlight">2.0.4</span>-ubuntu16_amd64.deb
+</li></ul></code></pre>
+<p>Next, install the package using <code>dpkg</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo dpkg -i proxysql_<span class="highlight">2.0.4</span>-ubuntu16_amd64.deb
+</li></ul></code></pre>
+<p>Once it is installed, start ProxySQL with this command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start proxysql
+</li></ul></code></pre>
+<p>You can check if ProxySQL started correctly with this command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status proxysql
+</li></ul></code></pre>
+<p>You will get an output similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>root@ubuntu-s-1vcpu-2gb-sgp1-01:~# systemctl status proxysql
+● proxysql.service - LSB: High Performance Advanced Proxy for MySQL
+   Loaded: loaded (/etc/init.d/proxysql; bad; vendor preset: enabled)
+   Active: <span class="highlight">active (exited)</span> since Wed 2019-06-12 21:32:50 UTC; 6 months 7 days ago
+     Docs: man:systemd-sysv-generator(8)
+    Tasks: 0
+   Memory: 0B
+      CPU: 0
+</code></pre>
+<p>Now it is time to connect your ProxySQL server to the MySQL server. For this purpose, use the ProxySQL admin SQL interface, which by default listens to port <code>6032</code> on <code>localhost</code> and has <code>admin</code> as its username and password.</p>
+
+<p>Connect to the interface by running the following:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -uadmin -p -h 127.0.0.1 -P6032
+</li></ul></code></pre>
+<p>Enter <code>admin</code> when prompted for the password.</p>
+
+<p><code>-uadmin</code> sets the username as <code>admin</code>, and the <code>-h</code> flag specifies the host as <code>localhost</code>. The port is <code>6032</code>, specified using the <code>-P</code> flag.</p>
+
+<p>Here you had to specify the host and port explicitly because, by default, the MySQL client connects using a local sockets file and port <code>3306</code>.</p>
+
+<p>Now that you are logged into the <code>mysql</code> shell as <code>admin</code>, configure the <strong>monitor</strong> user so that ProxySQL can use it. First, use standard SQL queries to set the values of two global variables:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">UPDATE global_variables SET variable_value='monitor' WHERE variable_name='mysql-monitor_username';
+</li><li class="line" prefix="mysql&gt;">UPDATE global_variables SET variable_value='<span class="highlight">monitor_password</span>' WHERE variable_name='mysql-monitor_password';
+</li></ul></code></pre>
+<p>The variable <code>mysql-monitor_username</code> specifies the MySQL username that will be used to check if the back-end server is alive or not. The variable <code>mysql-monitor_password</code> points to the password that will be used when connecting to the back-end server. Use the password you created for the <strong>monitor</strong> username.</p>
+
+<p>Every time you create a change in the ProxySQL admin interface, you need to use the right <code>LOAD</code> command to apply changes to the running ProxySQL instance. You changed MySQL global variables, so load them to <code>RUNTIME</code> to apply changes:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">LOAD MYSQL VARIABLES TO RUNTIME;
+</li></ul></code></pre>
+<p>Next, <code>SAVE</code> the changes to the on-disk database to persist changes between restarts. ProxySQL uses its own <a href="https://www.sqlite.org/index.html">SQLite</a> local database to store its own tables and variables:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">SAVE MYSQL VARIABLES TO DISK;
+</li></ul></code></pre>
+<p>Now, you will tell ProxySQL about the back-end server. The table <code>mysql_servers</code> holds information about each back-end server where ProxySQL can connect and execute queries, so add a new record using a standard SQL <code>INSERT</code> statement with the following values for <code>hostgroup_id</code>, <code>hostname</code>, and <code>port</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">INSERT INTO mysql_servers(hostgroup_id, hostname, port) VALUES (1, '127.0.0.1', 3306);
+</li></ul></code></pre>
+<p>To apply the changes, run <code>LOAD</code> and <code>SAVE</code> again:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">LOAD MYSQL SERVERS TO RUNTIME;
+</li><li class="line" prefix="mysql&gt;">SAVE MYSQL SERVERS TO DISK;
+</li></ul></code></pre>
+<p>Finally, you will tell ProxySQL which user will connect to the back-end server; set <strong>sammy</strong> as the user, and replace <code><span class="highlight">sammy_password</span></code> with the password you created earlier:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">INSERT INTO mysql_users(username, password, default_hostgroup) VALUES ('sammy', '<span class="highlight">sammy_password</span>', 1);
+</li></ul></code></pre>
+<p>The table <code>mysql_users</code> holds information about users used to connect to the back-end servers; you specified the <code>username</code>, <code>password</code>, and <code>default_hostgroup</code>.</p>
+
+<p><code>LOAD</code> and <code>SAVE</code> the changes:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">LOAD MYSQL USERS TO RUNTIME;
+</li><li class="line" prefix="mysql&gt;">SAVE MYSQL USERS TO DISK;
+</li></ul></code></pre>
+<p>Then exit the <code>mysql</code> shell:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">exit;
+</li></ul></code></pre>
+<p>To test that you can connect to your back-end server using ProxySQL, execute the following test query:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -usammy -h127.0.0.1 -p -P6033 -e "SELECT @@HOSTNAME as hostname"
+</li></ul></code></pre>
+<p>In this command, you used the <code>-e</code> flag to execute a query and close the connection. The query prints the hostname of the back-end server.</p>
+
+<p><span class='note'><strong>Note:</strong> ProxySQL uses port <code>6033</code> by default for listening to incoming connections.<br></span></p>
+
+<p>The output will look like this, with <code><span class="highlight">your_hostname</span></code> replaced by your hostname:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+----------------------------+
+| hostname                   |
++----------------------------+
+| <span class="highlight">your_hostname</span>        |
++----------------------------+
+</code></pre>
+<p>To learn more about ProxySQL configuration, see <a href="https://www.digitalocean.com/community/tutorials/how-to-use-proxysql-as-a-load-balancer-for-mysql-on-ubuntu-16-04#step-3-%E2%80%94-configuring-monitoring-in-mysql"><strong>Step 3</strong> of How To Use ProxySQL as a Load Balancer for MySQL on Ubuntu 16.04</a>.</p>
+
+<p>So far, you configured ProxySQL to use your MySQL server as a backend and connected to the backend using ProxySQL. Now, you are ready to use <code>mysqlslap</code> to benchmark the query performance without caching.</p>
+
+<h2 id="step-3-—-testing-using-mysqlslap-without-caching">Step 3 — Testing Using <code>mysqlslap</code> Without Caching</h2>
+
+<p>In this step, you will download a test database so you can execute queries against it with <code>mysqlslap</code> to test the latency without caching, setting a benchmark for the speed of your queries. You will also explore how ProxySQL keeps records of queries in the <code>stats_mysql_query_digest</code> table.</p>
+
+<p><a href="https://dev.mysql.com/doc/refman/8.0/en/mysqlslap.html"><code>mysqlslap</code></a> is a load emulation client that is used as a load testing tool for MySQL. It can test a MySQL server with auto-generated queries or with some custom queries executed on a database. It comes installed with the MySQL client package, so you do not need to install it; instead, you will download a database for testing purposes only, on which you can use <code>mysqlslap</code>.</p>
+
+<p>In this tutorial, you will use a <a href="https://github.com/datacharmer/test_db">sample employee database</a>. You will be using this employee database because it features a large data set that can illustrate differences in query optimization. The database has six tables, but the data it contains has more than 300,000 employee records. This will help you emulate a large-scale production workload.</p>
+
+<p>To download the database, first clone the Github repository using this command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/datacharmer/test_db.git
+</li></ul></code></pre>
+<p>Then enter the <code>test_db</code> directory and load the database into the MySQL server using these commands:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd test_db
+</li><li class="line" prefix="$">mysql -uroot -p &lt; employees.sql
+</li></ul></code></pre>
+<p>This command uses shell redirection to read the SQL queries in <code>employees.sql</code> file and execute them on the MySQL server to create the database structure.</p>
+
+<p>You will see output like this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>INFO
+CREATING DATABASE STRUCTURE
+INFO
+storage engine: InnoDB
+INFO
+LOADING departments
+INFO
+LOADING employees
+INFO
+LOADING dept_emp
+INFO
+LOADING dept_manager
+INFO
+LOADING titles
+INFO
+LOADING salaries
+data_load_time_diff
+00:00:32
+</code></pre>
+<p>Once the database is loaded into your MySQL server, test that <code>mysqlslap</code> is working with the following query:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysqlslap -usammy -p -P6033 -h127.0.0.1  --auto-generate-sql --verbose
+</li></ul></code></pre>
+<p><code>mysqlslap</code> has similar flags to the <code>mysql</code> client; here are the ones used in this command:</p>
+
+<ul>
+<li><code>-u</code> specifies the user used to connect to the server.</li>
+<li><code>-p</code> prompts for the user&rsquo;s password.</li>
+<li><code>-P</code> connects using the specified port.</li>
+<li><code>-h</code> connects to the specified host.</li>
+<li><code>--auto-generate-sql</code> lets MySQL perform load testing using its own generated queries.</li>
+<li><code>--verbose</code> makes the output show more information.</li>
+</ul>
+
+<p>You will get output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Benchmark
+    Average number of seconds to run all queries: <span class="highlight">0.015</span> seconds
+    Minimum number of seconds to run all queries: <span class="highlight">0.015</span> seconds
+    Maximum number of seconds to run all queries: <span class="highlight">0.015</span> seconds
+    Number of clients running queries: 1
+    Average number of queries per client: 0
+</code></pre>
+<p>In this output, you can see the average, minimum, and maximum number of seconds spent to execute all queries. This gives you an indication about the amount of time needed to execute the queries by a number of clients. In this output, only one client was used to execute queries.</p>
+
+<p>Next, find out what queries <code>mysqlslap</code> executed in the last command by looking at ProxySQL&rsquo;s <code>stats_mysql_query_digest</code>. This will give us information like the <a href="https://dev.mysql.com/doc/refman/8.0/en/performance-schema-statement-digests.html"><em>digest</em></a> of the queries, which is a normalized form of the SQL statement that can be referenced later to enable caching. </p>
+
+<p>Enter the ProxySQL admin interface with this command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -uadmin -p -h 127.0.0.1 -P6032
+</li></ul></code></pre>
+<p>Then execute this query to find information in the <code>stats_mysql_query_digest</code> table:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">SELECT count_star,sum_time,hostgroup,digest,digest_text FROM stats_mysql_query_digest ORDER BY sum_time DESC;
+</li></ul></code></pre>
+<p>You will see output similar to the following:</p>
+<pre class="code-pre "><code langs="">+------------+----------+-----------+--------------------+----------------------------------+
+| count_star | sum_time | hostgroup | digest             | digest_text                      |
++------------+----------+-----------+--------------------+----------------------------------+
+| 1          | 598      | 1         | 0xF8F780C47A8D1D82 | SELECT @@HOSTNAME as hostname    |
+| 1          | 0        | 1         | 0x226CD90D52A2BA0B | select @@version_comment limit ? |
++------------+----------+-----------+--------------------+----------------------------------+
+2 rows in set (0.01 sec)
+</code></pre>
+<p>The previous query selects data from the <code>stats_mysql_query_digest</code> table, which contains information about all executed queries in ProxySQL. Here you have five columns selected:</p>
+
+<ul>
+<li><code>count_star</code>: The number of times this query was executed.</li>
+<li><code>sum_time</code>: Total time in milliseconds that this query took to execute.</li>
+<li><code>hostgroup</code>: The hostgroup used to execute the query.</li>
+<li><code>digest</code>: A digest of the executed query.</li>
+<li><code>digest_text</code>: The actual query. In this tutorial&rsquo;s example, the second query is parameterized using <code>?</code> marks in place of variable parameters. <code>select @@version_comment limit 1</code> and <code>select @@version_comment limit 2</code>, therefore, are grouped together as the same query with the same digest.</li>
+</ul>
+
+<p>Now that you know how to check query data in the <code>stats_mysql_query_digest</code> table, exit the <code>mysql</code> shell:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">exit;
+</li></ul></code></pre>
+<p>The database you downloaded contains some tables with demo data. You will now test queries on the <code>dept_emp</code> table by selecting any records whose <code>from_date</code> is greater than <code>2000-04-20</code> and recording the average execution time.</p>
+
+<p>Use this command to run the test:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysqlslap -usammy -P6033 -p -h127.0.0.1  --concurrency=100 --iterations=20 --create-schema=employees --query="SELECT * from dept_emp WHERE from_date&gt;'2000-04-20'" --verbose
+</li></ul></code></pre>
+<p>Here you are using some new flags:</p>
+
+<ul>
+<li><code>--concurrency=100</code>: This sets the number of users to simulate, in this case <code>100</code>.</li>
+<li><code>--iterations=20</code>: This causes the test to run <code>20</code> times and calculate results from all of them.</li>
+<li><code>--create-schema=employees</code>: Here you selected the <code>employees</code> database.</li>
+<li><code>--query="SELECT * from dept_emp WHERE from_date&gt;'2000-04-20'"</code>: Here you specified the query executed in the test.</li>
+</ul>
+
+<p>The test will take a few minutes. After it is done, you will get results similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Benchmark
+        Average number of seconds to run all queries: <span class="highlight">18.117</span> seconds
+        Minimum number of seconds to run all queries: <span class="highlight">8.726</span> seconds
+        Maximum number of seconds to run all queries: <span class="highlight">22.697</span> seconds
+        Number of clients running queries: 100
+        Average number of queries per client: 1
+</code></pre>
+<p>Your numbers could be a little different. Keep these numbers somewhere in order to compare them with the results from after you enable caching.</p>
+
+<p>After testing ProxySQL without caching, it is time to run the same test again, but this time with caching enabled.</p>
+
+<h2 id="step-4-—-testing-using-mysqlslap-with-caching">Step 4 — Testing Using <code>mysqlslap</code> With Caching</h2>
+
+<p>In this step, caching will help us to decrease latency when executing similar queries. Here, you will identify the queries executed, take their digests from ProxySQL&rsquo;s <code>stats_mysql_query_digest</code> table, and use them to enable caching. Then, you will test again to check the difference.</p>
+
+<p>To enable caching, you need to know the digests of the queries that will be cached. Log in to the ProxySQL admin interface using this command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -uadmin -p -h127.0.0.1 -P6032
+</li></ul></code></pre>
+<p>Then execute this query again to get a list of queries executed and their digests:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">SELECT count_star,sum_time,hostgroup,digest,digest_text FROM stats_mysql_query_digest ORDER BY sum_time DESC;
+</li></ul></code></pre>
+<p>You will get a result similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+------------+-------------+-----------+--------------------+------------------------------------------+
+| count_star | sum_time    | hostgroup | digest             | digest_text                              |
++------------+-------------+-----------+--------------------+------------------------------------------+
+| 2000       | 33727110501 | 1         | 0xC5DDECD7E966A6C4 | SELECT * from dept_emp WHERE from_date&gt;? |
+| 1          | 601         | 1         | 0xF8F780C47A8D1D82 | SELECT @@HOSTNAME as hostname            |
+| 1          | 0           | 1         | 0x226CD90D52A2BA0B | select @@version_comment limit ?         |
++------------+-------------+-----------+--------------------+------------------------------------------+
+3 rows in set (0.00 sec)
+</code></pre>
+<p>Look at the first row. It is about a query that was executed 2000 times. This is the benchmarked query executed previously. Take its digest and save it to be used in adding a query rule for caching.</p>
+
+<p>The next few queries will add a new query rule to ProxySQL that will match the digest of the previous query and put a <code>cache_ttl</code> value for it. <code>cache_ttl</code> is the number of milliseconds that the result will be cached in memory:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">INSERT INTO mysql_query_rules(active, digest, cache_ttl, apply) VALUES(1,'<span class="highlight">0xC5DDECD7E966A6C4</span>',2000,1);
+</li></ul></code></pre>
+<p>In this command you are adding a new record to the <code>mysql_query_rules</code> table; this table holds all the rules applied before executing a query. In this example, you are adding a value for the <code>cache_ttl</code> column that will cause the matched query by the given digest to be cached for a number of milliseconds specified in this column. You put <code>1</code> in the apply column to make sure that the rule is applied to queries.</p>
+
+<p><code>LOAD</code> and <code>SAVE</code> these changes, then exit the <code>mysql</code> shell:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">LOAD MYSQL QUERY RULES TO RUNTIME;
+</li><li class="line" prefix="mysql&gt;">SAVE MYSQL QUERY RULES TO DISK;
+</li><li class="line" prefix="mysql&gt;">exit;
+</li></ul></code></pre>
+<p>Now that caching is enabled, re-run the test again to check the result:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysqlslap -usammy -P6033 -p -h127.0.0.1  --concurrency=100 --iterations=20 --create-schema=employees --query="SELECT * from dept_emp WHERE from_date&gt;'2000-04-20'" --verbose
+</li></ul></code></pre>
+<p>This will give output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Benchmark
+        Average number of seconds to run all queries: <span class="highlight">7.020</span> seconds
+        Minimum number of seconds to run all queries: <span class="highlight">0.274</span> seconds
+        Maximum number of seconds to run all queries: <span class="highlight">23.014</span> seconds
+        Number of clients running queries: 100
+        Average number of queries per client: 1
+</code></pre>
+<p>Here you can see the big difference in average execution time: it dropped from <code><span class="highlight">18.117</span></code> seconds to <code><span class="highlight">7.020</span></code>.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this article, you set up transparent caching with ProxySQL to cache database query results. You also tested the query speed with and without caching to see the difference that caching can make. </p>
+
+<p>You&rsquo;ve used one level of caching in this tutorial. You could also try, <em>web caching</em>, which sits in front of a web server and caches the responses to similar requests, sending the response back to the client without hitting the back-end servers. This is very similar to ProxySQL caching but at a different level. To learn more about web caching, check out our <a href="https://www.digitalocean.com/community/tutorials/web-caching-basics-terminology-http-headers-and-caching-strategies">Web Caching Basics: Terminology, HTTP Headers, and Caching Strategies primer</a>.</p>
+
+<p>MySQL server also has its own query cache; you can learn more about it in our <a href="https://www.digitalocean.com/community/tutorials/how-to-optimize-mysql-with-query-cache-on-ubuntu-18-04">How To Optimize MySQL with Query Cache on Ubuntu 18.04 tutorial</a>.</p>

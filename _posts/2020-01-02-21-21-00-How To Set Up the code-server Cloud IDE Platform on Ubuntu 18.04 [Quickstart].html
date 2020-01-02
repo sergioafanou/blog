@@ -1,0 +1,194 @@
+---
+layout: post
+title: How To Set Up the code-server Cloud IDE Platform on Ubuntu 18.04 [Quickstart]
+network: digitalocean
+date: January 02, 2020 at 09:21PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-the-code-server-cloud-ide-platform-on-ubuntu-18-04-quickstart
+image: https://assets.digitalocean.com/articles/code-server-1804/step2a.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://github.com/cdr/code-server">code-server</a> is <a href="https://code.visualstudio.com/">Microsoft Visual Studio Code</a> running on a remote server and accessible directly from your browser. This means that you can use various devices, running different operating systems, and always have a consistent development environment on hand.</p>
+
+<p>In this tutorial, you will set up the code-server cloud IDE platform on your Ubuntu 18.04 machine and expose it at your domain, secured with Let&rsquo;s Encrypt. For a more detailed version of this tutorial, please refer to <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-the-code-server-cloud-ide-platform-on-ubuntu-18-04">How To Set Up the code-server Cloud IDE Platform on Ubuntu 18.04</a>.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<ul>
+<li><p>A server running Ubuntu 18.04 with at least 2GB of RAM, root access, and a sudo, non-root account. You can set this up by following <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">the Initial Server Setup Guide for Ubuntu 18.04</a>.</p></li>
+<li><p>Nginx installed on your server. For a guide on how to do this, complete Steps 1 to 4 of <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">How To Install Nginx on Ubuntu 18.04</a>.</p></li>
+<li><p>A fully registered domain name to host code-server, pointed to your server. This tutorial will use <code><span class="highlight">code-server.your-domain</span></code> throughout. You can purchase a domain name on <a href="https://www.namecheap.com/">Namecheap</a>, get one for free on <a href="https://www.freenom.com/en/index.html?lang=en">Freenom</a>, or use the domain registrar of your choice.</p></li>
+<li><p>Both of the following DNS records set up for your server. You can follow <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">this introduction to DigitalOcean DNS</a> for details on how to add them.</p>
+
+<ul>
+<li>An A record with <code><span class="highlight">your-domain</span></code> pointing to your server&rsquo;s public IP address.</li>
+<li>An A record with <code>www.<span class="highlight">your-domain</span></code> pointing to your server&rsquo;s public IP address.</li>
+</ul></li>
+</ul>
+
+<h2 id="step-1-—-installing-code-server">Step 1 — Installing code-server</h2>
+
+<p>Create the directory to store all data for code-server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/code-server
+</li></ul></code></pre>
+<p>Navigate to it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/code-server
+</li></ul></code></pre>
+<p>Visit the <a href="https://github.com/cdr/code-server/releases">Github releases</a> page of code-server and pick the latest Linux build. Download it using:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget <span class="highlight">https://github.com/cdr/code-server/releases/download/2.1692-vsc1.39.2/code-server2.1692-vsc1.39.2-linux-x86_64.tar.gz</span>
+</li></ul></code></pre>
+<p>Unpack the archive:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tar -xzvf <span class="highlight">code-server2.1692-vsc1.39.2-linux-x86_64.tar.gz</span>
+</li></ul></code></pre>
+<p>Navigate to the directory containing the code-server executable:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">code-server2.1692-vsc1.39.2-linux-x86_64</span>
+</li></ul></code></pre>
+<p>To access the code-server executable across your system, copy it with:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp code-server /usr/local/bin
+</li></ul></code></pre>
+<p>Create a folder for code-server to store user data:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /var/lib/code-server
+</li></ul></code></pre>
+<p>Create a <a href="https://www.digitalocean.com/community/tutorials/understanding-systemd-units-and-unit-files"><code>systemd</code></a> service, <code>code-server.service</code>, in the <code>/lib/systemd/system</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /lib/systemd/system/code-server.service
+</li></ul></code></pre>
+<p>Add the following lines:</p>
+<div class="code-label " title="/lib/systemd/system/code-server.service">/lib/systemd/system/code-server.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=code-server
+After=nginx.service
+
+[Service]
+Type=simple
+Environment=PASSWORD=<span class="highlight">your_password</span>
+ExecStart=/usr/local/bin/code-server --host 127.0.0.1 --user-data-dir /var/lib/code-server --auth password
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<ul>
+<li><code>--host 127.0.0.1</code> binds it to <code>localhost</code>.</li>
+<li><code>--user-data-dir /var/lib/code-server</code> sets its user data directory.</li>
+<li><code>--auth password</code> specifies that it should authenticate visitors with a password.</li>
+</ul>
+
+<p>Remember to replace <code><span class="highlight">your_password</span></code> with your desired password.</p>
+
+<p>Save and close the file.</p>
+
+<p>Start the code-server service:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start code-server
+</li></ul></code></pre>
+<p>Check that it&rsquo;s started correctly:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status code-server
+</li></ul></code></pre>
+<p>You&rsquo;ll see output similar to:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● code-server.service - code-server
+   Loaded: loaded (/lib/systemd/system/code-server.service; disabled; vendor preset: enabled)
+   Active: active (running) since Mon 2019-12-09 20:07:28 UTC; 4s ago
+ Main PID: 5216 (code-server)
+    Tasks: 23 (limit: 2362)
+   CGroup: /system.slice/code-server.service
+           ├─5216 /usr/local/bin/code-server --host 127.0.0.1 --user-data-dir /var/lib/code-server --auth password
+           └─5240 /usr/local/bin/code-server --host 127.0.0.1 --user-data-dir /var/lib/code-server --auth password
+...
+</code></pre>
+<p>Enable the code-server service to start automatically after a server reboot:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable code-server
+</li></ul></code></pre>
+<h2 id="step-2-—-exposing-code-server">Step 2 — Exposing code-server</h2>
+
+<p>Now you will configure Nginx as a reverse proxy for code-server.</p>
+
+<p>Create <code>code-server.conf</code> to store the configuration for exposing code-server at your domain:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/code-server.conf
+</li></ul></code></pre>
+<p>Add the following lines to set up your server block with the necessary directives:</p>
+<div class="code-label " title="/etc/nginx/sites-available/code-server.conf">/etc/nginx/sites-available/code-server.conf</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+    listen [::]:80;
+
+    server_name <span class="highlight">code-server.your_domain</span>;
+
+    location / {
+        proxy_pass http://localhost:8080/;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection upgrade;
+        proxy_set_header Accept-Encoding gzip;
+    }
+}
+</code></pre>
+<p>Replace <code><span class="highlight">code-server.your_domain</span></code> with your desired domain, then save and close the file.</p>
+
+<p>To make this site configuration active, create a symlink of it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/code-server.conf /etc/nginx/sites-enabled/code-server.conf
+</li></ul></code></pre>
+<p>Test the validity of the configuration:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>You&rsquo;ll see the following output:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+</code></pre>
+<p>For the configuration to take effect, restart Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<h2 id="step-3-—-securing-your-domain">Step 3 — Securing Your Domain</h2>
+
+<p>Now you&rsquo;ll secure your domain using a Let&rsquo;s Encrypt TLS certificate.</p>
+
+<p>Add the Certbot package repository to your server:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository ppa:certbot/certbot
+</li></ul></code></pre>
+<p>Install Certbot and its Nginx plugin:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python-certbot-nginx
+</li></ul></code></pre>
+<p>Configure <code>ufw</code> to accept encrypted traffic:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow https
+</li></ul></code></pre>
+<p>The output will be:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Rule added
+Rule added (v6)
+</code></pre>
+<p>Reload it for the configuration to take effect:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw reload
+</li></ul></code></pre>
+<p>The output will show:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Firewall reloaded
+</code></pre>
+<p>Navigate to your code-server domain.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/code-server-1804/step2a.png" alt="code-server login prompt"></p>
+
+<p>Enter your code-server password. You&rsquo;ll see the interface exposed at your domain.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/code-server-1804/step2b.png" alt="code-server GUI"></p>
+
+<p>To secure it, install a Let&rsquo;s Encrypt TLS certificate using Certbot.</p>
+
+<p>Request a certificate for your domain with:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --nginx -d <span class="highlight">code-server.your_domain</span>
+</li></ul></code></pre>
+<p>Provide an email address for urgent notices, accept the EFF&rsquo;s Terms of Service, and decide whether to redirect all HTTP traffic to HTTPS.</p>
+
+<p>The output will be similar to this:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>IMPORTANT NOTES:
+ - Congratulations! Your certificate and chain have been saved at:
+   /etc/letsencrypt/live/<span class="highlight">code-server.your_domain</span>/fullchain.pem
+   Your key file has been saved at:
+   /etc/letsencrypt/live/<span class="highlight">code-server.your_domain</span>/privkey.pem
+   Your cert will expire on ... To obtain a new or tweaked
+   version of this certificate in the future, simply run certbot again
+   with the "certonly" option. To non-interactively renew *all* of
+   your certificates, run "certbot renew"
+...
+</code></pre>
+<p>Certbot has successfully generated TLS certificates and applied them to the Nginx configuration for your domain.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>You now have code-server, a versatile cloud IDE, installed on your Ubuntu 18.04 server, exposed at your domain and secured using Let&rsquo;s Encrypt certificates. For further information, see the <a href="https://code.visualstudio.com/docs">Visual Studio Code documentation</a> for additional features and detailed instructions on other components of code-server.</p>

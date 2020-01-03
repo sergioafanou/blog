@@ -1,0 +1,323 @@
+---
+layout: post
+title: How To Deploy and Manage Your DNS Using DNSControl on Debian 10
+network: digitalocean
+date: January 03, 2020 at 09:30PM
+url: https://www.digitalocean.com/community/tutorials/how-to-deploy-and-manage-your-dns-using-dnscontrol-on-debian-10
+image: https://assets.digitalocean.com/articles/dnscontrols1804/step5a.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/organizations/electronic-frontier-foundation-inc">Electronic Frontier Foundation Inc</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://stackexchange.github.io/dnscontrol/">DNSControl</a> is an <a href="https://en.wikipedia.org/wiki/Infrastructure_as_code">infrastructure-as-code</a> tool that allows you to deploy and manage your DNS zones using standard software development principles, including version control, testing, and automated deployment. DNSControl was created by Stack Exchange and is written in Go.</p>
+
+<p>Using DNSControl eliminates many of the pitfalls of manual DNS management, as zone files are stored in a programmable format. This allows you to deploy zones to multiple DNS providers simultaneously, identify syntax errors, and push out your DNS configuration automatically, reducing the risk of human error. Another common usage of DNSControl is to quickly migrate your DNS to a different provider; for example, in the event of a DDoS attack or system outage.</p>
+
+<p>In this tutorial, you&rsquo;ll install and configure DNSControl, create a basic DNS configuration, and begin deploying DNS records to a live provider. As part of this tutorial, we will use DigitalOcean as the example DNS provider. If you wish to use a <a href="https://stackexchange.github.io/dnscontrol/provider-list">different provider</a>, the setup is very similar. When you&rsquo;re finished, you&rsquo;ll be able to manage and test your DNS configuration in a safe, offline environment, and then automatically deploy it to production.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide you&rsquo;ll need the following:</p>
+
+<ul>
+<li>One Debian 10 server set up by following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Initial Server Setup with Debian 10</a>, including a sudo non-root user and enabled firewall to block non-essential ports. <code><span class="highlight">your-server-ipv4-address</span></code> refers to the IP address of the server where you&rsquo;re hosting your website or domain. <code><span class="highlight">your-server-ipv6-address</span></code> refers to the IPv6 address of the server where you&rsquo;re hosting your website or domain.</li>
+<li>A fully registered domain name with DNS hosted by a <a href="https://github.com/StackExchange/dnscontrol#dnscontrol">supported provider</a>. This tutorial will use <code><span class="highlight">your_domain</span></code> throughout and DigitalOcean as the service provider.</li>
+<li>A DigitalOcean API key (Personal Access Token) with read and write permissions. To create one, visit <a href="https://www.digitalocean.com/docs/api/create-personal-access-token/">How to Create a Personal Access Token</a>.</li>
+</ul>
+
+<p>Once you have these ready, log in to your server as your non-root user to begin.</p>
+
+<h2 id="step-1-—-installing-dnscontrol">Step 1 — Installing DNSControl</h2>
+
+<p>DNSControl is written in Go, so you&rsquo;ll start this step by installing Go to your server and setting your <code>GOPATH</code>.</p>
+
+<p>Go is available within Debian&rsquo;s default software repositories, making it possible to install using conventional package management tools.</p>
+
+<p>You&rsquo;ll also need to install Git, as this is required to allow Go to download and install the DNSControl software from it&rsquo;s repository on GitHub.</p>
+
+<p>Begin by updating the local package index to reflect any new upstream changes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Then, install the <code>golang-go</code> and <code>git</code> packages:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install golang-go git
+</li></ul></code></pre>
+<p>After confirming the installation, <code>apt</code> will download and install Go and Git, as well as all of their required dependencies.</p>
+
+<p>Next, you&rsquo;ll configure the required path environment variables for Go. If you would like to know more about this, you can read this tutorial on <a href="https://www.digitalocean.com/community/tutorials/understanding-the-gopath">Understanding the GOPATH</a>. Start by editing the <code>~/.profile</code> file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/.profile
+</li></ul></code></pre>
+<p>Add the following lines to the very end of your file:</p>
+<div class="code-label " title="~/.profile">~/.profile</div><pre class="code-pre "><code langs="">...
+export GOPATH="$HOME/go"
+export PATH="$PATH:$GOPATH/bin"
+</code></pre>
+<p>Once you have added these lines to the bottom of the file, save and close it. Then reload your profile by either logging out and back in, or sourcing the file again:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ~/.profile
+</li></ul></code></pre>
+<p>Now you&rsquo;ve installed and configured Go, you can install DNSControl.</p>
+
+<p>The <code>go get</code> command can be used to fetch a copy of the code, automatically compile it, and install it into your Go directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go get github.com/StackExchange/dnscontrol
+</li></ul></code></pre>
+<p>Once this is complete, you can check the installed version to make sure that everything is working:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">dnscontrol version
+</li></ul></code></pre>
+<p>Your output will look similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>dnscontrol <span class="highlight">2.9-dev</span>
+</code></pre>
+<p>If you see a <code>dnscontrol: command not found</code> error, double-check your Go path setup.</p>
+
+<p>Now that you&rsquo;ve installed DNSControl, you can create a configuration directory and connect DNSControl to your DNS provider in order to allow it to make changes to your DNS records.</p>
+
+<h2 id="step-2-—-configuring-dnscontrol">Step 2 — Configuring DNSControl</h2>
+
+<p>In this step, you&rsquo;ll create the required configuration directories for DNSControl, and connect it to your DNS provider so that it can begin to make live changes to your DNS records.</p>
+
+<p>Firstly, create a new directory in which you can store your DNSControl configuration, and then move into it:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/dnscontrol
+</li><li class="line" prefix="$">cd ~/dnscontrol
+</li></ul></code></pre>
+<p><span class='note'><strong>Note:</strong> This tutorial will focus on the initial set up of DNSControl; however for production use it is recommended to store your DNSControl configuration in a version control system (VCS) such as <a href="https://www.digitalocean.com/community/tutorial_series/introduction-to-git-installation-usage-and-branches">Git</a>. The advantages of this include full version control, integration with CI/CD for testing, seamlessly rolling-back deployments, and so on.<br></span></p>
+
+<p>If you plan to use DNSControl to write BIND zone files, you should also create the <code>zones</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/dnscontrol/zones
+</li></ul></code></pre>
+<p><a href="https://en.wikipedia.org/wiki/Zone_file">BIND zone files</a> are a raw, standardized method for storing DNS zones/records in plain text format. They were originally used for the BIND DNS server software, but are now widely adopted as the standard method for storing DNS zones. BIND zone files produced by DNSControl are useful if you want to import them to a custom or self-hosted DNS server, or for auditing purposes.</p>
+
+<p>However, if you just want to use DNSControl to push DNS changes to a managed provider, the <code>zones</code> directory will not be needed.</p>
+
+<p>Next, you need to configure the <code>creds.json</code> file, which is what will allow DNSControl to authenticate to your DNS provider and make changes. The format of <code>creds.json</code> differs slightly depending on the DNS provider that you are using. Please see the <a href="https://stackexchange.github.io/dnscontrol/provider-list">Service Providers list</a> in the official DNSControl documentation to find the configuration for your own provider.</p>
+
+<p>Create the file <code>creds.json</code> in the <code>~/dnscontrol</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/dnscontrol
+</li><li class="line" prefix="$">nano creds.json
+</li></ul></code></pre>
+<p>Add the sample <code>creds.json</code> configuration for your DNS provider to the file. If you&rsquo;re using DigitalOcean as your DNS provider, you can use the following:</p>
+<div class="code-label " title="~/dnscontrol/creds.json">~/dnscontrol/creds.json</div><pre class="code-pre creds"><code langs="">{
+"digitalocean": {
+  "token": "<span class="highlight">your-digitalocean-oauth-token</span>"
+}
+}
+</code></pre>
+<p>This file tells DNSControl to which DNS providers you want it to connect.</p>
+
+<p>You&rsquo;ll need to provide some form of authentication for your DNS provider. This is usually an API key or OAuth token, but some providers require extra information, as documented in the <a href="https://stackexchange.github.io/dnscontrol/provider-list">Service Providers list</a> in the official DNSControl documentation.</p>
+
+<p><span class='warning'><strong>Warning:</strong> This token will grant access to your DNS provider account, so you should protect it as you would a password. Also, ensure that if you&rsquo;re using a version control system, either the file containing the token is excluded (e.g. using <code>.gitignore</code>), or is securely encrypted in some way.<br></span></p>
+
+<p>If you&rsquo;re using DigitalOcean as your DNS provider, you can use the required OAuth token <a href="https://cloud.digitalocean.com/settings/applications">in your DigitalOcean account settings</a> that you generated as part of the prerequisites.</p>
+
+<p>If you have multiple different DNS providers—for example, for multiple domain names, or delegated DNS zones—you can define these all in the same <code>creds.json</code> file.</p>
+
+<p>You&rsquo;ve set up the initial DNSControl configuration directories, and configured <code>creds.json</code> to allow DNSControl to authenticate to your DNS provider and make changes. Next you&rsquo;ll create the configuration for your DNS zones.</p>
+
+<h2 id="step-3-—-creating-a-dns-configuration-file">Step 3 — Creating a DNS Configuration File</h2>
+
+<p>In this step, you&rsquo;ll create an initial DNS configuration file, which will contain the DNS records for your domain name or delegated DNS zone.</p>
+
+<p><code>dnsconfig.js</code> is the main DNS configuration file for DNSControl. In this file, DNS zones and their corresponding records are defined using JavaScript syntax. This is known as a DSL, or Domain Specific Language. The <a href="https://stackexchange.github.io/dnscontrol/js">JavaScript DSL</a> page in the official DNSControl documentation provides further details.</p>
+
+<p>To begin, create the DNS configuration file in the <code>~/dnscontrol</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/dnscontrol
+</li><li class="line" prefix="$">nano dnsconfig.js
+</li></ul></code></pre>
+<p>Then, add the following sample configuration to the file:</p>
+<div class="code-label " title="~/dnscontrol/dnsconfig.js">~/dnscontrol/dnsconfig.js</div><pre class="code-pre dnsconfig"><code langs="">// Providers:
+
+var <span class="highlight">REG_NONE</span> = NewRegistrar('<span class="highlight">none</span>', '<span class="highlight">NONE</span>');
+var <span class="highlight">DNS_DIGITALOCEAN</span> = NewDnsProvider('<span class="highlight">digitalocean</span>', '<span class="highlight">DIGITALOCEAN</span>');
+
+// Domains:
+
+D('<span class="highlight">your_domain</span>', <span class="highlight">REG_NONE</span>, DnsProvider(<span class="highlight">DNS_DIGITALOCEAN</span>),
+  A('@', '<span class="highlight">your-server-ipv4-address</span>')
+);
+</code></pre>
+<p>This sample file defines a domain name or DNS zone at a particular provider, which in this case is <code><span class="highlight">your_domain</span></code> hosted by DigitalOcean. An example <code>A</code> record is also defined for the zone root (<code>@</code>), pointing to the IPv4 address of the server that you&rsquo;re hosting your domain/website on.</p>
+
+<p>There are three main functions that make up a basic DNSControl configuration file:</p>
+
+<ul>
+<li><p><code>NewRegistrar(name, type, metadata)</code>: defines the domain registrar for your domain name. DNSControl can use this to make required changes, such as modifying the authoritative nameservers. If you only want to use DNSControl to manage your DNS zones, this can generally be left as <code>NONE</code>.</p></li>
+<li><p><code>NewDnsProvider(name, type, metadata)</code>: defines a DNS service provider for your domain name or delegated zone. This is where DNSControl will push the DNS changes that you make.</p></li>
+<li><p><code>D(name, registrar, modifiers)</code>: defines a domain name or delegated DNS zone for DNSControl to manage, as well as the DNS records present in the zone.</p></li>
+</ul>
+
+<p>You should configure <code>NewRegistrar()</code>, <code>NewDnsProvider()</code>, and <code>D()</code> accordingly using the <a href="https://stackexchange.github.io/dnscontrol/provider-list">Service Providers list</a> in the official DNSControl documentation.</p>
+
+<p>If you&rsquo;re using DigitalOcean as your DNS provider, and only need to be able to make DNS changes (rather than authoritative nameservers as well), the sample in the preceding code block is already correct.</p>
+
+<p>Once complete, save and close the file.</p>
+
+<p>In this step, you set up a DNS configuration file for DNSControl, with the relevant providers defined. Next, you&rsquo;ll populate the file with some useful DNS records.</p>
+
+<h2 id="step-4-—-populating-your-dns-configuration-file">Step 4 — Populating Your DNS Configuration File</h2>
+
+<p>Next, you can populate the DNS configuration file with useful DNS records for your website or service, using the DNSControl syntax.</p>
+
+<p>Unlike traditional BIND zone files, where DNS records are written in a raw, line-by-line format, DNS records within DNSControl are defined as a function parameter (domain modifier) to the <code>D()</code> function, as shown briefly in Step 3.</p>
+
+<p>A domain modifier exists for each of the standard DNS record types, including <code>A</code>, <code>AAAA</code>, <code>MX</code>, <code>TXT</code>, <code>NS</code>, <code>CAA</code>, and so on. A full list of available record types is available in the <a href="https://stackexchange.github.io/dnscontrol/js#domain-modifiers">Domain Modifiers</a> section of the DNSControl documentation.</p>
+
+<p>Modifiers for individual records are also available (record modifiers). Currently these are primarily used for setting the TTL (time to live) of individual records. A full list of available record modifiers is available in the <a href="https://stackexchange.github.io/dnscontrol/js#record-modifiers">Record Modifiers</a> section of the DNSControl documentation. Record modifiers are optional, and in most basic use cases can be left out.</p>
+
+<p>The syntax for setting DNS records varies slightly for each record type. Following are some examples for the most common record types:</p>
+
+<ul>
+<li><p><code>A</code> records:</p>
+
+<ul>
+<li>Purpose: To point to an IPv4 address.</li>
+<li>Syntax: <code>A('<span class="highlight">name</span>', '<span class="highlight">address</span>', optional record modifiers)</code></li>
+<li>Example: <code>A('<span class="highlight">@</span>', '<span class="highlight">your-server-ipv4-address</span>', TTL(<span class="highlight">30</span>))</code></li>
+</ul></li>
+<li><p><code>AAAA</code> records:</p>
+
+<ul>
+<li>Purpose: To point to an IPv6 address.</li>
+<li>Syntax: <code>AAAA('<span class="highlight">name</span>', '<span class="highlight">address</span>', optional record modifiers)</code></li>
+<li>Example: <code>AAAA('<span class="highlight">@</span>', '<span class="highlight">your-server-ipv6-address</span>')</code> (record modifier left out, so default TTL will be used)</li>
+</ul></li>
+<li><p><code>CNAME</code> records:</p>
+
+<ul>
+<li>Purpose: To make your domain/subdomain an alias of another.</li>
+<li>Syntax: <code>CNAME('<span class="highlight">name</span>', '<span class="highlight">target</span>', optional record modifiers)</code></li>
+<li>Example: <code>CNAME('<span class="highlight">subdomain1</span>', '<span class="highlight">example.org.</span>')</code> (note that a trailing <code>.</code> <strong>must</strong> be included if there are any dots in the value)</li>
+</ul></li>
+<li><p><code>MX</code> records:</p>
+
+<ul>
+<li>Purpose: To direct email to specific servers/addresses.</li>
+<li>Syntax: <code>MX('<span class="highlight">name</span>', '<span class="highlight">priority</span>', '<span class="highlight">target</span>', optional record modifiers)</code></li>
+<li>Example: <code>MX('<span class="highlight">@</span>', <span class="highlight">10</span>, '<span class="highlight">mail.example.net</span>')</code> (note that a trailing <code>.</code> <strong>must</strong> be included if there are any dots in the value)</li>
+</ul></li>
+<li><p><code>TXT</code> records:</p>
+
+<ul>
+<li>Purpose: To add arbitrary plain text, often used for configurations without their own dedicated record type.</li>
+<li>Syntax: <code>TXT('<span class="highlight">name</span>', '<span class="highlight">content</span>', optional record modifiers)</code></li>
+<li>Example: <code>TXT('<span class="highlight">@</span>', '<span class="highlight">This is a TXT record.</span>')</code></li>
+</ul></li>
+<li><p><code>CAA</code> records:</p>
+
+<ul>
+<li>Purpose: To restrict and report on Certificate Authorities (CAs) who can issue TLS certificates for your domain/subdomains.</li>
+<li>Syntax: <code>CAA('<span class="highlight">name</span>', '<span class="highlight">tag</span>', '<span class="highlight">value</span>', optional record modifiers)</code></li>
+<li>Example: <code>CAA('<span class="highlight">@</span>', '<span class="highlight">issue</span>', '<span class="highlight">letsencrypt.org</span>')</code></li>
+</ul></li>
+</ul>
+
+<p>In order to begin adding DNS records for your domain or delegated DNS zone, edit your DNS configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano dnsconfig.js
+</li></ul></code></pre>
+<p>Next, you can begin populating the parameters for the existing <code>D()</code> function using the syntax described in the previous list, as well as the <a href="https://stackexchange.github.io/dnscontrol/js#domain-modifiers">Domain Modifiers</a> section of the official DNSControl documentation. A comma (<code>,</code>) must be used in-between each record.</p>
+
+<p>For reference, the code block here contains a full sample configuration for a basic, initial DNS setup:</p>
+<div class="code-label " title="~/dnscontrol/dnsconfig.js">~/dnscontrol/dnsconfig.js</div><pre class="code-pre dnsconfig"><code langs="">...
+
+D('<span class="highlight">your_domain</span>', <span class="highlight">REG_NONE</span>, DnsProvider(<span class="highlight">DNS_DIGITALOCEAN</span>),
+  A('<span class="highlight">@</span>', '<span class="highlight">your-server-ipv4-address</span>'),
+  A('<span class="highlight">www</span>', '<span class="highlight">your-server-ipv4-address</span>'),
+  A('<span class="highlight">mail</span>', '<span class="highlight">your-server-ipv4-address</span>'),
+  AAAA('<span class="highlight">@</span>', '<span class="highlight">your-server-ipv6-address</span>'),
+  AAAA('<span class="highlight">www</span>', '<span class="highlight">your-server-ipv6-address</span>'),
+  AAAA('<span class="highlight">mail</span>', '<span class="highlight">your-server-ipv6-address</span>'),
+  MX('<span class="highlight">@</span>', <span class="highlight">10</span>, '<span class="highlight">mail.your_domain.</span>'),
+  TXT('<span class="highlight">@</span>', '<span class="highlight">v=spf1 -all</span>'),
+  TXT('<span class="highlight">_dmarc</span>', '<span class="highlight">v=DMARC1; p=reject; rua=mailto:abuse@your_domain; aspf=s; adkim=s;</span>')
+);
+</code></pre>
+<p>Once you have completed your initial DNS configuration, save and close the file.</p>
+
+<p>In this step, you set up the initial DNS configuration file, containing your DNS records. Next, you will test the configuration and deploy it.</p>
+
+<h2 id="step-5-—-testing-and-deploying-your-dns-configuration">Step 5 — Testing and Deploying Your DNS Configuration</h2>
+
+<p>In this step, you will run a local syntax check on your DNS configuration, and then deploy the changes to the live DNS server/provider.</p>
+
+<p>Firstly, move into your <code>dnscontrol</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/dnscontrol
+</li></ul></code></pre>
+<p>Next, use the <code>preview</code> function of DNSControl to check the syntax of your file, and output what changes it will make (without actually making them):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">dnscontrol preview
+</li></ul></code></pre>
+<p>If the syntax of your DNS configuration file is correct, DNSControl will output an overview of the changes that it will make. This should look similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>******************** Domain: <span class="highlight">your_domain</span>
+----- Getting nameservers from: <span class="highlight">digitalocean</span>
+----- DNS Provider: <span class="highlight">digitalocean</span>...8 corrections
+#1: CREATE A <span class="highlight">your_domain</span> <span class="highlight">your-server-ipv4-address</span> ttl=300
+#2: CREATE A www.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv4-address</span> ttl=300
+#3: CREATE A mail.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv4-address</span> ttl=300
+#4: CREATE AAAA <span class="highlight">your_domain</span> <span class="highlight">your-server-ipv6-address</span> ttl=300
+#5: CREATE TXT _dmarc.<span class="highlight">your_domain</span> "v=DMARC1; p=reject; rua=mailto:abuse@<span class="highlight">your_domain</span>; aspf=s; adkim=s;" ttl=300
+#6: CREATE AAAA www.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv6-address</span> ttl=300
+#7: CREATE AAAA mail.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv6-address</span> ttl=300
+#8: CREATE MX <span class="highlight">your_domain</span> 10 mail.<span class="highlight">your_domain</span>. ttl=300
+----- Registrar: none...0 corrections
+Done. 8 corrections.
+</code></pre>
+<p>If you see an error warning in your output, DNSControl will provide details on what and where the error is located within your file.</p>
+
+<p><span class='warning'><strong>Warning:</strong> The next command will make live changes to your DNS records and possibly other settings. Please ensure that you are prepared for this, including taking a backup of your existing DNS configuration, as well as ensuring that you have the means to roll back if needed.<br></span></p>
+
+<p>Finally, you can push out the changes to your live DNS provider:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">dnscontrol push
+</li></ul></code></pre>
+<p>You&rsquo;ll see an output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>******************** Domain: <span class="highlight">your_domain</span>
+----- Getting nameservers from: <span class="highlight">digitalocean</span>
+----- DNS Provider: <span class="highlight">digitalocean</span>...8 corrections
+#1: CREATE TXT _dmarc.<span class="highlight">your_domain</span> "v=DMARC1; p=reject; rua=mailto:abuse@<span class="highlight">your_domain</span>; aspf=s; adkim=s;" ttl=300
+SUCCESS!
+#2: CREATE A <span class="highlight">your_domain</span> <span class="highlight">your-server-ipv4-address</span> ttl=300
+SUCCESS!
+#3: CREATE AAAA <span class="highlight">your_domain</span> <span class="highlight">your-server-ipv6-address</span> ttl=300
+SUCCESS!
+#4: CREATE AAAA www.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv6-address</span> ttl=300
+SUCCESS!
+#5: CREATE AAAA mail.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv6-address</span> ttl=300
+SUCCESS!
+#6: CREATE A www.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv4-address</span> ttl=300
+SUCCESS!
+#7: CREATE A mail.<span class="highlight">your_domain</span> <span class="highlight">your-server-ipv4-address</span> ttl=300
+SUCCESS!
+#8: CREATE MX <span class="highlight">your_domain</span> 10 mail.<span class="highlight">your_domain</span>. ttl=300
+SUCCESS!
+----- Registrar: none...0 corrections
+Done. 8 corrections.
+</code></pre>
+<p>Now, if you check the DNS settings for your domain in the DigitalOcean control panel, you&rsquo;ll see the changes.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/dnscontrols1804/step5a.png" alt="A screenshot of the DigitalOcean control panel, showing some of the DNS changes that DNSControl has made."></p>
+
+<p>You can also check the record creation by running a DNS query for your domain/delegated zone using <code>dig</code>.</p>
+
+<p>If you don&rsquo;t have <code>dig</code> installed, you&rsquo;ll need to install the <code>dnsutils</code> package:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install dnsutils
+</li></ul></code></pre>
+<p>Once you&rsquo;ve installed <code>dig</code>, you can use it to make a DNS lookup for your domain. You&rsquo;ll see that the records have been updated accordingly:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">dig +short <span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>You&rsquo;ll see output showing the IP address and relevant DNS record from your zone that was deployed using DNSControl. DNS records can take some time to propagate, so you may need to wait and run this command again.</p>
+
+<p>In this final step, you ran a local syntax check of the DNS configuration file, then deployed it to your live DNS provider, and tested that the changes were made successfully.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this article you set up DNSControl and deployed a DNS configuration to a live provider. Now you can manage and test your DNS configuration changes in a safe, offline environment before deploying them to production.</p>
+
+<p>If you wish to explore this subject further, DNSControl is designed to be integrated into your CI/CD pipeline, allowing you to run in-depth tests and have more control over your deployment to production. You could also look into integrating DNSControl into your infrastructure build/deployment processes, allowing you to deploy servers and add them to DNS completely automatically.</p>
+
+<p>If you wish to go further with DNSControl, the following DigitalOcean articles provide some interesting next steps to help integrate DNSControl into your change management and infrastructure deployment workflows:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-continuous-integration-delivery-and-deployment">An Introduction to Continuous Integration, Delivery, and Deployment</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/ci-cd-tools-comparison-jenkins-gitlab-ci-buildbot-drone-and-concourse">CI/CD Tools Comparison: Jenkins, GitLab CI, Buildbot, Drone, and Concourse</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorial_series/getting-started-with-configuration-management">Getting Started with Configuration Management</a></li>
+</ul>

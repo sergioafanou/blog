@@ -1,0 +1,152 @@
+---
+layout: post
+title: Установка веб-сервера Apache в Ubuntu 18.04. [Краткое руководство.]
+network: digitalocean
+date: January 07, 2020 at 07:49PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04-quickstart-ru
+image: https://assets.digitalocean.com/articles/how-to-install-lamp-ubuntu-16/small_apache_default.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>HTTP-сервер Apache — самый широко используемый веб-сервер в мире. Он имеет множество мощных функций, включая динамически загружаемые модули, надежную поддержку различных медиа-форматов и интеграцию с другим популярным программным обеспечением.</p>
+
+<p>В этом обучающем модуле мы расскажем, как установить веб-сервер Apache на сервере Ubuntu 18.04. Более подробную версию этого обучающего модуля можно найти в документе <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-apache-web-server-on-ubuntu-18-04">Установка веб-сервера Apache в Ubuntu 18.04</a>.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для прохождения этого обучающего модуля вам потребуется следующее:</p>
+
+<ul>
+<li>Один сервер Ubuntu 18.04 и обычный пользователь без прав root с привилегиями sudo. Также вам потребуется включить базовый брандмауэр, чтобы заблокировать все порты, кроме необходимых. Вы научитесь настраивать учетную запись обычного пользователя и брандмауэр для вашего сервера, следуя указаниям руководства <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Начальная настройка сервера Ubuntu 18.04</a>.</li>
+</ul>
+
+<p>Создав учетную запись, войдите в систему как пользователь без привилегий root.</p>
+
+<h2 id="Шаг-1-—-Установка-apache">Шаг 1 — Установка Apache</h2>
+
+<p>Apache доступен в используемых по умолчанию хранилищах программного обеспечения Ubuntu, и вы можете использовать для его установки стандартные средства управления пакетами.</p>
+
+<p>Обновите локальный индекс пакетов:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Установите пакет <code>apache2</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install apache2
+</li></ul></code></pre>
+<h2 id="Шаг-2-—-Настройка-брандмауэра">Шаг 2 — Настройка брандмауэра</h2>
+
+<p>Проверьте доступные профили приложений <code>ufw</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw app list
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Available applications:
+  Apache
+  Apache Full
+  Apache Secure
+  OpenSSH
+</code></pre>
+<p>Мы активируем профиль с наибольшими ограничениями, который будет разрешать заданный трафик, а именно трафик на порту <code>80</code> (обычный веб-трафик без шифрования):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Apache'
+</li></ul></code></pre>
+<p>Проверьте изменения:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+Apache                     ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)             
+Apache (v6)                ALLOW       Anywhere (v6)
+</code></pre>
+<h2 id="Шаг-3-—-Проверка-веб-сервера">Шаг 3 — Проверка веб-сервера</h2>
+
+<p>Используйте команду <code>systemd</code> init system, чтобы проверить работу службы:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status apache2
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● apache2.service - The Apache HTTP Server
+   Loaded: loaded (/lib/systemd/system/apache2.service; enabled; vendor preset: enabled)
+  Drop-In: /lib/systemd/system/apache2.service.d
+           └─apache2-systemd.conf
+   Active: <span class="highlight">active (running)</span> since Tue 2018-04-24 20:14:39 UTC; 9min ago
+ Main PID: 2583 (apache2)
+    Tasks: 55 (limit: 1153)
+   CGroup: /system.slice/apache2.service
+           ├─2583 /usr/sbin/apache2 -k start
+           ├─2585 /usr/sbin/apache2 -k start
+           └─2586 /usr/sbin/apache2 -k start
+</code></pre>
+<p>Откройте страницу Apache по умолчанию, чтобы подтвердить работу программного обеспечения через ваш IP-адрес:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>
+</code></pre>
+<p>Вы увидите веб-страницу Ubuntu 18.04 Apache по умолчанию:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/how-to-install-lamp-ubuntu-16/small_apache_default.png" alt="Страница Apache по умолчанию"></p>
+
+<h2 id="Шаг-4-—-Настройка-виртуальных-хостов-рекомендуется">Шаг 4 — Настройка виртуальных хостов (рекомендуется)</h2>
+
+<p>При использовании веб-сервера Apache вы можете использовать <em>виртуальные хосты</em> (аналогичные серверным блокам в Nginx) для инкапсуляции данных конфигурации и размещения на одном сервере нескольких доменов. Мы создадим домен <strong>your_domain</strong>, но вы должны <strong>заменить это имя собственным доменным именем</strong>. Чтобы узнать больше о настройке доменного имени с помощью DigitalOcean, пройдите наш обучающий модуль <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">Введение в DigitalOcean DNS</a>.</p>
+
+<p>Создайте каталог для <code>your_domain</code>:</p>
+<pre class="code-pre commmand"><code langs="">sudo mkdir /var/www/<span class="highlight">your_domain</span>
+</code></pre>
+<p>Назначьте владельца каталога:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R $USER:$USER /var/www/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Разрешения корневых каталогов веб-сервера должны быть правильными, если вы не изменяли значение <code>unmask</code>. Тем не менее, вы можете проверить это с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod -R 755 /var/www/<span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Создайте в качестве примера страницу <code>index.html</code>, используя <code>nano</code> или свой любимый редактор:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/<span class="highlight">your_domain</span>/index.html
+</li></ul></code></pre>
+<p>Добавьте в страницу следующий образец кода HTML:</p>
+<div class="code-label " title="/var/www/your_domain/index.html">/var/www/your_domain/index.html</div><pre class="code-pre "><code langs="">&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;Welcome to <span class="highlight">Your_domain</span>!&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;h1&gt;Success!  The <span class="highlight">your_domain</span> virtual host is working!&lt;/h1&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Создайте новый файл виртуального хоста в <code>/etc/apache2/sites-available/your_domain.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/<span class="highlight">your_domain</span>.conf
+</li></ul></code></pre>
+<p>Вставьте следующий блок конфигурации, обновленный с учетом новых имен каталога и домена:</p>
+<div class="code-label " title="/etc/apache2/sites-available/your_domain.conf">/etc/apache2/sites-available/your_domain.conf</div><pre class="code-pre "><code langs="">&lt;VirtualHost *:80&gt;
+    ServerAdmin webmaster@localhost
+    ServerName <span class="highlight">your_domain</span>
+    ServerAlias <span class="highlight">your_domain</span>
+    DocumentRoot /var/www/<span class="highlight">your_domain</span>
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+&lt;/VirtualHost&gt;
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Активируйте файл с помощью команды <code>a2ensite</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2ensite <span class="highlight">your_domain</span>.conf
+</li></ul></code></pre>
+<p>Отключите сайт по умолчанию, определеный в <code>000-default.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2dissite 000-default.conf
+</li></ul></code></pre>
+<p>Проверьте наличие ошибок конфигурации:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>Вы должны увидеть следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Syntax OK
+</code></pre>
+<p>Перезапустие Apache для внесения изменений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>Теперь Apache должен обслуживать ваше доменное имя. Вы можете проверить это, открыв в браузере адрес <code>http://example.com</code>, после чего должны увидеть примерно следующее:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/apache_virtual_hosts_ubuntu/vhost_your_domain.png" alt="Пример виртуального хоста Apache"></p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Теперь вы установили веб-сервер и у вас есть богатые возможности выбора типа обслуживаемого контента и технологий для расширения возможностей пользователя.</p>
+
+<p>Если вы хотите развернуть более сложный набор обслуживания приложений, ознакомьтесь с <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">этой статьей о настройке набора LAMP в Ubuntu 18.04</a>.</p>

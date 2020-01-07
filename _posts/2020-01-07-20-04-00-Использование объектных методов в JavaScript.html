@@ -1,0 +1,254 @@
+---
+layout: post
+title: Использование объектных методов в JavaScript
+network: digitalocean
+date: January 07, 2020 at 08:04PM
+url: https://www.digitalocean.com/community/tutorials/how-to-use-object-methods-in-javascript-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">Объекты</a> в JavaScript представляют собой наборы пар <strong>ключ</strong>/<strong>значение</strong>. Значения могут состоять из <strong>свойств</strong> и <strong>методов</strong> и содержать все другие типы данных JavaScript, в том числе строки, числа и логические операторы.</p>
+
+<p>Все объекты JavaScript происходят из родительского конструктора <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object"><code>Object</code></a>. <code>Объект</code> имеет множество полезных встроенных методов, позволяющих получать доступ к отдельным объектам и работать с ними напрямую. В отличие от используемых для экземпляров массивов <a href="https://www.digitalocean.com/community/tutorials/how-to-use-array-methods-in-javascript-mutator-methods">методов прототипа Array</a>, таких как <code>sort()</code> и <code>reverse()</code>, методы объекта используются напрямую в конструкторе <code>Object</code>, и используют в качестве параметра экземпляр объекта. Такие методы называются статическими.</p>
+
+<p>В этом обучающем модуле мы изучим все важные методы встроенных объектов, при этом каждый из разделов ниже относится к конкретному методу и включает пример использования.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для эффективного усвоения этого обучающего модуля вы должны быть знакомы с принципами создания и изменения объектов и работы с объектами. Подробнее об этих принципах можно узнать из статьи <a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">«Понимание объектов в JavaScript».</a></p>
+
+<p>Дополнительные указания по работе с JavaScript можно найти в серии статей <em><a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-javascript">«Программирование на JavaScript»</a></em>.</p>
+
+<h2 id="object-create">Object.create()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/create"><code>Object.create()</code></a> используется для создания новых объектов и их привязки к прототипу существующего объекта.</p>
+
+<p>Мы можем создать экземпляр объекта <code>job</code> и расширить его до конкретного объекта.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object with properties and methods
+const job = {
+    position: 'cashier',
+    type: 'hourly',
+    isAvailable: true,
+    showDetails() {
+        const accepting = this.isAvailable ? 'is accepting applications' : "is not currently accepting applications";
+
+        console.log(`The ${this.position} position is ${this.type} and ${accepting}.`);
+    }
+};
+
+// Use Object.create to pass properties
+const barista = Object.create(job);
+
+barista.position = "barista";
+barista.showDetails();
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>The barista position is hourly and is accepting applications.
+</code></pre>
+<p>Сейчас объект <code>barista</code> имеет только одно свойство <code>position</code>, но все остальные свойства и метода объекта <code>job</code> доступны через прототип. Метод <code>Object.create()</code> полезен для <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#dry-development">сокращения</a> кода за счет минимального дублирования.</p>
+
+<h2 id="object-keys">Object.keys()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/keys"><code>Object.keys()</code></a> создает массив, содержащий ключи объекта.</p>
+
+<p>Мы можем создать объект и распечатать массив ключей.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const employees = {
+    boss: 'Michael',
+    secretary: 'Pam',
+    sales: 'Jim',
+    accountant: 'Oscar'
+};
+
+// Get the keys of the object
+const keys = Object.keys(employees);
+
+console.log(keys);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["boss", "secretary", "sales", "accountant"]
+</code></pre>
+<p>Метод <code>Object.keys</code> можно использовать для итерации ключей и значений объекта.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Iterate through the keys
+Object.keys(employees).forEach(key =&gt; {
+    let value = employees[key];
+
+     console.log(`${key}: ${value}`);
+});
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>boss: Michael
+secretary: Pam
+sales: Jim
+accountant: Oscar
+</code></pre>
+<p>Также метод <code>Object.keys</code> полезен для проверки длины объекта.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Get the length of the keys
+const length = Object.keys(employees).length;
+
+console.log(length);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>4
+</code></pre>
+<p>С помощью свойства <code>length</code> мы можем подсчитать <code>4</code> свойства <code>сотрудников</code>.</p>
+
+<h2 id="object-values">Object.values()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/values"><code>Object.values()</code></a> создает массив, содержащий значения объекта.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const session = {
+    id: 1,
+    time: `26-July-2018`,
+    device: 'mobile',
+    browser: 'Chrome'
+};
+
+// Get all values of the object
+const values = Object.values(session);
+
+console.log(values);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[1, "26-July-2018", "mobile", "Chrome"]
+</code></pre>
+<p><code>Object.keys()</code> и <code>Object.values()</code> позволяют получить данные объекта.</p>
+
+<h2 id="object-entries">Object.entries()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/entries"><code>Object.entries()</code></a> создает вложенный массив пар ключ-значение для объекта.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const operatingSystem = {
+    name: 'Ubuntu',
+    version: 18.04,
+    license: 'Open Source'
+};
+
+// Get the object key/value pairs
+const entries = Object.entries(operatingSystem);
+
+console.log(entries);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[
+    ["name", "Ubuntu"]
+    ["version", 18.04]
+    ["license", "Open Source"]
+]
+</code></pre>
+<p>После создания массивов с парами ключ-значение мы можем использовать метод <code>forEach()</code> для обработки результатов и работы с ними.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Loop through the results
+entries.forEach(entry =&gt; {
+    let key = entry[0];
+    let value = entry[1];
+
+    console.log(`${key}: ${value}`);
+});
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>name: Ubuntu
+version: 18.04
+license: Open Source
+</code></pre>
+<p>Метод <code>Object.entries()</code> возвращает только собственные свойства экземпляра объекта, а не свойства, унаследованные от прототипа.</p>
+
+<h2 id="object-assign">Object.assign()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign"><code>Object.assign()</code></a> используется для копирования значений одного объекта в другой объект.</p>
+
+<p>С помощью метода <code>Object.assign()</code> мы можем создать два объекта и объединить их.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const name = {
+    firstName: 'Philip',
+    lastName: 'Fry'
+};
+
+// Initialize another object
+const details = {
+    job: 'Delivery Boy',
+    employer: 'Planet Express'
+};
+
+// Merge the objects
+const character = Object.assign(name, details);
+
+console.log(character);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{firstName: "Philip", lastName: "Fry", job: "Delivery Boy", employer: "Planet Express"}
+</code></pre>
+<p>Также для этой задачи можно использовать оператор spread (<code>...</code>). В приведенном ниже примере кода мы изменим способ декларации объекта <code>character</code>, объединив объекты <code>name</code> и <code>details</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const name = {
+    firstName: 'Philip',
+    lastName: 'Fry'
+};
+
+// Initialize another object
+const details = {
+    job: 'Delivery Boy',
+    employer: 'Planet Express'
+};
+
+// Merge the object with the spread operator
+const character = {...name, ...details}
+
+console.log(character);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{firstName: "Philip", lastName: "Fry", job: "Delivery Boy", employer: "Planet Express"}
+</code></pre>
+<p>Такой <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax#Spread_in_object_literals">синтаксис оператора spread</a> в буквальных константах объекта также называется неглубоким клонированием.</p>
+
+<h2 id="object-freeze">Object.freeze()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze"><code>Object.freeze()</code></a> предотвращает изменение свойств и значений объекта, а также добавление или удаление свойств объекта.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const user = {
+    username: 'AzureDiamond',
+    password: 'hunter2'
+};
+
+// Freeze the object
+const newUser = Object.freeze(user);
+
+newUser.password = '*******';
+newUser.active = true;
+
+console.log(newUser);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{username: "AzureDiamond", password: "hunter2"}
+</code></pre>
+<p>В приведенном выше примере мы попытались заменить пароль <code>hunter2</code> на <code>*******</code>, однако свойство <code>password</code> не изменилось. Также мы попытались добавить новое свойство <code>active</code>, но оно не было добавлено.</p>
+
+<p>Свойство <code>Object.isFrozen()</code> позволяет определить, заморожен ли объект, и возвращает логическое значение.</p>
+
+<h2 id="object-seal">Object.seal()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/seal"><code>Object.seal()</code></a> предотвращает добавление новых свойств к объекту, но допускает изменение существующих свойств. Этот метод похож на метод <code>Object.freeze()</code>. Чтобы избежать ошибок, обновите консоль перед добавлением приведенного ниже кода.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Initialize an object
+const user = {
+    username: 'AzureDiamond',
+    password: 'hunter2'
+};
+
+// Seal the object
+const newUser = Object.seal(user);
+
+newUser.password = '*******';
+newUser.active = true;
+
+console.log(newUser);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{username: "AzureDiamond", password: "*******"}
+</code></pre>
+<p>Новое свойство <code>active</code> не было добавлено к запечатанному объекту, но свойство <code>password</code> было успешно изменено.</p>
+
+<h2 id="object-getprototypeof">Object.getPrototypeOf()</h2>
+
+<p>Метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getPrototypeOf"><code>Object.getPrototypeOf()</code></a> используется для получения внутреннего скрытого свойства <code>[[Prototype]]</code> объекта, которое также доступно через свойство <code>__proto__</code>.</p>
+
+<p>В этом примере мы создадим массив, имеющий доступ к прототипу <code>Array</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">const employees = ['Ron', 'April', 'Andy', 'Leslie'];
+
+Object.getPrototypeOf(employees);
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[constructor: ƒ, concat: ƒ, find: ƒ, findIndex: ƒ, pop: ƒ, &hellip;]
+</code></pre>
+<p>В результатах мы видим, что прототип массива <code>employees</code> имеет доступ к методам <code>pop</code>, <code>find</code> и другим методам прототипа Array. Для проверки мы протестируем прототип <code>employees</code> с прототипом <code>Array.prototype</code>.</p>
+<pre class="code-pre "><code langs="">Object.getPrototypeOf(employees) === Array.prototype;
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+</code></pre>
+<p>Этот метод может быть полезен для получения дополнительной информации об объекте или обеспечения доступа к прототипу другого объекта.</p>
+
+<p>Связанный метод <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/setPrototypeOf"><code>Object.setPrototypeOf()</code></a> добавляет прототип к другому объекту. Вместо него рекомендуется использовать более быстрый и производительный метод <code>Object.create()</code>.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Объекты имеют много полезных методов, которые можно использовать для их изменения, защиты и итерации. В этом обучающем модуле мы научились создавать и назначать новые объекты, итеративно просматривать ключи и/или значения объекта, а также замораживать и запечатывать объекты.</p>
+
+<p>Если вам нужно узнать больше об объектах JavaScript, прочитайте статью <a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">«Понимание концепции объектов в JavaScript»</a>. Если вы хотите узнать больше о цепочке прототипов, прочитайте статью <a href="https://www.digitalocean.com/community/tutorials/understanding-prototypes-and-inheritance-in-javascript">«Понимание концепций прототипов и наследования  в JavaScript»</a>.</p>

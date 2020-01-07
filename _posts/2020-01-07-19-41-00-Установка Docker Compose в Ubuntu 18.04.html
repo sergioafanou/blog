@@ -1,0 +1,125 @@
+---
+layout: post
+title: Установка Docker Compose в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:41PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://docs.docker.com/">Docker</a> — это отличный инструмент для автоматизации развертывания приложений Linux внутри контейнеров ПО, но для использования всех его возможностей необходимо, чтобы каждый компонент приложения запускался в своем собственном контейнере. Для сложных приложений с большим количеством компонентов, организация совместных запуска, коммуникации и остановки всех контейнеров может быстро стать очень непростой и запутанной задачей.</p>
+
+<p>Сообщество Docker предложило популярное решение, которое называется <a href="http://www.fig.sh/">Fig</a> и позволяет вам использовать единый файл YAML для организации совместной работы всех ваших контейнеров и конфигураций. Оно стало настолько популярным, что команда Docker решила создать <em>Docker Compose</em> на базе исходного кода Fig, который в настоящее является устаревшим инструментом и не поддерживается. Docker Compose упрощает организацию процессов контейнеров Docker, включая запуск, остановку и настройку связей и томов внутри контейнера.</p>
+
+<p>В этом обучающем модуле мы расскажем вам, как установить последнюю версию Docker Compose для управления приложениями с несколькими контейнерами.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для выполнения этого руководства вам потребуется сервер Ubuntu 18.04 и следующее:</p>
+
+<ul>
+<li><strong>Пользователь с привилегиями sudo без прав root</strong>  (в статье <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Начальная настройка сервера с Ubuntu 18.04</a> объясняется, как это настроено).</li>
+<li>Docker, установленный согласно инструкциям в <strong>шаге 1</strong> и <strong>шаге 2</strong> руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04">Установка и использование Docker в Ubuntu 18.04</a></li>
+</ul>
+
+<p>После установки всех необходимых компонентов мы сможем двигаться дальше.</p>
+
+<p><span class='note'><strong>Примечание.</strong> Хотя в предварительных условиях содержатся указания по установке Docker в Ubuntu 18.04 команды <code>docker</code> в этой статье должны работать в других операционных системах, где установлен Docker.<br></span></p>
+
+<h2 id="Шаг-1-—-Установка-docker-compose">Шаг 1 — Установка Docker Compose</h2>
+
+<p>Хотя мы можем установить Docker Compose из официальных репозиториев Ubuntu, там не представлены самые последние версии, поэтому мы будем устанавливать Docker Compose из репозитория Docker на GitHub. Команда ниже немного отличается от команды, которую вы найдете на странице <a href="https://github.com/docker/compose/releases">Releases</a>. Благодаря использованию флага <code>-o</code> для указания файла вывода вместо перенаправления вывода, этот синтаксис позволяет избежать ошибки отсутствия прав доступа, возникающую при использовании <code>sudo</code>.</p>
+
+<p>Мы проверим <a href="https://github.com/docker/compose/releases">текущую версию</a> и при необходимости обновим ее с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo curl -L https://github.com/docker/compose/releases/download/<span class="highlight">1.21.2</span>/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+</li></ul></code></pre>
+<p>После этого мы настроим разрешения:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod +x /usr/local/bin/docker-compose
+</li></ul></code></pre>
+<p>Затем мы проверим, что установка прошла успешно, с помощью проверки версии:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose --version
+</li></ul></code></pre>
+<p>В результате должна быть выведена установленная нами версия:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>docker-compose version <span class="highlight">1.21.2</span>, build a133471
+</code></pre>
+<p>Теперь, когда мы установили Docker Compose, мы можем запустить пример «Hello World».</p>
+
+<h2 id="Шаг-2-—-Запуск-контейнера-с-помощью-docker-compose">Шаг 2 — Запуск контейнера с помощью Docker Compose</h2>
+
+<p>В общедоступном реестре Docker, Docker Hub, содержится образ <em>Hello World,</em> используемый для демонстрации и тестирования. Он демонстрирует минимальные параметры конфигурации, необходимые для запуска контейнера с помощью Docker Compose: файл YAML, вызывающий отдельный образ:</p>
+
+<p>Сначала мы создадим директорию для файла YAML и перейдем в нее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir hello-world
+</li><li class="line" prefix="$">cd hello-world
+</li></ul></code></pre>
+<p>Затем мы создадим в этой директории файл YAML:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Поместите в файл следующие данные, сохраните его и закройте текстовый редактор:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre "><code langs="">my-test:
+ image: hello-world
+</code></pre>
+<p>Первая строка файла YAML используется в качестве части имени контейнера. Вторая строка указывает, какой образ используется для создания контейнера. При запуске команды <code>docker-compose up</code> она будет искать локальный образ по указанному имени, т.е. <code>hello-world</code>. После этого можно сохранить и закрыть файл.</p>
+
+<p>Мы можем вручную просмотреть образы в нашей системе с помощью команды <code>docker images</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker images
+</li></ul></code></pre>
+<p>Когда локальные образы отсутствуют, будут отображены только заголовки столбцов:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+</code></pre>
+<p>Далее, находясь в директории <code>~/hello-world</code>, мы выполним следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up
+</li></ul></code></pre>
+<p>При первом запуске команды, если локальный образ с именем <code>hello-world</code> отсутствует, Docker Compose будет загружать его из открытого репозитория Docker Hub:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Pulling my-test (hello-world:latest)...
+latest: Pulling from library/hello-world
+c04b14da8d14: Downloading [==================================================&gt;] c04b14da8d14: Extracting [==================================================&gt;]  c04b14da8d14: Extracting [==================================================&gt;]  c04b14da8d14: Pull complete
+Digest: sha256:0256e8a36e2070f7bf2d0b0763dbabdd67798512411de4cdcf9431a1feb60fd9
+Status: Downloaded newer image for hello-world:latest
+. . .
+</code></pre>
+<p>После загрузки образа <code>docker-compose</code> создает контейнер, помещает в него и запускает программу <a href="https://github.com/docker-library/hello-world/blob/85fd7ab65e079b08019032479a3f306964a28f4d/hello-world/Dockerfile">hello</a>, что, в свою очередь, подтверждает, что установка, выполнена успешно:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+Creating helloworld_my-test_1...
+Attaching to helloworld_my-test_1
+my-test_1 |
+my-test_1 | Hello from Docker.
+my-test_1 | This message shows that your installation appears to be working correctly.
+my-test_1 |
+. . .
+</code></pre>
+<p>Затем программа отображает объяснение того, что она сделала:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output of docker-compose up">Output of docker-compose up</div>1. The Docker client contacted the Docker daemon.
+2. The Docker daemon pulled the "hello-world" image from the Docker Hub.
+3. The Docker daemon created a new container from that image which runs the executable that produces the output you are currently reading.
+4. The Docker daemon streamed that output to the Docker client, which sent it to your terminal.
+</code></pre>
+<p>Контейнеры Docker продолжают работать, пока команда остается активной, поэтому после завершения работы <code>hello</code> контейнер останавливается. Следовательно, когда мы просматриваем активные процессы, заголовки столбцов будут появляться, но контейнер <code>hello-world</code> не будет появляться в списке, поскольку он не запущен.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS                      PORTS               NAMES
+</code></pre>
+<p>Мы можем просмотреть информацию контейнера, которая нам потребуется на следующем шаге, используя флаг <code>-a</code>, с помощью которого можно отобразить все контейнеры, а не только активные:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps -a
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS                      PORTS               NAMES
+06069fd5ca23        hello-world         "/hello"            35 minutes ago      Exited (0) 35 minutes ago                       drunk_payne
+</code></pre>
+<p>Так мы можем получить информацию, которая нам потребуется для удаления контейнера, когда мы закончим работать с ним.</p>
+
+<h2 id="Шаг-3-—-Удаление-образа-необязательно">Шаг 3 — Удаление образа (необязательно)</h2>
+
+<p>Чтобы избежать необязательного использования дискового пространства, мы удалим локальный образ. Для этого нам потребуется удалить все контейнеры, которые содержат образ, с помощью команды <code>docker rm</code>, после которой следует CONTAINER ID или NAME. Ниже мы используем CONTAINER ID из команды <code>docker ps -a</code>, которую мы только что запустили. Обязательно замените идентификатор на идентификатор вашего контейнера:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker rm <span class="highlight">06069fd5ca23</span>
+</li></ul></code></pre>
+<p>После удаления всех контейнеров, которые содержат образ, мы можем удалить образ:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker rmi hello-world
+</li></ul></code></pre>
+<h2 id="Заключение">Заключение</h2>
+
+<p>Мы установили Docker Compose, протестировали установку, запустив пример Hello World, и удалили тестовый образ и контейнер.</p>
+
+<p>Хотя пример Hello World использовался для подтверждения корректности установки, простая конфигурация не демонстрирует одно из главных преимуществ Docker Compose — возможность одновременного запуска группы контейнеров Docker. Чтобы увидеть силу Docker Compose в действии, вы можете ознакомиться с практическим примером в статье <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-a-continuous-integration-testing-environment-with-docker-and-docker-compose-on-ubuntu-16-04">Настройка среды непрерывного интеграционного тестирования с помощью Docker и Docker Compose в Ubuntu 16.04</a> <em>(обратите внимание, что эта статья для Ubuntu 16.04, а не 18.04)</em></p>

@@ -1,0 +1,211 @@
+---
+layout: post
+title: Установка Webmin в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:49PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-webmin-on-ubuntu-18-04-ru
+image: https://assets.digitalocean.com/articles/webmin1804/RF2fRmB.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Автор выбрал <a href="https://www.brightfunds.org/funds/tech-education">Tech Education Fund</a> для получения пожертвования в размере $100 в рамках программы <a href="https://do.co/w4do-cta">Write for DOnations.</a></em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p><a href="http://www.webmin.com/">Webmin</a> — это сетевая панель управления для любого компьютера с Linux, которая позволяет вам управлять сервером через современный веб-интерфейс. С помощью Webmin вы можете изменить настройки для стандартных пакетов на ходу, включая веб-серверы и базы данных, а также управлять пользователями, группами и пакетами программного обеспечения.</p>
+
+<p>В этом обучающем модуле вы установите и настроите Webmin на вашем сервере и обеспечить безопасность доступа к интерфейсу с действительным сертификатом, используя <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a> и Apache. Затем вы воспользуетесь Webmin для добавления новых аккаунтов пользователя и обновления всех пакетов на вашем сервере с панели управления.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для данного обучающего руководства вам потребуется следующее:</p>
+
+<ul>
+<li>Один сервер Ubuntu 18.04, настроенный в соответствии с <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">руководством по начальной настройке сервера Ubuntu 18.04,</a> включая пользователя sudo без прав root и брандмауэр.</li>
+<li>Apache, установленный в соответствии с указаниями руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">«Установка стека Linux, Apache, MySQL, PHP  (LAMP) на Ubuntu 18.04»</a>. Мы будем использовать Apache для выполнения верификации домена с помощью Let&rsquo;s Encrypt, а также в качестве прокси-сервера для Webmin. Обязательно проверьте, что вы настроили доступ к Apache через брандмауэр, перед выполнением данного руководства.</li>
+<li>Полное доменное имя (FQDN) с записью DNS <strong>A</strong>, указывающей на IP-адрес вашего сервера. Процесс настройки см. в руководстве <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-host-name-with-digitalocean">Настройка имени хоста с помощью DigitalOcean</a>.</li>
+<li>Certbot, установленный согласно инструкциям в шаге 1 руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-ubuntu-18-04">Обеспечение безопасности Apache с помощью Let&rsquo;s Encrypt в Ubuntu 18.04</a>. Вы будете использовать Certbot для получения сертификата TLS/SSL для Webmin.</li>
+</ul>
+
+<h2 id="Шаг-1-—-Установка-webmin">Шаг 1 — Установка Webmin</h2>
+
+<p>Сначала нам нужно добавить репозиторий Webmin, чтобы мы могли установить и обновить Webmin с помощью менеджера пакетов. Для этого мы добавим репозиторий в файл <code>/etc/apt/sources.list</code>.</p>
+
+<p>Откройте в файл в своем редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apt/sources.list
+</li></ul></code></pre>
+<p>Затем добавьте следующую строку внизу файла, чтобы добавить новый репозиторий:</p>
+<div class="code-label " title="/etc/apt/sources.list">/etc/apt/sources.list</div><pre class="code-pre "><code langs="">. . .
+<span class="highlight">deb http://download.webmin.com/download/repository sarge contrib</span>
+</code></pre>
+<p>Сохраните файл и выйдите из редактора.</p>
+
+<p>Затем добавьте ключ Webmin PGP, чтобы у системы было доверие к новому репозиторию:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget http://www.webmin.com/jcameron-key.asc
+</li><li class="line" prefix="$">sudo apt-key add jcameron-key.asc
+</li></ul></code></pre>
+<p>Затем обновите список пакетов, чтобы включить репозиторий Webmin:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Установите Webmin:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install webmin
+</li></ul></code></pre>
+<p>После завершения установки вы увидите следующий вывод:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Webmin install complete. You can now login to
+https://<span class="highlight">your_server_ip</span>:10000 as root with your
+root password, or as any user who can use `sudo`.
+</code></pre>
+<p>Теперь нужно обеспечить безопасность доступа к Webmin, поместив его на веб-сервер Apache и добавив действительный сертификат TLS/SSL.</p>
+
+<h2 id="Шаг-2-—-Защита-webmin-с-помощью-apache-и-let-39-s-encrypt">Шаг 2 — Защита Webmin с помощью Apache и Let&rsquo;s Encrypt</h2>
+
+<p>Чтобы получить доступ к Webmin, вы должны указать порт <code>10000</code> и убедиться, что порт открыт в брандмауэре. Это неудобно, особенно если вы получаете доступ к Webmin с помощью FQDN, например <code>webmin.<span class="highlight">your_domain</span></code>. Мы будем использовать виртуальный хост Apache для прокси-запросов к серверу Webmin, использующему порт <code>10000</code>. Затем нам нужно будет защитить виртуальный хост, используя сертификат TLS/SSL от Let&rsquo;s Encrypt.</p>
+
+<p>Создайте файл нового виртуального хоста Apache в директории конфигурации Apache:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/<span class="highlight">your_domain</span>.conf
+</li></ul></code></pre>
+<p>Добавьте в файл следующие данные, заменив адрес электронной почты и домен на ваши собственные:</p>
+<div class="code-label " title="/etc/apache2/sites-available/your_domain.conf">/etc/apache2/sites-available/your_domain.conf</div><pre class="code-pre "><code langs="">
+&lt;VirtualHost *:80&gt;
+        ServerAdmin <span class="highlight">your_email</span>
+        ServerName <span class="highlight">your_domain</span>
+        ProxyPass / http://localhost:10000/
+        ProxyPassReverse / http://localhost:10000/
+&lt;/VirtualHost&gt;
+
+</code></pre>
+<p>Эта конфигурация позволяет Apache передавать запросы по адресу <code>http://localhost:10000</code>, на сервер Webmin. Она также гарантирует, что внутренние ссылки, созданные с помощью Webmin, также будут обрабатываться через Apache.</p>
+
+<p>Сохраните файл и выйдите из редактора.</p>
+
+<p>Теперь нам нужно попросить Webmin прекратить использование TLS/SSL, поскольку Apache будет делать это за нас.</p>
+
+<p>Откройте в своем редакторе файл <code>​​​​/etc/webmin/miniserv.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/webmin/miniserv.conf
+</li></ul></code></pre>
+<p>Найдите следующую строку:</p>
+<div class="code-label " title="/etc/webmin/miniserv.conf">/etc/webmin/miniserv.conf</div><pre class="code-pre "><code langs="">...
+ssl=1
+...
+</code></pre>
+<p>Измените <code>1</code> на <code>0</code>. Это сообщит Webmin, что нужно прекратить использование SSL.</p>
+
+<p>Затем мы добавим наш домен в список разрешенных доменов, чтобы Webmin не рассматривал вход в панель с нашего домена как действия злоумышленника, например, <a href="https://www.owasp.org/index.php/Cross-site_Scripting_(XSS)">атака с использованием межсайтовых сценариев</a>.</p>
+
+<p>Откройте в своем редакторе файл <code>​​​​/etc/webmin/config</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/webmin/config
+</li></ul></code></pre>
+<p>Добавьте внизу файла следующую строку, заменив <code>your_domain</code> на ваше полное доменное имя.</p>
+<div class="code-label " title="/etc/webmin/config">/etc/webmin/config</div><pre class="code-pre "><code langs=""> . . .
+referers=<span class="highlight">your_domain</span>
+</code></pre>
+<p>Сохраните файл и выйдите из редактора.</p>
+
+<p>Затем перезапустите Webmin, чтобы применить изменения конфигурации:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart webmin
+</li></ul></code></pre>
+<p>Активируйте модуль Apache <code>proxy_http</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod proxy_http
+</li></ul></code></pre>
+<p>Вывод должен выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Considering dependency proxy for proxy_http:
+Enabling module proxy.
+Enabling module proxy_http.
+To activate the new configuration, you need to run:
+  systemctl restart apache2
+</code></pre>
+<p>Вывод рекомендует перезапустить Apache, но сначала необходимо активировать новый виртуальный хост Apache, который вы создали:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2ensite <span class="highlight">your_domain</span>
+</li></ul></code></pre>
+<p>Вы увидите следующий вывод, указывающий, что ваш сайт активирован:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Enabling site <span class="highlight">your_domain</span>.
+To activate the new configuration, you need to run:
+  systemctl reload apache2
+</code></pre>
+<p>Перезапустите Apache, чтобы активировать модуль <code>proxy_http</code> и новый виртуальный хост:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p><span class='note'><strong>Примечание.</strong> Убедитесь, что вы разрешили прием входящего трафика для вашего веб-сервера на через порт <code>80</code> и порт <code>443</code>, как описано в разделе предварительных условий руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">Установка стека Linux, Apache, MySQL, PHP (LAMP) в Ubuntu 18.04</a>. Вы можете сделать это с помощью команды <code>sudo ufw allow</code> в Apache Full.</span></p>
+
+<p>Перейдите по адресу <code>http://<span class="highlight">your_domain</span></code> в браузере, в результате чего вы должны увидеть страницу входа Webmin.</p>
+
+<p><span class='warning'><strong>Предупреждение.</strong> НЕ нужно выполнять вход в Webmin, поскольку мы еще не активировали SSL. Если вы выполните вход сейчас, ваши учетные данные будут отправлены на сервер в виде простого текста.<br></span></p>
+
+<p>Теперь нам нужно настроить сертификат, чтобы ваша подключение было зашифровано при использовании Webmin. Для этого мы будем использовать Let&rsquo;s Encrypt.</p>
+
+<p>Попросите Certbot создать сертификат TLS/SSL для вашего домена и настроить Apache для перенаправления трафика на защищенный сайт:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot --apache --email <span class="highlight">your_email</span> -d <span class="highlight">your_domain</span> --agree-tos --redirect --noninteractive
+</li></ul></code></pre>
+<p>Вывод должен выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Plugins selected: Authenticator apache, Installer apache
+Obtaining a new certificate
+Performing the following challenges:
+http-01 challenge for <span class="highlight">your_domain</span>
+Enabled Apache rewrite module
+Waiting for verification...
+Cleaning up challenges
+Created an SSL vhost at /etc/apache2/sites-available/<span class="highlight">your_domain</span>-le-ssl.conf
+Enabled Apache socache_shmcb module
+Enabled Apache ssl module
+Deploying Certificate to VirtualHost /etc/apache2/sites-available/<span class="highlight">your_domain</span>-le-ssl.conf
+Enabling available site: /etc/apache2/sites-available/<span class="highlight">your_domain</span>-le-ssl.conf
+Enabled Apache rewrite module
+Redirecting vhost in /etc/apache2/sites-enabled/<span class="highlight">your_domain</span>.conf to ssl vhost in /etc/apache2/sites-available/<span class="highlight">your_domain</span>-le-ssl.conf
+
+-------------------------------------------------------------------------------
+Congratulations! You have successfully enabled https://<span class="highlight">your_domain</span>
+
+You should test your configuration at:
+https://www.ssllabs.com/ssltest/analyze.html?d=<span class="highlight">your_domain</span>
+-------------------------------------------------------------------------------
+</code></pre>
+<p>Данный вывод показывает, что сертификат был установлен, а Apache настроен для перенаправления запросов с <code>http://<span class="highlight">your_domain</span></code> на <code>https://<span class="highlight">your_domain</span></code>.</p>
+
+<p>Вы установили защищенный рабочий экземпляр Webmin. Давайте узнаем, ка его использовать.</p>
+
+<h2 id="Шаг-3-—-Использование-webmin">Шаг 3 — Использование Webmin</h2>
+
+<p>Webmin содержит модули, которые могут контролировать все, начиная с сервера BIND DNS и заканчивая такими простыми действиями, как добавление пользователей в систему. Давайте посмотрим, как создать нового пользователя, а затем узнаем, как обновить пакеты программного обеспечения с помощью Webmin.</p>
+
+<p>Для входа в Webmin перейдите по адресу <code>http://<span class="highlight">your_domain</span></code> и выполните вход с помощью пользователя <strong>root</strong> или пользователя с привилегиями sudo.</p>
+
+<h3 id="Управление-пользователями-и-группами">Управление пользователями и группами</h3>
+
+<p>Давайте организуем управление пользователями и группами на сервере.</p>
+
+<p>Сначала нажмите вкладку <strong>System</strong>, а затем нажмите кнопку <strong>Users and Groups</strong>. Отсюда вы можете добавить пользователя, управлять пользователем или добавить и управлять группой.</p>
+
+<p>Давайте создадим нового пользователя с именем <strong>deploy</strong>, который может использоваться для хостинга веб-приложений. Чтобы добавить пользователя, нажмите кнопку <strong>Create a new user</strong>, которая расположена в верхней части таблицы пользователей. В результате отображается экран <strong>Create User</strong>, где вы можете указать имя пользователя, пароль, группы и другие параметры. Следуйте этим инструкциям для создания пользователя:</p>
+
+<ol>
+<li>Укажите <code>deploy</code> в поле <strong>Username</strong>.</li>
+<li>Выберите <strong>Automatic</strong> для <strong>User ID</strong>.</li>
+<li>Укажите в поле <strong>Real Name</strong> описательное имя, например, <code>Deployment user</code>.</li>
+<li>Для <strong>Home Directory</strong> нужно выбрать <strong>Automatic</strong>.</li>
+<li>Для <strong>Shell</strong> выберите <strong>/bin/bash</strong> из выпадающего списка.</li>
+<li>Для <strong>Password</strong> выберите <strong>Normal Password</strong> и введите пароль по вашему выбору.</li>
+<li>Для <strong>Primary Group</strong> выберите <strong>New group with same name as user</strong>.</li>
+<li>Для <strong>Secondary Group</strong> выберите <strong>sudo</strong> из списка <strong>All groups</strong> и нажмите кнопку <strong>-&gt;</strong> для добавления группы в список <strong>in groups</strong>.</li>
+<li>Нажмите <strong>Create</strong> для создания нового пользователя.</li>
+</ol>
+
+<p>При создании пользователя вы можете установить параметры для истечения действия пароля, командной строки пользователя и разрешения на использование домашней директории.</p>
+
+<p>Теперь давайте посмотрим, как установить обновления для нашей системы.</p>
+
+<h3 id="Обновление-пакетов">Обновление пакетов</h3>
+
+<p>Webmin позволит вам обновлять все ваши пакеты через пользовательский интерфейс. Чтобы обновить все ваши пакеты, нажмите ссылку <strong>Dashboard</strong>, а затем найдите поле <strong>Package updates</strong>. Если есть доступные обновления, вы увидите ссылку, которая указывает количество доступных обновлений, как показано на следующем изображении:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/webmin1804/RF2fRmB.png" alt="Webmin показывает количество доступных обновлений пакетов"></p>
+
+<p>Нажмите эту ссылку, а затем нажмите <strong>Update selected packages</strong> для запуска обновления. Вам может быть предложено перезагрузить сервер, что вы также можете сделать через интерфейс Webmin.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Теперь у вас есть защищенный рабочий экземпляр Webmin и вы научились использовать интерфейс для создания пользователя и обновления пакетов. Webmin позволяет вам получить доступ ко многим функциям, которые, как правило, доступны через консоль, а его работа организована интуитивно понятным образом. Например, если вы установили Apache, вы можете найти для него вкладку конфигурации в разделе <strong>Servers</strong>, а затем <strong>Apache</strong>.</p>
+
+<p>Продолжайте изучение интерфейса или ознакомьтесь с <a href="http://doxfer.webmin.com/Webmin/Main_Page">официальной вики-справочником Webmin</a>, чтобы узнать больше об управлении системой с помощью Webmin.</p>

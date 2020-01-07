@@ -1,0 +1,189 @@
+---
+layout: post
+title: Установка, запуск и подключение к Jupyter Notebook на удаленном сервере
+network: digitalocean
+date: January 07, 2020 at 07:48PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-run-connect-to-jupyter-notebook-on-remote-server-ru
+image: https://assets.digitalocean.com/articles/jupyter_notebook/JN_putty_1.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Автор выбрал <a href="https://www.brightfunds.org/organizations/apache-software-foundation">Apache Software Foundation</a> для получения пожертвования в размере $100 в рамках программы <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://jupyter-notebook.readthedocs.io/en/stable/">Jupyter Notebook</a> — интерактивное веб-приложение с открытым исходным кодом, позвоялющее писать и запускать программный код более чем на 40 языках программирования, включая <a href="https://www.python.org/">Python</a>, <a href="https://www.r-project.org/">R</a>, <a href="https://julialang.org/">Julia</a> и <a href="https://www.scala-lang.org/">Scala</a>. Jupyter Notebook — это продукт <a href="http://jupyter.org/about">Project Jupyter</a>, очень полезный для итеративного программирования, поскольку он позволяет написать небольшой фрагмент кода, запустить его и вывести результат.</p>
+
+<p>Jupyter Notebook позволяет создавать документы в форме блокнота, обычно называемые «блокнотами». Блокноты, создаваемые Jupyter Notebook, представляют собой доступные для публикации и воспроизведения исследовательские документы, содержащие элементы расширенного текста, уравнения, код и результаты исполнения (рисунки, таблицы, интерактивные графики). Блокноты можно экспортировать в файлы кода, документы HTML или PDF, а также использовать для создания интерактивных слайд-шоу или веб-страниц.</p>
+
+<p>Эта статья расскажет вам о том, как установить и настроить приложение Jupyter Notebook на веб-сервере Ubuntu 18.04 и подключиться к нему с локального компьютера. Также мы покажем, как использовать Jupyter Notebook для запуска примера кода на Python.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для данного обучающего руководства вам потребуется следующее:</p>
+
+<ul>
+<li>Один экземпляр сервера Ubuntu 18.04. На этом сервере должны быть настроены пользователь без привилегий root с привилегиями sudo и брандмауэр. Вы можете выполнить настройку с помощью нашего <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">руководства по первоначальной настройке сервера</a>.</li>
+<li>На сервере должны быть установлены Python 3, pip и модуль Python <code>venv</code>. Для этого нужно выполнить шаги 1 и 2 нашего обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-programming-environment-on-an-ubuntu-18-04-server">Установка Python 3 и настройка локальной среды программирования в Ubuntu 18.04</a>.</li>
+<li>На локальном компьютере должен быть запущен современный браузер, который вы будете использовать для доступа к Jupyter Notebook.</li>
+</ul>
+
+<p>Кроме того, если на вашем локальном компьютере используется Windows, вам нужно будет установить PuTTY для создания туннеля SSH для подключения к серверу. Для загрузки и установки PuTTY следуйте указаниям обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-use-ssh-keys-with-putty-on-digitalocean-droplets-windows-users">Создание ключей SSH с помощью PuTTY в Windows</a>.</p>
+
+<h2 id="Шаг-1-—-Установка-jupyter-notebook">Шаг 1 — Установка Jupyter Notebook</h2>
+
+<p>Поскольку блокноты используются для записи, запуска и просмотра результатов выполнения небольших фрагментов программного кода, предварительно нужно настроить поддержку языка программирования. Jupyter Notebook использует <em>ядро</em> с привязкой к языкам, компьютерную программу, которая запускает и проводит внутренний анализ кода. В Jupyter Notebook имеется <a href="https://github.com/jupyter/jupyter/wiki/Jupyter-kernels">много ядер для разных языков</a>, по умолчанию используется <a href="https://ipython.org/">IPython</a>. В этом обучающем модуле вы научитесь настраивать Jupyter Notebook для запуска кода Python через ядро IPython.</p>
+
+<p>Если вы выполнили обучающие модули, указанные в разделе «Предварительные требования», у вас должны быть <a href="https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-ubuntu-18-04">установлены Python 3, pip и виртуальная среда</a>. Приведенные в этом руководстве примеры следуют указаниям по конвенции обучающего модуля Python 3, где виртуальной среде присваивается имя <code>my_env</code>, но вы можете использовать любое другое имя.</p>
+
+<p>Начнем с активации виртуальной среды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<p>После этого в вашей командной строке будет отображаться имя вашей среды в качестве префикса.</p>
+
+<p>Теперь вы находитесь в виртуальной среде и можете начать установку Jupyter Notebook:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@server:~$">python3 -m pip install jupyter
+</li></ul></code></pre>
+<p>Если установка выполнена успешна, вы увидите примерно следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+Successfully installed MarkupSafe-1.0 Send2Trash-1.5.0 backcall-0.1.0 bleach-2.1.3 decorator-4.3.0 entrypoints-0.2.3 html5lib-1.0.1 ipykernel-4.8.2 ipython-6.4.0 ipython-genutils-0.2.0 ipywidgets-7.2.1 jedi-0.12.0 jinja2-2.10 jsonschema-2.6.0 jupyter-1.0.0 jupyter-client-5.2.3 jupyter-console-5.2.0 jupyter-core-4.4.0 mistune-0.8.3 nbconvert-5.3.1 nbformat-4.4.0 notebook-5.5.0 pandocfilters-1.4.2 parso-0.2.0 pexpect-4.5.0 pickleshare-0.7.4 prompt-toolkit-1.0.15 ptyprocess-0.5.2 pygments-2.2.0 python-dateutil-2.7.3 pyzmq-17.0.0 qtconsole-4.3.1 simplegeneric-0.8.1 six-1.11.0 terminado-0.8.1 testpath-0.3.1 tornado-5.0.2
+</code></pre>
+<p>Установка Jupyter Notebook на ваш сервер завершена. Теперь мы перейдем к запуску приложения.</p>
+
+<h2 id="Шаг-2-—-Запуск-jupyter-notebook">Шаг 2 — Запуск Jupyter Notebook</h2>
+
+<p>Jupyter Notebook необходимо запускать с VPS, чтобы вы могли подключаться к нему с локального компьютера, используя туннель SSH и свой любимый браузер.</p>
+
+<p>Чтобы запустить сервер Jupyter Notebook, введите следующую команду:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@server:~$">jupyter notebook
+</li></ul></code></pre>
+<p>После запуска команды вы увидите примерно следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[I 19:46:22.031 NotebookApp] Writing notebook server cookie secret to /home/<span class="highlight">sammy</span>/.local/share/jupyter/runtime/notebook_cookie_secret
+[I 19:46:22.365 NotebookApp] Serving notebooks from local directory: /home/<span class="highlight">sammy</span>/environments
+[I 19:46:22.365 NotebookApp] 0 active kernels
+[I 19:46:22.366 NotebookApp] The Jupyter Notebook is running at:
+[I 19:46:22.366 NotebookApp] http://localhost:8888/?token=<span class="highlight">Example_Jupyter_Token_3cadb8b8b7005d9a46ca4d6675</span>
+[I 19:46:22.366 NotebookApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[W 19:46:22.366 NotebookApp] No web browser found: could not locate runnable browser.
+[C 19:46:22.367 NotebookApp]
+
+    Copy/paste this URL into your browser when you connect for the first time,
+    to login with a token:
+        http://localhost:8888/?token=<span class="highlight">Example_Jupyter_Token_3cadb8b8b7005d9a46ca4d6675</span>&amp;token<span class="highlight">Example_Jupyter_Token_3cadb8b8b7005d9a46ca4d6675</span>
+</code></pre>
+<p>Возможно вы заметили в результатах предупреждение <code>No web browser found</code>. Это можно ожидать, поскольку приложение запущено на сервере, а вы вряд ли установили на него браузер. В следующем разделе этого обучающего модуля вы узнаете, как подключиться к Notebook на сервере, используя туннель SSH.</p>
+
+<p>Сейчас закройте Jupyter Notebook. Для этого нажмите <code>CTRL+C</code>, затем <code>y</code>, а затем <code>ENTER</code> для подтверждения:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Shutdown this notebook server (y/[n])? <span class="highlight">y</span>
+[C 20:05:47.654 NotebookApp] Shutdown confirmed
+[I 20:05:47.654 NotebookApp] Shutting down 0 kernels
+</code></pre>
+<p>Затем выйдите из сервера, используя команду <code>exit</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">exit
+</li></ul></code></pre>
+<p>Вы только что запустили Jupyter Notebook на своем сервере. Чтобы получить доступ к приложению и начать работать с блокнотами, вам потребуется подключиться к приложению через туннель SSH и браузер на локальном компьютере.</p>
+
+<h2 id="Шаг-3-—-Подключение-к-приложению-jupyter-notebook-через-туннель-ssh">Шаг 3 — Подключение к приложению Jupyter Notebook через туннель SSH</h2>
+
+<p><em>Туннель SSH</em> — простой и быстрый способ подключиться к приложению Jupyter Notebook, запущенному на вашем сервере. Secure Shell (обычно <a href="https://www.digitalocean.com/community/tutorials/ssh-essentials-working-with-ssh-servers-clients-and-keys">SSH</a>) — это сетевой протокол, позволяющий выполнить защищенное подключение к удаленному серверу по незащищенной сети.</p>
+
+<p>Протокол SSH включает механизм переадресации портов, позволяющий подключаться через туннель к определенным приложениям на определенном порту сервера с определенного порта на локальном компьютере. Мы научимся выполнять безопасную «переадресацию» приложения Jupyter Notebook на вашем сервере (по умолчанию использует порт <code>8888</code>) на порт вашего локального компьютера.</p>
+
+<p>Предпочтительный метод создания туннеля SSH зависит от операционной системы вашего локального компьютера. Выберите ниже подраздел, больше всего подходящий для вашего компьютера.</p>
+
+<p><span class='note'><strong>Примечание.</strong> Приложение Jupyter Notebook можно установить через веб-консоль DigitalOcean, однако подключение к приложению через туннель SSH следует выполнять с помощью терминала или PuTTY.<br></span></p>
+
+<h3 id="Создание-туннелей-ssh-в-macos-или-linux">Создание туннелей SSH в macOS или Linux</h3>
+
+<p>Если на вашем локальном компьютере используется Linux или macOS, туннель SSH можно создать, запустив всего одну команду.</p>
+
+<p><code>ssh</code> — стандартная команда для создания соединения SSH. Когда она используется с директивой <code>-L</code>, вы можете указать перенаправление определенного порта локального хоста (т.е. локального компьютера) на указанный хост и порт удаленного хоста (в данном случае, на ваш сервер). Это означает, что все запускаемое на заданном порту удаленного сервера (<code>8888</code>, порт Jupyter Notebook по умолчанию) будет появляться на заданном порту локального компьютера (<code><span class="highlight">8000</span></code> в данном примере команды).</p>
+
+<p>Чтобы создать собственный туннель SSH, запустите следующую команду. Вы можете изменить порт <code><span class="highlight">8000</span></code> на любой предпочитаемый порт (например, если порт <code>8000</code> используется другим процессом). Рекомендуется использовать порт с номером не меньше <code>8000</code>, поскольку такие номера портов вряд ли используются другими процессами. Обязательно укажите IP-адрес вашего собственного сервера и имя пользователя сервера без привилегий root:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh -L <span class="highlight">8000</span>:localhost:8888 <span class="highlight">sammy</span>@<span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>Если эта команда не выдаст никаких ошибок, вы войдете на удаленный сервер. Там вы должны активировать виртуальную среду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ~/environments/<span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<p>Затем запустите приложение Jupyter Notebook:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@server:~$">jupyter notebook
+</li></ul></code></pre>
+<p>Для подключения к Jupyter Notebook откройте в своем предпочитаемом браузере локальный порт на локальном хосте: <code>http://localhost:<span class="highlight">8000</span></code>. После подключения к Jupyter Notebook переходите к шагу 4, чтобы научиться его использовать.</p>
+
+<h3 id="Создание-туннелей-ssh-с-использованием-windows-и-putty">Создание туннелей SSH с использованием Windows и PuTTY</h3>
+
+<p>PuTTY — клиент SSH с открытым исходным кодом для Windows, который можно использовать для <a href="https://www.digitalocean.com/community/tutorials/how-to-use-ssh-keys-with-putty-on-digitalocean-droplets-windows-users">подключения к вашему серверу</a>. После загрузки и установки PuTTY на ваш компьютер Windows (как описано в обучающем модуле из предварительных требований) откройте программу и введите URL или IP-адрес вашего сервера, как показано здесь:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/JN_putty_1.png" alt="Введите URL или IP-адрес сервера в Putty"></p>
+
+<p>Затем нажмите <strong>+ SSH</strong> внизу левой панели и нажмите <strong>Tunnels</strong> (Туннели). В этом окне введите порт, который хотите использовать для доступа к Jupyter на локальном компьютере (<code><span class="highlight">8000</span></code>). Рекомендуется использовать порт с номером не меньше <code>8000</code>, поскольку такие номера портов вряд ли используются другими процессами. Если порт <code>8000</code> используется другим процессом, выберите другой неиспользуемый номер порта. Установите адрес назначения <code>localhost:8888</code>, поскольку порт <code>8888</code> — это тот порт, на котором работает Jupyter Notebook. Затем нажмите кнопку <strong>Add (Добавить)</strong>, после чего порты должны появиться в поле <strong>Forwarded ports (Перенаправляемые порты)</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/JN_putty_2.png" alt="Настройте туннель SSH в Putty"></p>
+
+<p>Затем нажмите кнопку <strong>Open (Открыть)</strong>. Ваш компьютер подключится к серверу через SSH и соединит желаемые порты туннелем. Если никаких ошибок не появится, вы можете активировать свою виртуальную среду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ~/environments/<span class="highlight">my_env</span>/bin/activate
+</li></ul></code></pre>
+<p>Затем запустите Jupyter Notebook:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="(my_env) sammy@server:~$">jupyter notebook
+</li></ul></code></pre>
+<p>Затем откройте в предпочитаемом браузере локальный порт, например <code>http://localhost:<span class="highlight">8000</span></code> (или любой выбранный номер порта), чтобы подключиться к экземпляру Jupyter Notebook, запущенному на сервере. После подключения к Jupyter Notebook переходите к шагу 4, чтобы научиться его использовать.</p>
+
+<h2 id="Шаг-4-—-Использование-jupyter-notebook">Шаг 4 — Использование Jupyter Notebook</h2>
+
+<p>При доступе через браузер Jupyter Notebook предоставляет информационную панель Notebook, которая выступает как обозреватель файлов и дает интерфейс для создания, редактирования и просмотра блокнотов. Эти блокноты следует рассматривать как документы (сохраненные с расширением файла <code>.ipynb</code>), в которых вы заполняете любое количество отдельных ячеек. Каждая ячейка содержит интерактивный текстовый редактор, который можно использовать для запуска кода или записи сгенерированного текста. Кроме того, блокноты позволяют записывать и запускать уравнения, использовать графические элементы (такие как изображения или интерактивные графики), а также их можно экспортировать и публиковать в различных форматах (<code>.ipyb</code>, <code>.pdf</code>, <code>.py</code>). Чтобы проиллюстрировать некоторые из этих функций, мы создадим файл ноутбука из информационной панели Notebook, напишем простую текстовую панель с уравнением и запустим простой код Python 3.</p>
+
+<p>К этому моменту вы должны были подключиться к серверу через туннель SSH и запустить на сервере приложение Jupyter Notebook. После перехода на адрес <code>http://localhost:<span class="highlight">8000</span></code> вы увидите страницу входа в систему:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/JN_login_screen_small.png" alt="Экран входа в систему Jupyter Notebook"></p>
+
+<p>В поле <strong>Password (Пароль) или поле токена</strong> сверху введите токен, показываемый в результатах после запуска <code>jupyter notebook</code> на сервере:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[I 20:35:17.004 NotebookApp] Writing notebook server cookie secret to /run/user/1000/jupyter/notebook_cookie_secret
+[I 20:35:17.314 NotebookApp] Serving notebooks from local directory: /home/sammy
+[I 20:35:17.314 NotebookApp] 0 active kernels
+[I 20:35:17.315 NotebookApp] The Jupyter Notebook is running at:
+[I 20:35:17.315 NotebookApp] http://localhost:8888/?token=<span class="highlight">Example_Jupyter_Token_3cadb8b8b7005d9a46ca4d6675</span>
+[I 20:35:17.315 NotebookApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[W 20:35:17.315 NotebookApp] No web browser found: could not locate runnable browser.
+[C 20:35:17.316 NotebookApp]
+. . .
+</code></pre>
+<p>Также вы можете скопировать URL с экрана терминала и вставить его в адресную строку браузера.</p>
+
+<p>Jupyter Notebook автоматически покажет все файлы и папки, хранящиеся в каталоге, откуда выполняется запуск. Создайте новый файл блокнота, нажав <strong>New</strong> (Создать) и выбрав <strong>Python 3</strong> в правом верхнем углу информационной панели Notebook:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/JN_new_python3.png" alt="Создайте новый блокнот Python3"></p>
+
+<p>В новом блокноте измените первую ячейку так, чтобы она принимала синтаксис разметки. Для этого нажмите <strong>Cell</strong> &gt; <strong>Cell Type</strong> &gt; <strong>Markdown</strong> (Ячейка &gt; Тип ячейки &gt; Разметка) на панели навигации сверху. Помимо разметки этот тип ячейки также позволяет записывать уравнения в LaTeX. Например, введите в ячейку следующее после ее переключения на разметку:</p>
+<pre class="code-pre "><code langs=""># Simple Equation
+
+Let us now implement the following equation in Python:
+$$ y = x^2$$
+
+where $x = 2$
+</code></pre>
+<p>Чтобы преобразовать разметку в расширенный текстовый формат, нажмите <code>CTRL + ENTER</code>, и получите следующий результат:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/JN_sample_equation.png" alt="Превратите образец уравнения в расширенный текст"></p>
+
+<p>Вы можете использовать ячейки разметки для заметок и документирования программного кода.</p>
+
+<p>Теперь выполним простое уравнение и распечатаем результат. Нажмите <strong>Insert</strong> &gt; <strong>Insert Cell Below</strong> (Вставка &gt; Вставить ячейку снизу), чтобы вставить ячейку. Введите в новую ячейку следующий код:</p>
+<pre class="code-pre "><code langs="">x = 2
+y = x*x
+print(y)
+</code></pre>
+<p>Для запуска кода нажмите <code>CTRL + ENTER</code> и получите следующий результат:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/JN_sample_equation2.png" alt="Решение примера уравнения"></p>
+
+<p>Это довольно простые примеры того, что можно сделать с Jupyter Notebook. Однако это очень мощное приложение, которое можно использовать для самых разных целей. Отсюда вы можете добавить некоторые библиотеки Python и использовать блокнот, как и в любой другой среде разработки Python.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Теперь вы можете писать воспроизводимый код Python и текст, используя приложение Jupyter Notebook на удаленном сервере. Чтобы пройти быстрый обзор Jupyter Notebook, нажмите <strong>Help (Справка)</strong> в верхней панели навигации и выберите пункт <strong>User Interface Tour (Обзор пользовательского интерфейса)</strong>, как показано здесь:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jupyter_notebook/JN_help_tour.png" alt="Поиск обзора Jupyter Notebook"></p>
+
+<p>Если вы заинтересовались, вы можете узнать больше о Jupyter Notebook из <a href="http://jupyter.org/documentation">документации Project Jupyter</a>. Также вы можете использовать полученные в этом обучающем модуле знания, чтобы <a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-python-3">научиться программировать на Python 3</a>.</p>

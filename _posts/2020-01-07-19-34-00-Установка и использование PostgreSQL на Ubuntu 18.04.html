@@ -1,0 +1,261 @@
+---
+layout: post
+title: Установка и использование PostgreSQL на Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:34PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-use-postgresql-on-ubuntu-18-04-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Системы управления реляционными базами данных являются ключевым компонентом многих веб-сайтов и приложений. Они предоставляют структурированный способ хранения, организации и доступа к информации.</p>
+
+<p><a href="https://www.postgresql.org/">PostgreSQL</a>, или Postgres, — это система управления реляционными базами данных, которая предоставляет собой реализацию языка запросов SQL. Она является популярным решением для множества небольших и крупных проектов и имеет ряд преимущество, включая соответствие стандартам и множество передовых функций, таких как надежность и параллельность операций без блокировки при чтении.</p>
+
+<p>Настоящее руководство посвящено установке Postgres на VPS сервер с Ubuntu 18.04, а также содержит базовые рекомендации по администрированию баз данных.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для выполнения данного руководства вам потребуется один сервер Ubuntu 18.04 с конфигурацией, выполненной согласно руководству <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Начальная настройка сервера на Ubuntu 18.04</a>. После выполнения всех предварительных действий ваш сервер должен иметь пользователя без прав <strong>root</strong> с разрешениями sudo и базовый брандмауэр.</p>
+
+<h2 id="Шаг-1-—-Установка-postgresql">Шаг 1 — Установка PostgreSQL</h2>
+
+<p>Используемые по умолчанию репозитории Ubuntu содержат пакеты Postgres, поэтому вы можете устанавливать их с помощью системы управления пакетами <code>apt</code>.</p>
+
+<p>Поскольку это первый запуск <code>apt</code> в этой сессии, необходимо обновить локальный индекс пакетов. После этого установите пакет Postgres вместе с пакетом <code>-contrib</code>, который содержит дополнительные утилиты и функциональные возможности:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install postgresql postgresql-contrib
+</li></ul></code></pre>
+<p>После установки программного обеспечения мы можем переходить к изучению его работы и возможных отличий от аналогичных систем управления базами данных, которые вы, возможно, использовали.</p>
+
+<h2 id="Шаг-2-—-Использование-ролей-и-баз-данных-в-postgresql">Шаг 2 — Использование ролей и баз данных в PostgreSQL</h2>
+
+<p>По умолчанию Postgres использует концепцию &ldquo;ролей&rdquo; для выполнения аутентификации и авторизации. В некоторых аспектах они напоминают обычные учетные записи в Unix, однако Postgres не делает различий между пользователями и группами и предпочитает использовать более гибкий термин &ldquo;роль&rdquo;.</p>
+
+<p>После установки Postgres настроена на использование аутентификации <em>ident,</em> что значит, что выполняется привязка ролей Postgres с соответствующей системной учетной записью Unix/Linux. Если роль существует внутри Postgres, пользователь Unix/Linux с тем же именем может выполнить вход в качестве этой роли.</p>
+
+<p>В ходе установки была создана учетную запись пользователя <strong>postgres</strong>, которая связана с используемой по умолчанию ролью Postgres. Чтобы использовать Postgres, вы можете войти в эту учетную запись.</p>
+
+<p>Существует несколько способов использования этой учетной записи для доступа к Postgres.</p>
+
+<h3 id="Переключение-на-учетную-запись-postgres">Переключение на учетную запись postgres</h3>
+
+<p>Вы можете переключиться на учетную запись <strong>postgres</strong> на вашем сервере с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -i -u postgres
+</li></ul></code></pre>
+<p>Теперь вы можете немедленно получить  доступ к командной строке Postgres с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">psql
+</li></ul></code></pre>
+<p>В результате вы можете получить доступ к командной строке postgreSQL, а уже отсюда свободно взаимодействовать с системой управления базами данных.</p>
+
+<p>Закройте командную строку PostgreSQL с помощью следующей команды:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">\q
+</li></ul></code></pre>
+<p>В результате вы вернетесь в командную строку <code>postgres</code> в Linux.</p>
+
+<h3 id="Доступ-к-командной-строке-postgres-без-переключения-учетных-записей">Доступ к командной строке Postgres без переключения учетных записей</h3>
+
+<p>Также вы можете запустить необходимую вам команду с учетной записью <code>postgres</code> напрямую с помощью <strong>sudo</strong>.</p>
+
+<p>Например, в последнем примере от вас требовалось перейти в командную строку Postgres с помощью переключения на пользователя <strong>postgres</strong> и последующего запуска <code>psql</code>, чтобы открыть командную строку Postgres. Вы можете сделать это в один прием с помощью отдельной команды <code>psql</code>, используя пользователя <strong>postgres</strong> с  <code>sudo</code> следующим образом:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u postgres psql
+</li></ul></code></pre>
+<p>Это позволит выполнить вход в Postgres  без необходимости использования промежуточной командной строки <code>bash</code>.</p>
+
+<p>Вы снова сможете выйти из интерактивной сессии Postgres с помощью следующей команды:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres=#">\q
+</li></ul></code></pre>
+<p>Многие варианты использования требуют использования сразу нескольких ролей Postgres. Ниже вы узнаете, как выполнить настройку в таких случаях.</p>
+
+<h2 id="Шаг-3-—-Создание-новой-роли">Шаг 3 — Создание новой роли</h2>
+
+<p>К настоящему моменту у вас есть только роль <strong>postgres</strong>, настроенная внутри базы данных. Вы можете создавать новые роли из командной строки с командой <code>createrole</code>. Флаг <code>--interactive</code> будет запрашивать имя новой роли, а также попросит указать, будут ли у этой роли права superuser.</p>
+
+<p>Если вы выполнили вход в учетную запись <strong>postgres</strong>, то можете создать нового пользователя с помощью следующей команды:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres@server:~$">createuser --interactive
+</li></ul></code></pre>
+<p>Если же вы предпочитаете использовать  <code>sudo</code> для каждой команды без переключения с обычной учетной записи, введите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u postgres createuser --interactive
+</li></ul></code></pre>
+<p>Скрипт будет предлагать варианты на выбор и, исходя из ваших ответов, выполнять нужные команды Postgres для создания пользователя в соответствии с вашими спецификациями.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Enter name of role to add: <span class="highlight">sammy</span>
+Shall the new role be a superuser? (y/n) <span class="highlight">y</span>
+</code></pre>
+<p>Вы можете получить дополнительный контроль с помощью дополнительных флагов. Посмотрите возможные варианты на странице <code>man</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">man createuser
+</li></ul></code></pre>
+<p>В результате этих действий у вас будет новый пользователь, но вам предстоит еще добавить базы данных. В следующем разделе описан этот процесс.</p>
+
+<h2 id="Шаг-4-—-Создание-новой-базы-данных">Шаг 4 — Создание новой базы данных</h2>
+
+<p>Еще одно предположение, которое система аутентификации Postgres использует по умолчанию, состоит в том, что для любой роли, используемой для входа, существует база данных с тем же именем, к который роль может получить доступ.</p>
+
+<p>Это означает, что если созданный вами в последнем разделе пользователь будет иметь имя <strong>sammy</strong>, эта роль попытается подключиться к базе данных, которая также называется «sammy» по умолчанию. Вы можете создать соответствующую базу данных с помощью команды <code>createdb</code>.</p>
+
+<p>Если вы используете учетную запись <strong>postgres</strong>, необходимо ввести следующее:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="postgres@server:~$">createdb <span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Если же вы предпочитаете использовать <code>sudo</code> для каждой команды без переключения с обычной учетной записи, введите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u postgres createdb <span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Подобная гибкость предоставляет несколько способов для создания баз данных в зависимости от необходимости.</p>
+
+<h2 id="Шаг-5-—-Открытие-командной-строки-postgres-с-новой-ролью">Шаг 5 — Открытие командной строки Postgres с новой ролью</h2>
+
+<p>Чтобы выполнить аутентификацию с помощью <code>ident</code>, вам потребуется пользователь Linux с тем же именем, что и имя роли и базы данных в Postgres.</p>
+
+<p>Если у вас нет соответствующего пользователя Linux, то вы можете создать его с помощью команды <code>adduser</code>. Вы должны воспользоваться учетной записи без прав <strong>root</strong> с привилегиями <code>sudo</code> (т.е. не выполняя вход в качестве пользователя <strong>postgres</strong>):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo adduser <span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Когда новая учетная запись будет доступна, вы можете переключиться и подключиться к базе данных следующим образом:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -i -u <span class="highlight">sammy</span>
+</li><li class="line" prefix="$">psql
+</li></ul></code></pre>
+<p>Либо же вы можете сделать следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u <span class="highlight">sammy</span> psql
+</li></ul></code></pre>
+<p>Эта команда позволит выполнить вход автоматически, полагая, что все компоненты были настроены должным образом.</p>
+
+<p>Если вы хотите, чтобы ваш пользователь подключился к другой базе данных, то вы можете сделать это с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">psql -d <span class="highlight">postgres</span>
+</li></ul></code></pre>
+<p>После входа вы можете проверить данные о текущем подключении:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">\conninfo
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>You are connected to database "sammy" as user "sammy" via socket in "/var/run/postgresql" at port "5432".
+</code></pre>
+<p>Это полезно, если вы подключены к нестандартным базам данных или используете нестандартных пользователей.</p>
+
+<h2 id="Шаг-6-—-Создание-и-удаление-таблиц">Шаг 6 — Создание и удаление таблиц</h2>
+
+<p>Теперь, когда вы уже знаете, как подключиться к системе управления базами данных PostgreSQL, можно переходить к знакомству с основными задачами по управлению, которые решает Postgres.</p>
+
+<p>Во-первых, создайте таблицу для хранения данных. Например, таблицу, где описано оборудование для детских площадок.</p>
+
+<p>Базовый синтаксис этой команды выглядит следующим образом:</p>
+<pre class="code-pre "><code langs="">CREATE TABLE <span class="highlight">table_name</span> (
+    <span class="highlight">column_name1 col_type</span> (<span class="highlight">field_length</span>) <span class="highlight">column_constraints</span>,
+    <span class="highlight">column_name2 col_type</span> (<span class="highlight">field_length</span>),
+    <span class="highlight">column_name3 col_type</span> (<span class="highlight">field_length</span>)
+);
+</code></pre>
+<p>Как видите, эти команды дают таблице имя, а затем определяют столбцы, тип столбцов и максимальную длину поля данных. Кроме того, вы можете добавить ограничения таблицы для каждой колонки.</p>
+
+<p>Вы можете узнать больше о том, как создавать и управлять таблицами в Postgres, <a href="https://digitalocean.com/community/articles/how-to-create-remove-manage-tables-in-postgresql-on-a-cloud-server">здесь</a>.</p>
+
+<p>Чтобы продемонстрировать процесс, создайте простую таблицу:</p>
+<pre class="code-pre "><code langs="">CREATE TABLE playground (
+    equip_id serial PRIMARY KEY,
+    type varchar (50) NOT NULL,
+    color varchar (25) NOT NULL,
+    location varchar(25) check (location in ('north', 'south', 'west', 'east', 'northeast', 'southeast', 'southwest', 'northwest')),
+    install_date date
+);
+</code></pre>
+<p>Эти команды создадут таблицу с описью оборудования для установки на игровых площадках. Она начинается с идентификатора оборудования, который имеет тип <code>serial</code>. Это тип данных представляет собой целое число с автоматическим инкрементированием. Вы также указали для этого столбца ограничение  в виде <code>primary key</code>, что означает, что значения должны быть уникальными и не равны null.</p>
+
+<p>Для двух из столбцов (<code>equip_id</code> и <code>install_date</code>) команды не указали длину поля. Это объясняется тем, что некоторые типы столбцов не требуют указания длины, поскольку длина подразумевается в зависимости от типа значения.</p>
+
+<p>Следующие две команды создают столбцы <code>type</code> и <code>color</code> оборудования соответственно, каждый из которых не может быть пустым. После этого команда создает столбец <code>location</code> и ограничение, требующее, чтобы значение  было одним из восьми возможных вариантов. Последняя команда создает столбец даты, которая указывает дату установки оборудования.</p>
+
+<p>Вы можете просмотреть вашу новую таблицу, введя следующую команду:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">\d
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>                  List of relations
+ Schema |          Name           |   Type   | Owner
+--------+-------------------------+----------+-------
+ public | playground              | table    | sammy
+ public | playground_equip_id_seq | sequence | sammy
+(2 rows)
+</code></pre>
+<p>Ваша таблица игрового оборудования готова, но здесь есть  что-то под названием  <code>playground_equip_id_seq</code> с типом данных <code>sequence</code>. Это представление типа <code>serial,</code> который присвоен столбцу <code>equip_id.</code> Оно отслеживает следующий номер последовательности и создается автоматически для столбцов данного типа.</p>
+
+<p>Если вы хотите только просмотреть таблицу без последовательности, можете ввести следующую команду:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">\dt
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>          List of relations
+ Schema |    Name    | Type  | Owner
+--------+------------+-------+-------
+ public | playground | table | sammy
+(1 row)
+</code></pre>
+<h2 id="Шаг-7-—-Добавление-запрос-и-удаление-данных-в-таблице">Шаг 7 — Добавление, запрос и удаление данных в таблице</h2>
+
+<p>Теперь, когда у вас есть таблица, вы можете ввести в нее данные .</p>
+
+<p>В качестве примера добавьте строги swing (качели) и slide (горка), вызвав таблицу, куда вы хотите добавить данные, указав столбцы и предоставив данные для каждого столбца:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">INSERT INTO playground (type, color, location, install_date) VALUES ('slide', 'blue', 'south', '2017-04-28');
+</li><li class="line" prefix="sammy=#">INSERT INTO playground (type, color, location, install_date) VALUES ('swing', 'yellow', 'northwest', '2018-08-16');
+</li></ul></code></pre>
+<p>Вы должны быть внимательны при вводе данных, чтобы не допустить нескольких общих проблем. Во-первых, оборачивайте в кавычки не названия столбцов, а значения в столбцах.</p>
+
+<p>Еще один момент, который необходимо учитывать, состоит в том, что вы не должны указывать значения для столбца <code>equip_id</code>. Это объясняется тем, что они автоматически генерируются всякий раз, когда в таблице создается новая строка.</p>
+
+<p>Получите добавленную вами информацию, введя следующую команду:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">SELECT * FROM playground;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div> equip_id | type  | color  | location  | install_date
+----------+-------+--------+-----------+--------------
+        1 | slide | blue   | south     | 2017-04-28
+        2 | swing | yellow | northwest | 2018-08-16
+(2 rows)
+</code></pre>
+<p>Вы можете убедиться, что столбец <code>equip_id</code> уже заполнен успешно, а все другие данные были организованы корректно.</p>
+
+<p>Если же строка slide в таблице разрывается, вы можете удалить строку из таблицы, использовав следующую команду:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">DELETE FROM playground WHERE type = 'slide';
+</li></ul></code></pre>
+<p>Запросите таблицу еще раз:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">SELECT * FROM playground;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div> equip_id | type  | color  | location  | install_date
+----------+-------+--------+-----------+--------------
+        2 | swing | yellow | northwest | 2018-08-16
+(1 row)
+</code></pre>
+<p>Вы видите, что ваш строка slide уже не является частью таблицы.</p>
+
+<h2 id="Шаг-8-—-Добавление-и-удаление-столбцов-таблицы">Шаг 8 — Добавление и удаление столбцов таблицы</h2>
+
+<p>После создания таблицы ее легко можно изменить, добавляя или удаляя столбцы. Добавьте столбец для отображения даты последнего технического обслуживания для каждого элемента оборудования, введя следующую команду:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">ALTER TABLE playground ADD last_maint date;
+</li></ul></code></pre>
+<p>Если вы снова просмотрите данные таблицы, то увидите, что новый столбец был добавлен (но не было добавлено данных):</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">SELECT * FROM playground;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div> equip_id | type  | color  | location  | install_date | last_maint
+----------+-------+--------+-----------+--------------+------------
+        2 | swing | yellow | northwest | 2018-08-16   |
+(1 row)
+</code></pre>
+<p>Удаление столбца является таким же простым. Если вы обнаружите, что ваша команда использует отдельный инструмент для отслеживания истории обслуживания, то можете удалить столбец, введя следующую команду:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">ALTER TABLE playground DROP last_maint;
+</li></ul></code></pre>
+<p>Эта команда удаляет столбец <code>last_maint</code> и любые значения внутри него, но оставляет все другие данные нетронутыми.</p>
+
+<h2 id="Шаг-9-—-Обновление-данных-в-таблице">Шаг 9 — Обновление данных в таблице</h2>
+
+<p>Вы уже знаете, как добавлять записи в таблицу и удалять их, но в этом руководстве еще не было упомянуто изменений существующих записей.</p>
+
+<p>Вы можете обновить значения существующей записи, запросив нужную вам запись и установите для столбца значение, которое вы хотите использовать. Вы можете запросить записи «swing» (это будет соответствовать <em>каждой записи swing</em> в таблице) и изменить цвет на «red». Это может быть полезным, если вы дали задание на покраску качелей:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">UPDATE playground SET color = 'red' WHERE type = 'swing';
+</li></ul></code></pre>
+<p>Вы можете убедиться, что операция прошла успешной, запросив данные еще раз:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy=#">SELECT * FROM playground;
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div> equip_id | type  | color | location  | install_date
+----------+-------+-------+-----------+--------------
+        2 | swing | red   | northwest | 2010-08-16
+(1 row)
+</code></pre>
+<p>Как видите, ваша горка теперь имеет красный цвет.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Вы настроили PostgreSQL на сервере Ubuntu 18.04. Однако вам еще <em>очень многое</em> предстоит узнать о Postgres. Ниже вы найдете несколько руководств по использованию Postgres:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/sqlite-vs-mysql-vs-postgresql-a-comparison-of-relational-database-management-systems">Сравнение систем управления реляционными базами данных</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-create-remove-manage-tables-in-postgresql-on-a-cloud-server">Как создавать таблицы Postgres и управлять ими</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-use-roles-and-manage-grant-permissions-in-postgresql-on-a-vps--2">Подробное знакомство с управлением ролями и разрешениями</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-create-data-queries-in-postgresql-by-using-the-select-command">Создание запросов Postgres с помощью команды Select</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-secure-postgresql-on-an-ubuntu-vps">Обеспечение безопасности PostgreSQL</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-backup-postgresql-databases-on-an-ubuntu-vps">Создание резервной версии базы данных Postgres</a></li>
+</ul>

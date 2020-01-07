@@ -1,0 +1,236 @@
+---
+layout: post
+title: Установка и настройка Postfix в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:31PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-postfix-on-ubuntu-18-04-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Postfix — популярный почтовый агент (MTA) с открытым исходным кодом, который можно использовать для маршрутизации и доставки почты в системе Linux. Согласно оценкам, примерно 25% публичных почтовых серверов в Интернете используют Postfix.</p>
+
+<p>В этом обучающем модуле мы научим вас быстро развертывать Postfix на сервере Ubuntu 18.04.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для выполнения заданий этого обучающего модуля вам потребуется доступ к пользователю без прав root с привилегиями <code>sudo</code>. Для создания такого пользователя следуйте указаниям руководства <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">«Начальная настройка сервера Ubuntu 18.04»</a>.</p>
+
+<p>Для правильной настройки Postfix вам потребуется полностью квалифицированное доменное имя, указывающее на сервер Ubuntu 18.04. Полезную информацию по настройке доменного имени с помощью DigitalOcean можно найти в <a href="https://www.digitalocean.com/community/articles/how-to-set-up-a-host-name-with-digitalocean">этом руководстве</a>. Если вы планируете принимать почту, вам также потребуется запись MX, указывающая на ваш почтовый сервер.</p>
+
+<p>Для целей этого обучающего модуля мы предположим, что вы настраиваете хост с FQDN <code>mail.example.com</code>.</p>
+
+<h2 id="Шаг-1-—-Установка-postfix">Шаг 1 — Установка Postfix</h2>
+
+<p>Postfix входит в репозитории Ubuntu по умолчанию, поэтому установку выполнить очень просто.</p>
+
+<p>Вначале обновите кэш локального пакета <code>apt</code>, а затем установите программное обеспечение. Мы добавим в команду установки переменную среды <code>DEBIAN_PRIORITY=low</code>, чтобы включить несколько дополнительных диалогов:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo DEBIAN_PRIORITY=low apt install postfix
+</li></ul></code></pre>
+<p>Используйте следующую информацию, чтобы правильно ввести данные для своей среды:</p>
+
+<ul>
+<li><strong>General type of mail configuration?</strong>: Для данного параметра мы выберем пункт <strong>Internet Site</strong>, соответствующий потребностям нашей инфраструктуры.</li>
+<li><strong>System mail name</strong>: это базовый домен, используемый для построения корректного адреса электронной почты, когда имеется только часть адреса с именем учетной записи. Например, имя хоста нашего сервера <code>mail.example.com</code>, но мы будем использовать для системной почты <code>example.com</code>, так что для имени пользователя <code>user1</code> в Postfix будет использоваться адрес <code>user1@example.com</code>.</li>
+<li><strong>Root and postmaster mail recipient</strong>: это учетная запись Linux, на которую будет перенаправляться почта, адресованная <code>root@</code> и <code>postmaster@</code>. Используйте для этой цели свою основную учетную запись. В нашем случае это <strong>sammy</strong>.</li>
+<li><strong>Other destinations to accept mail for</strong>: определение получателей почты, которых будет принимать этот экземпляр Postfix. Если вам потребуется добавить любые другие домены, почту для которых этот сервер будет получать, вы можете сделать это здесь. В противном случае, параметры по умолчанию отлично подойдут.</li>
+<li><strong>Force synchronous updates on mail queue?</strong>: поскольку вы вероятно используете журнальную файловую систему, выберите <strong>No</strong>.</li>
+<li><strong>Local networks</strong>: это перечень локальных сетей, для которых ваш почтовый сервер настроен как реле пересылки сообщений. Значение по умолчанию подойдет для большинства случаев. Если вы пожелаете изменить его, постарайтесь максимально ограничить диапазон сетей.</li>
+<li><strong>Mailbox size limit</strong>: используется для ограничения размера сообщений. Значение «0» отключает любые ограничения размера.</li>
+<li><strong>Local address extension character</strong>: символ, используемый для отделения обычной части адреса от расширения (используется для создания динамических псевдонимов).</li>
+<li><strong>Internet protocols to use</strong>: укажите, нужно ли ограничивать версии протокола IP, поддерживаемые Postfix. В нашем случае мы выберем «all».</li>
+</ul>
+
+<p>Итак, для целей этого обучающего модуля мы используем следующие настройки параметров:</p>
+
+<ul>
+<li><strong>General type of mail configuration?</strong>: Internet Site</li>
+<li><strong>System mail name</strong>: example.com (not mail.example.com)</li>
+<li><strong>Root and postmaster mail recipient</strong>: sammy</li>
+<li><strong>Other destinations to accept mail for</strong>: $myhostname, example.com, mail.example.com, localhost.example.com, localhost</li>
+<li><strong>Force synchronous updates on mail queue?</strong>: No</li>
+<li><strong>Local networks</strong>: 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128</li>
+<li><strong>Mailbox size limit</strong>: 0</li>
+<li><strong>Local address extension character</strong>: +</li>
+<li><strong>Internet protocols to use</strong>: all</li>
+</ul>
+
+<p>Если вам потребуется изменить эти настройки, используйте следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo dpkg-reconfigure postfix
+</li></ul></code></pre>
+<p>Для параметров будут указаны заданные ранее значения.</p>
+
+<p>Завершив настройку параметров, мы можем еще немного изменить конфигурацию, чтобы настроить систему желаемым образом.</p>
+
+<h2 id="Шаг-2-—-Настройка-конфигурации-postfix">Шаг 2 — Настройка конфигурации Postfix</h2>
+
+<p>Теперь мы настроим некоторые параметры, для которых не выводились диалоги.</p>
+
+<p>Вначале мы зададим почтовый ящик. Мы используем формат <strong>Maildir</strong>, который разделяет сообщения на отдельные файлы, перемещаемые между каталогами в зависимости от действий пользователя. Также можно использовать формат <strong>mbox</strong> (здесь мы не будем говорить о нем), хранящий все сообщения в одном файле.</p>
+
+<p>Мы зададим для переменной <code>home_mailbox</code> значение <code>Maildir/</code>, в результате чего в домашнем каталоге пользователя будет создана структура каталогов с этим именем. Команду <code>postconf</code> можно использовать для запроса или установки параметров конфигурации. Настройте <code>home_mailbox</code> с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo postconf -e 'home_mailbox= Maildir/'
+</li></ul></code></pre>
+<p>Теперь мы можем задать расположение таблицы <code>virtual_alias_maps</code>. Эта таблица сопоставляет произвольные учетные записи электронной почты с системными учетными записями Linux. Мы создадим эту таблицу по адресу <code>/etc/postfix/virtual</code>. Для этого мы снова можем использовать команду <code>postconf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo postconf -e 'virtual_alias_maps= hash:/etc/postfix/virtual'
+</li></ul></code></pre>
+<h2 id="Шаг-3-—-Сопоставление-почтовых-адресов-с-учетными-записями-linux">Шаг 3 — Сопоставление почтовых адресов с учетными записями Linux</h2>
+
+<p>Теперь мы можем настроить файл виртуальных карт. Откройте в файл в своем текстовом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/postfix/virtual
+</li></ul></code></pre>
+<p>Таблица карт виртуальных псевдонимов имеет очень простой формат. Слева перечисляются все адреса, для которых вы хотите принимать электронную почту. Затем идет разделенный пробелами перечень пользователей Linux, которым вы хотите доставлять эту почту.</p>
+
+<p>Например, если вы хотите принимать электронную почту на адреса <code>contact@example.com</code> и <code>admin@example.com</code> и доставлять ее пользователю Linux с именем <code>sammy</code>, вы можете настроить файл следующим образом:</p>
+<div class="code-label " title="/etc/postfix/virtual">/etc/postfix/virtual</div><pre class="code-pre "><code langs="">contact@<span class="highlight">example.com</span> sammy
+admin@<span class="highlight">example.com</span> sammy
+</code></pre>
+<p>После сопоставления всех почтовых адресов с соответствующими учетными записями сервера вы можете сохранить и закрыть файл.</p>
+
+<p>Мы можем применить сопоставление с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo postmap /etc/postfix/virtual
+</li></ul></code></pre>
+<p>Перезапустите процесс Postfix, чтобы убедиться в применении всех наших изменений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart postfix
+</li></ul></code></pre>
+<h2 id="Шаг-4-—-Настройка-брандмауэра">Шаг 4 — Настройка брандмауэра</h2>
+
+<p>Если вы используете брандмауэр UFW, настроенный в соответствии с руководством по начальной настройке сервера, нам потребуется добавить исключение для Postfix.</p>
+
+<p>Вы можете разрешить подключение к службе с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow Postfix
+</li></ul></code></pre>
+<p>Серверный компонент Postfix установлен и готов к работе. Теперь мы настроим клиент, который будет принимать почту, которую будет обрабатывать Postfix.</p>
+
+<h2 id="Шаг-5-—-Настройка-среды-для-соответствия-расположению-почты">Шаг 5 — Настройка среды для соответствия расположению почты</h2>
+
+<p>Перед установкой клиента нужно убедиться, что переменная среда <code>MAIL</code> задана правильно. Клиент использует эту переменную для определения места, где он будет искать почту пользователя.</p>
+
+<p>Чтобы переменная существовала вне зависимости от способа доступа к учетной записи (через <code>ssh</code>, <code>su</code>, <code>su -</code>, <code>sudo</code> и т. д.), ее  нужно задать в нескольких местах. Мы добавим ее в <code>/etc/bash.bashrc</code> и в файл в каталоге <code>/etc/profile.d</code>, чтобы она была настроена для каждого пользователя.</p>
+
+<p>Чтобы добавить переменную в эти файлы, введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo 'export MAIL=~/Maildir' | sudo tee -a /etc/bash.bashrc | sudo tee -a /etc/profile.d/mail.sh
+</li></ul></code></pre>
+<p>Чтобы прочитать переменную для текущего сеанса, вы можете использовать в качестве источника файл <code>/etc/profile.d/mail.sh</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source /etc/profile.d/mail.sh
+</li></ul></code></pre>
+<h2 id="Шаг-6-—-Установка-и-настройка-почтового-клиента">Шаг 6 — Установка и настройка почтового клиента</h2>
+
+<p>Для взаимодействия с доставляемой почтой мы установим пакет <code>s-nail</code>. Это вариант клиента BSD <code>xmail</code>, который имеет много функций, может правильно обрабатывать формат Maildir и в основном обладает обратной совместимостью. Версия <code>mail</code> для GNU имеет несколько ограничений, в частности, прочитанная почта всегда сохраняется в формате mbox вне зависимости от исходного формата.</p>
+
+<p>Для установки пакета <code>s-nail</code> введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install s-nail
+</li></ul></code></pre>
+<p>Нам нужно изменить несколько параметров. Откройте файл <code>/etc/s-nail.rc</code> в своем редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/s-nail.rc
+</li></ul></code></pre>
+<p>Добавьте в конце файла следующие опции:</p>
+<div class="code-label " title="/etc/s-nail.rc">/etc/s-nail.rc</div><pre class="code-pre "><code langs="">. . .
+set emptystart
+set folder=Maildir
+set record=+sent
+</code></pre>
+<p>Так клиент будет открываться даже при пустом почтовом ящике. Кроме того каталог <code>Maildir</code> будет задан во внутренней переменной <code>folder</code>, которая будет использоваться для создания файла <code>sent</code> mbox для хранения отправленных писем.</p>
+
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<h2 id="Шаг-7-—-Инициализация-maildir-и-тестирование-клиента">Шаг 7 — Инициализация Maildir и тестирование клиента</h2>
+
+<p>Теперь мы можем протестировать клиент.</p>
+
+<h3 id="Инициализация-структуры-каталогов">Инициализация структуры каталогов</h3>
+
+<p>Самый простой способ создания структуры Maildir в домашнем каталоге — отправить себе электронное письмо. Для этого мы можем использовать команду <code>s-nail.</code> Поскольку файл <code>sent</code> будет доступен только после создания Maildir, нам нужно отключить запись в него для нашего первого письма. Опция <code>-Snorecord</code> поможет нам в этом.</p>
+
+<p>Для отправки письма добавьте строку в команду <code>s-nail</code>. Измените команду, чтобы сделать получателем вашего пользователя Linux:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo 'init' | s-nail -s 'init' -Snorecord <span class="highlight">sammy</span>
+</li></ul></code></pre>
+<p>Вы <em>можете</em> получить следующий ответ:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Can't canonicalize "/home/<span class="highlight">sammy</span>/Maildir"
+</code></pre>
+<p>Это нормально, и такой ответ может появиться только при отправке первого сообщения. Мы можем еще раз проверить создание каталога, выполнив поиск нашего каталога <code>~/Maildir</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -R ~/Maildir
+</li></ul></code></pre>
+<p>Вы должны увидеть созданную структуру каталогов и новое сообщение в каталоге <code>~/Maildir/new</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>/home/<span class="highlight">sammy</span>/Maildir/:
+cur  new  tmp
+
+/home/<span class="highlight">sammy</span>/Maildir/cur:
+
+/home/<span class="highlight">sammy</span>/Maildir/new:
+1463177269.Vfd01I40e4dM691221.mail.example.com
+
+/home/<span class="highlight">sammy</span>/Maildir/tmp:
+</code></pre>
+<p>Похоже наше письмо доставлено.</p>
+
+<h3 id="Управление-почтой-с-помощью-клиента">Управление почтой с помощью клиента</h3>
+
+<p>Используйте клиент для проверки почты:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">s-nail
+</li></ul></code></pre>
+<p>Вы должны увидеть новое сообщение:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>s-nail version v14.8.6.  Type ? for help.
+"/home/sammy/Maildir": 1 message 1 new
+&gt;N  1 sammy@example.com     Wed Dec 31 19:00   14/369   init
+</code></pre>
+<p>Просто нажмите <code>ENTER</code> для вывода этого сообщения:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[-- Message  1 -- 14 lines, 369 bytes --]:
+From sammy@example.com Wed Dec 31 19:00:00 1969
+Date: Fri, 13 May 2016 18:07:49 -0400
+To: sammy@example.com
+Subject: init
+Message-Id: &lt;20160513220749.A278F228D9@mail.example.com&gt;
+From: sammy@example.com
+
+init
+</code></pre>
+<p>Вы можете веернуться к списку сообщений, введя <code>h</code> и нажав <code>ENTER</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="?">h
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>s-nail version v14.8.6.  Type ? for help.
+"/home/sammy/Maildir": 1 message 1 new
+&gt;R  1 sammy@example.com     Wed Dec 31 19:00   14/369   init
+</code></pre>
+<p>Поскольку это сообщение не очень полезно, мы можем удалить его, введя <code>d</code> и нажав <code>ENTER</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="?">d
+</li></ul></code></pre>
+<p>Для выхода и возврата в терминал введите <code>q</code> и нажмите <code>ENTER</code>:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="?">q
+</li></ul></code></pre>
+<h3 id="Отправка-писем-с-помощью-клиента">Отправка писем с помощью клиента</h3>
+
+<p>Вы можете протестировать функцию отправки писем, набрав сообщение в текстовом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/test_message
+</li></ul></code></pre>
+<p>Введите текст, которы вы хотите отправить по почте:</p>
+<div class="code-label " title="~/test_message">~/test_message</div><pre class="code-pre "><code langs="">Hello,
+
+This is a test.  Please confirm receipt!
+</code></pre>
+<p>Мы можем использовать команду <code>cat</code>, чтобы направить сообщение в процесс <code>s-nail</code>. По умолчанию сообщение будет отправлено от имени вашего пользователя Linux. При желании вы можете изменить поле «From» с помощью атрибута <code>-r</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat ~/<span class="highlight">test_message</span> | s-nail -s '<span class="highlight">Test email subject line</span>' -r <span class="highlight">from_field_account</span> <span class="highlight">user</span>@<span class="highlight">email.com</span>
+</li></ul></code></pre>
+<p>Приведенные выше опции:</p>
+
+<ul>
+<li><code>-s</code>: строка темы письма</li>
+<li><code>-r</code>: изменение поля «From» письма. По умолчанию в этом поле указан текущий пользователь Linux. Опция <code>-r</code> позволяет задать другого отправителя.</li>
+<li><code>user@email.com</code>: учетная запись получателя письма. Измените этот адрес на адрес учетной записи, к которому у вас есть доступ .</li>
+</ul>
+
+<p>Вы можете просмотреть отправленные сообщения в клиенте <code>s-nail</code>. Запустите интерактивный клиент еще раз с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">s-nail
+</li></ul></code></pre>
+<p>После этого откройте список отправленных сообщений с помощью следующей команды:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="?">file +sent
+</li></ul></code></pre>
+<p>Вы можете управлять отправленными письмами с помощью тех же команд, которые используются для входящих писем.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Теперь почтовая система Postfix настроена на вашем сервере Ubuntu 18.04. Управление серверами электронной почты — непростая задача для начинающих администраторов, но такая конфигурация обеспечит все базовые функции MTA, которые помогут вам начать работу.</p>

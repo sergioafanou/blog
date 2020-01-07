@@ -1,0 +1,203 @@
+---
+layout: post
+title: Настройка ключей SSH в Ubuntu 16.04
+network: digitalocean
+date: January 07, 2020 at 08:04PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-1604-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>SSH или защищенная оболочка — это шифрованный протокол, используемый для администриования и связи с серверами. При работе с сервером Ubuntu вы проведете больше всего времени в сеансах терминала с подключением к серверу через SSH.</p>
+
+<p>В этом обучающем модуле мы расскажем о настройке ключей SSH для базовой версии Ubuntu 16.04. Ключи SSH обеспечивают удобный и защищенный способ входа на сервер, и их рекомендуется использовать для всех пользователей.</p>
+
+<h2 id="Шаг-1-—-Создание-пары-ключей-rsa">Шаг 1 — Создание пары ключей RSA</h2>
+
+<p>Первый шаг — создание пары ключей на клиентской системе (обычно на вашем компьютере):</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh-keygen
+</li></ul></code></pre>
+<p>По умолчанию команда <code>ssh-keygen</code> создает пару 2048-битных ключей RSA. Этот уровень защиты достаточен для большинства случаев (но при желании вы можете использовать флаг <code>-b 4096</code>, чтобы создать более надежный 4096-битный ключ).</p>
+
+<p>После ввода команды вы должны увидеть следующее:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Generating public/private rsa key pair.
+Enter file in which to save the key (/<span class="highlight">your_home</span>/.ssh/id_rsa):
+</code></pre>
+<p>Нажмите <code>ENTER</code>, чтобы сохранить пару ключей в подкаталог <code>.ssh/</code> домашнего каталога или укажите альтернативный путь.</p>
+
+<p>Если вы ранее создали пару ключей SSH, вы можете увидеть следующую строку:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>/home/<span class="highlight">your_home</span>/.ssh/id_rsa already exists.
+Overwrite (y/n)?
+</code></pre>
+<p>Если вы решите перезаписать ключ на диске, вы больше <strong>не</strong> сможете выполнять аутентификацию с помощью предыдущего ключа. Будьте осторожны при выборе варианта yes, потому что этот процесс уничтожает ключи, и его нельзя отменить.</p>
+
+<p>Затем вы должны увидеть следующую строку:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Enter passphrase (empty for no passphrase):
+</code></pre>
+<p>Здесь вы можете ввести защищенный пароль, что настоятельно рекомендуется сделать. Пароль добавляет дополнительный уровень безопасности для защиты от входа в систему несанкционированных пользователей. Дополнительную информацию о безопасности можно найти в нашем обучающем модуле <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-ssh-key-based-authentication-on-a-linux-server">Настройка аутентификации на базе ключей SSH на сервере Linux</a>.</p>
+
+<p>Вы должны увидеть следующий результат:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Your identification has been saved in /<span class="highlight">your_home</span>/.ssh/id_rsa.
+Your public key has been saved in /<span class="highlight">your_home</span>/.ssh/id_rsa.pub.
+The key fingerprint is:
+a9:49:2e:2a:5e:33:3e:a9:de:4e:77:11:58:b6:90:26 username@remote_host
+The key's randomart image is:
++--[ RSA 2048]----+
+|     ..o         |
+|   E o= .        |
+|    o. o         |
+|        ..       |
+|      ..S        |
+|     o o.        |
+|   =o.+.         |
+|. =++..          |
+|o=++.            |
++-----------------+
+</code></pre>
+<p>Теперь у вас есть открытый и закрытый ключи, которые вы можете использовать для аутентификации. Наследующем шаге вам нужно разместить открытый ключ на сервере, чтобы вы могли использовать аутентификацию на базе ключей SSH для входа в систему.</p>
+
+<h2 id="Шаг-2-—-Копирование-открытого-ключа-на-сервер-ubuntu">Шаг 2 — Копирование открытого ключа на сервер Ubuntu</h2>
+
+<p>Самый быстрый способ скопировать открытый ключ на хост Ubuntu — использовать утилиту <code>ssh-copy-id</code>. Это самый простой способ, поэтому его рекомендуется использовать, если он доступен. Если на клиентском компьютере нет утилиты <code>ssh-copy-id</code>, вы можете использовать один из двух альтернативных методов, описанных в этом разделе (копирование через SSH на базе пароля или копирование ключа вручную).</p>
+
+<h3 id="Копирование-открытого-ключа-с-помощью-утилиты-ssh-copy-id">Копирование открытого ключа с помощью утилиты <code>ssh-copy-id</code></h3>
+
+<p>Утилита <code>ssh-copy-id</code> по умолчанию входит в состав многих операционных систем, поэтому она может быть доступна на вашем локальном компьютере. Чтобы этот метод сработал, вы должны уже настроить защищенный паролем доступ к серверу через SSH.</p>
+
+<p>Для использования этой утилиты вам нужно только указать удаленный хост, к которому вы хотите подключиться, и учетную запись пользователя, к которой у вас есть доступ через SSH с использованием пароля. Ваш открытый ключ SSH будет скопирован в эту учетную запись.</p>
+
+<p>Синтаксис выглядит следующим образом:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh-copy-id <span class="highlight">username</span>@<span class="highlight">remote_host</span>
+</li></ul></code></pre>
+<p>Вы можете увидеть следующее сообщение:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>The authenticity of host '<span class="highlight">203.0.113.1</span> (<span class="highlight">203.0.113.1</span>)' can't be established.
+ECDSA key fingerprint is fd:fd:d4:f9:77:fe:73:84:e1:55:00:ad:d6:6d:22:fe.
+Are you sure you want to continue connecting (yes/no)? <span class="highlight">yes</span>
+</code></pre>
+<p>Это означает, что ваш локальный компьютер не распознает удаленный хост. Это произойдет при первом подключении к новому хосту. Введите «yes» и нажмите <code>ENTER</code>, чтобы продолжить.</p>
+
+<p>Затем утилита проведет сканирование локальной учетной записи для поиска ранее созданного ключа <code>id_rsa.pub</code>. Когда ключ будет найден, вам будет предложено ввести пароль учетной записи удаленного пользователя:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed
+/usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys
+<span class="highlight">username</span>@<span class="highlight">203.0.113.1</span>'s password:
+</code></pre>
+<p>Введите пароль (для безопасности вводимый текст не будет отображаться) и нажмите <code>ENTER</code>. Утилита подключится к учетной записи на удаленном хосте, используя указанный вами пароль. Затем содержимое ключа <code>~/.ssh/id_rsa.pub</code> будет скопировано в основной каталог <code>~/.ssh</code> удаленной учетной записи в файл с именем <code>authorized_keys</code>.</p>
+
+<p>Вы должны увидеть следующий результат:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Number of key(s) added: 1
+
+Now try logging into the machine, with:   "ssh '<span class="highlight">username</span>@<span class="highlight">203.0.113.1</span>'"
+and check to make sure that only the key(s) you wanted were added.
+</code></pre>
+<p>Теперь ваш ключ <code>id_rsa.pub</code> key выгружен в удаленную учетную запись. Вы можете переходить к <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-1604#step-3-%E2%80%94-authenticate-to-ubuntu-server-using-ssh-keys">шагу 3</a>.</p>
+
+<h3 id="Копирование-открытого-ключа-с-помощью-ssh">Копирование открытого ключа с помощью SSH</h3>
+
+<p>Если у вас нет <code>ssh-copy-id</code>, но вы активировали защищенный паролем доступ к учетной записи на вашем сервере через SSH, вы можете выгрузить ключи с помощью стандартного метода SSH.</p>
+
+<p>Для этого нужно использовать команду <code>cat</code>, чтобы прочитать содержимое открытого ключа SSH на локальном компьютере и передать его через соединение SSH на удаленный сервер.</p>
+
+<p>Также мы можем убедиться, что каталог <code>~/.ssh</code> и имеет правильные разрешения для используемой нами учетной записи.</p>
+
+<p>Мы можем вывести переданное содержимое в файл с именем <code>authorized_keys</code> в этом каталоге. Мы используем символ перенаправления <code>&gt;&gt;</code>, чтобы дополнять содержимое, а не заменять его. Это позволяет добавлять ключи без уничтожения ранее добавленных ключей.</p>
+
+<p>Полная команда выглядит следующим образом:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat ~/.ssh/id_rsa.pub | ssh <span class="highlight">username</span>@<span class="highlight">remote_host</span> "mkdir -p ~/.ssh &amp;&amp; touch ~/.ssh/authorized_keys &amp;&amp; chmod -R go= ~/.ssh &amp;&amp; cat &gt;&gt; ~/.ssh/authorized_keys"
+</li></ul></code></pre>
+<p>Вы можете увидеть следующее сообщение:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>The authenticity of host '<span class="highlight">203.0.113.1</span> (<span class="highlight">203.0.113.1</span>)' can't be established.
+ECDSA key fingerprint is fd:fd:d4:f9:77:fe:73:84:e1:55:00:ad:d6:6d:22:fe.
+Are you sure you want to continue connecting (yes/no)? <span class="highlight">yes</span>
+</code></pre>
+<p>Это означает, что ваш локальный компьютер не распознает удаленный хост. Это произойдет при первом подключении к новому хосту. Введите «yes» и нажмите <code>ENTER</code>, чтобы продолжить.</p>
+
+<p>После этого вам нужно будет ввести пароль учетной записи удаленного пользователя:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">username</span>@<span class="highlight">203.0.113.1</span>'s password:
+</code></pre>
+<p>После ввода пароля содержимое ключа <code>id_rsa.pub</code> будет скопировано в конец файла <code>authorized_keys</code> учетной записи удаленного пользователя. Если операция выполнена успешно, переходите к <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-1604#step-3-%E2%80%94-authenticate-to-ubuntu-server-using-ssh-keys">шагу 3</a>.</p>
+
+<h3 id="Копирование-открытого-ключа-вручную">Копирование открытого ключа вручную</h3>
+
+<p>Если для вашего сервера не настроен защищенный паролем доступ через SSH, вам нужно будет выполнить вышеописанную процедуру вручную.</p>
+
+<p>Мы вручную добавим содержимое вашего файла <code>id_rsa.pub</code> в файл <code>~/.ssh/authorized_keys</code> на удаленном компьютере.</p>
+
+<p>Чтобы вывести содержимое ключа <code>id_rsa.pub</code>, введите на локальном компьютере следующую команду:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat ~/.ssh/id_rsa.pub
+</li></ul></code></pre>
+<p>Вы увидите содержимое ключа, которое должно выглядеть следующим образом:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCqql6MzstZYh1TmWWv11q5O3pISj2ZFl9HgH1JLknLLx44+tXfJ7mIrKNxOOwxIxvcBF8PXSYvobFYEZjGIVCEAjrUzLiIxbyCoxVyle7Q+bqgZ8SeeM8wzytsY+dVGcBxF6N4JS+zVk5eMcV385gG3Y6ON3EG112n6d+SMXY0OEBIcO6x+PnUSGHrSgpBgX7Ks1r7xqFa7heJLLt2wWwkARptX7udSq05paBhcpB0pHtA1Rfz3K2B+ZVIpSDfki9UVKzT8JUmwW6NNzSgxUfQHGwnW7kj4jp4AT0VZk3ADw497M2G/12N0PPB5CnhHf7ovgy6nL1ikrygTKRFmNZISvAcywB9GVqNAVE+ZHDSCuURNsAInVzgYo9xgJDW8wUw2o8U77+xiFxgI5QSZX3Iq7YLMgeksaO4rBJEa54k8m5wEiEE1nUhLuJ0X/vh2xPff6SQ1BL/zkOhvJCACK6Vb15mDOeCSq54Cr7kvS46itMosi/uS66+PujOO+xt/2FWYepz6ZlN70bRly57Q06J+ZJoc9FfBCbCyYH7U/ASsmY095ywPsBo1XQ9PqhnN1/YOorJ068foQDNVpm146mUpILVxmq41Cj55YKHEazXGsdBIbXWhcrRf4G2fJLRcGUr9q8/lERo9oxRm5JFX6TCmj6kmiFqv+Ow9gI0x8GvaQ== demo@test
+</code></pre>
+<p>Получите доступ к удаленному хосту с использованием любого доступного метода.</p>
+
+<p>После получения доступа к учетной записи на удаленном сервере убедитесь, что каталог <code>~/.ssh</code> существует. При необходимости эта команда создаст каталог, а если каталог уже существует, команда ничего не сделает.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/.ssh
+</li></ul></code></pre>
+<p>Теперь вы можете создать или изменить файл <code>authorized_keys</code> в этом каталоге. Вы можете добавить содержимое файла <code>id_rsa.pub</code> в конец файла <code>authorized_keys</code> и при необходимости создать его с помощью этой команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo <span class="highlight">public_key_string</span> &gt;&gt; ~/.ssh/authorized_keys
+</li></ul></code></pre>
+<p>В вышеуказанной команде замените <code><span class="highlight">public_key_string</span></code> результатами команды <code>cat ~/.ssh/id_rsa.pub</code>, выполненной на локальном компьютере. Она должна начинаться с <code>ssh-rsa AAAA...</code>.</p>
+
+<p>Наконец, нужно убедиться, что каталог <code>~/.ssh</code> и файл <code>authorized_keys</code> имеют соответствующий набор разрешений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod -R go= ~/.ssh
+</li></ul></code></pre>
+<p>При этом будут рекурсивно удалены все разрешения «group» и «other» для каталога <code>~/.ssh/</code>.</p>
+
+<p>Если вы используете учетную запись <code>root</code> для настройки ключей учетной записи пользователя, важно учитывать, что каталог <code>~/.ssh</code> принадлежит пользователю, а не пользователю <code>root</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chown -R <span class="highlight">sammy</span>:<span class="highlight">sammy</span> ~/.ssh
+</li></ul></code></pre>
+<p>В этом обучающем модуле мы используем имя пользователя <span class="highlight">sammy</span>, но вы можете заменить его в вышеприведенной команде другим используемым вами именем.</p>
+
+<p>Теперь мы можем попробовать настроить аутентификацию без пароля на нашем сервере Ubuntu.</p>
+
+<h2 id="Шаг-3-—-Аутентификация-на-сервере-ubuntu-с-помощью-ключей-ssh">Шаг 3 — Аутентификация на сервере Ubuntu с помощью ключей SSH</h2>
+
+<p>Если вы успешно выполнили одну из вышеописанных процедур, вы сможете войти на удаленный хост <em>без</em> пароля учетной записи для удаленного хоста.</p>
+
+<p>Базовый процесс выглядит аналогично:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">username</span>@<span class="highlight">remote_host</span>
+</li></ul></code></pre>
+<p>Если вы подключаетесь к этому хосту первый раз (если вы используете указанный выше последний метод), вы сможете увидеть следующее:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>The authenticity of host '<span class="highlight">203.0.113.1</span> (<span class="highlight">203.0.113.1</span>)' can't be established.
+ECDSA key fingerprint is fd:fd:d4:f9:77:fe:73:84:e1:55:00:ad:d6:6d:22:fe.
+Are you sure you want to continue connecting (yes/no)? <span class="highlight">yes</span>
+</code></pre>
+<p>Это означает, что ваш локальный компьютер не распознает удаленный хост. Введите «yes» и нажмите <code>ENTER</code>, чтобы продолжить.</p>
+
+<p>Если вы не указывали пароль для своего закрытого ключа, вы войдете в систему немедленно. Если вы указали пароль закрытого ключа при создании ключа, вам будет предложено ввести его сейчас (для безопасности вводимые символы не будут отображаться в сеансе терминала). После аутентификации в оболочке откроется новый сеанс с настроенной учетной записью на сервере Ubuntu.</p>
+
+<p>Если аутентификация на базе ключа выполнена успешно, вы можете перейти к изучению дополнительных возможностей защиты системы посредством отключения аутентификации с помощью пароля.</p>
+
+<h2 id="Шаг-4-—-Отключение-аутентификации-на-сервере-с-помощью-пароля">Шаг 4 — Отключение аутентификации на сервере с помощью пароля</h2>
+
+<p>Если вы смогли войти в свою учетную запись с помощью SSH без пароля, это означает, что вы успешно настроили для своей учетной записи аутентификацию на базе ключей SSH. Однако механизм аутентификации по паролю все еще активен, то есть ваш сервер может подвергнуться атаке посредством простого перебора паролей.</p>
+
+<p>Прежде чем выполнять описанные в настоящем разделе шаги, убедитесь, что вы настроили аутентификацию на базе ключей SSH для учетной записи root на этом сервере, или (предпочтительно) вы настроили аутентификацию на базе ключей SSH для учетной записи сервера без привилегий root и с привилегиями <code>sudo</code>. На этом шаге вход в систему по паролю будет заблокирован, поэтому очень важно сохранить возможность доступа с правами администратора.</p>
+
+<p>Подтвердив права администратора для удаленной учетной записи, выполните вход на удаленный сервер с помощью ключей SSH как пользователь с привилегиями root или как пользователь с привилегиями <code>sudo</code>. Затем откройте файл конфигурации демона SSH:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ssh/sshd_config
+</li></ul></code></pre>
+<p>Найдите в файле директиву <code>PasswordAuthentication</code>. Она может быть помечена как комментарий. Удалите символ комментария в начале строки и установите значение «no». После этого вы не сможете выполнять вход в систему через SSH с использованием паролей учетной записи:</p>
+<div class="code-label " title="/etc/ssh/sshd_config">/etc/ssh/sshd_config</div><pre class="code-pre "><code langs="">...
+PasswordAuthentication no
+...
+</code></pre>
+<p>Сохраните и закройте файл, нажав <code>CTRL</code> + <code>X</code>, затем нажмите <code>Y</code> для подтверждения сохранения файла, а затем нажмите <code>ENTER</code> для выхода из nano. Для фактического внесения этих изменений нужно перезапустить службу <code>sshd</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart ssh
+</li></ul></code></pre>
+<p>В качестве меры предосторожности откройте новое окно терминала и проверьте работу службы SSH, прежде чем закрывать этот сеанс:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">username</span>@<span class="highlight">remote_host</span>
+</li></ul></code></pre>
+<p>После проверки работы службы SSH вы сможете безопасно закрыть все текущие сеансы сервера.</p>
+
+<p>Теперь демон SSH на вашем сервере Ubuntu будет реагировать только на ключи SSH. Аутентификация на базе паролей успешно отключена.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Теперь на вашем сервере должна быть настроена аутентификация на базе ключей SSH, чтобы вы могли входить в систему без пароля учетной записи.</p>
+
+<p>Если вы хотите узнать больше о работе с SSH, посмотрите наше <a href="https://www.digitalocean.com/community/tutorials/ssh-essentials-working-with-ssh-servers-clients-and-keys">Руководство по основам SSH</a>.</p>

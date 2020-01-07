@@ -1,0 +1,276 @@
+---
+layout: post
+title: Установка и использование Composer в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:33PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-use-composer-on-ubuntu-18-04-ru
+image: https://assets.digitalocean.com/articles/composer_1404/packagist.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Предыдущая версия данного обучающего руководства была написана <a href="https://www.digitalocean.com/community/users/bpb">Бренненом Бернсом</a>.</em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://getcomposer.org">Composer</a> — это популярный менеджер <em>зависимостей PHP, который упрощает процесс установки и обновления зависимостей</em> проекта. Он проверяет, от каких прочих пакетов зависит конкретный проект, а затем устанавливает все необходимые версии пакетов в соответствии с требованиями.</p>
+
+<p>Данное руководство поможет установить и начать работу с Composer на сервере Ubuntu 16.04.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для данного обучающего руководства вам потребуется следующее:</p>
+
+<ul>
+<li>Один сервер Ubuntu 18.04, настроенный в соответствии с <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">руководством по начальной настройке сервера Ubuntu 18.04</a>, включая пользователя sudo без прав root и брандмауэр.</li>
+</ul>
+
+<h2 id="Шаг-1-—-Установка-зависимостей">Шаг 1 — Установка зависимостей</h2>
+
+<p>Прежде чем приступить к загрузке и установке Composer, нужно убедиться, что на сервере установлены все зависимости.</p>
+
+<p>Во-первых, необходимо обновить кэш менеджера пакетов:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Теперь мы установим зависимости. Нам потребуется <code>curl</code>, чтобы загрузить Composer, и <code>php-cli</code> для установки и запуска. Пакет <code>php-mbstring</code> необходим для предоставления функций для библиотеки, которую мы будем использовать. <code>git</code> используется Composer для загрузки зависимостей проекта, а <code>unzip</code> для извлечения заархивированных пакетов. Все пакеты можно установить при помощи следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install curl php-cli php-mbstring git unzip
+</li></ul></code></pre>
+<p>После установки всех обязательных пакетов мы можем переходить к установке Composer.</p>
+
+<h2 id="Шаг-2-—-Загрузка-и-установка-composer">Шаг 2 — Загрузка и установка Composer</h2>
+
+<p>Composer предоставляет <a href="https://getcomposer.org/installer">написанный на PHP установщик</a>. Мы должны загрузить его, убедиться, что он не поврежден, а затем использовать его для установки Composer.</p>
+
+<p>Убедитесь, что вы находитесь в домашней директории, а затем загрузите установщик с помощью <code>curl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">curl -sS https://getcomposer.org/installer -o composer-setup.php
+</li></ul></code></pre>
+<p>Затем убедитесь, что хэш установщика совпадает с хэшем SHA-384 для последней версии установщика на странице  <a href="https://composer.github.io/pubkeys.html">Composer Public Keys / Signatures</a>. Скопируйте хэш с этой страницы и сохраните его в качестве переменной командной строки:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">HASH=<span class="highlight">544e09ee996cdf60ece3804abc52599c22b1f40f4323403c44d44fdfdd586475ca9813a858088ffbc1f233e9b180f061</span>
+</li></ul></code></pre>
+<p>Обязательно замените последний хэш на выделенное красным значение.</p>
+
+<p>Теперь выполните следующий PHP скрипт, чтобы убедиться, что скрипт установки безопасен для запуска:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">php -r "if (hash_file('SHA384', 'composer-setup.php') === '$HASH') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+</li></ul></code></pre>
+<p>Вы должны увидеть следующий вывод:</p>
+<div class="code-label " title="Output">Output</div><pre class="code-pre "><code langs="">Installer verified
+</code></pre>
+<p>Если вы увидите <code>Installer corrupt</code>, вам нужно снова загрузить скрипт установки и повторно убедиться, что вы используете правильный хэш. Запустите команду и снова проверьте установщик. После успешной проверки установщика вы можете продолжить.</p>
+
+<p>Чтобы выполнить глобальную установку <code>composer</code>, используйте следующую команду, которая выполнит загрузку и установку Composer в качестве общесистемной команды <code>composer</code> в каталоге <code>/usr/local/bin</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo php composer-setup.php --install-dir=<span class="highlight">/usr/local/bin</span> --filename=<span class="highlight">composer</span>
+</li></ul></code></pre>
+<p>Вывод должен выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>All settings correct for using Composer
+Downloading...
+
+Composer (version 1.6.5) successfully installed to: /usr/local/bin/composer
+Use it: php /usr/local/bin/composer
+</code></pre>
+<p>Чтобы протестировать установку, запустите команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">composer
+</li></ul></code></pre>
+<p>Вы должны получить подобный вывод с версией и аргументами Composer.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>   ______
+  / ____/___  ____ ___  ____  ____  ________  _____
+ / /   / __ \/ __ `__ \/ __ \/ __ \/ ___/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ (__  )  __/ /
+\____/\____/_/ /_/ /_/ .___/\____/____/\___/_/
+                    /_/
+Composer version 1.6.5 2018-05-04 11:44:59
+
+Usage:
+  command [options] [arguments]
+
+Options:
+  -h, --help                     Display this help message
+  -q, --quiet                    Do not output any message
+  -V, --version                  Display this application version
+      --ansi                     Force ANSI output
+      --no-ansi                  Disable ANSI output
+  -n, --no-interaction           Do not ask any interactive question
+      --profile                  Display timing and memory usage information
+      --no-plugins               Whether to disable plugins.
+  -d, --working-dir=WORKING-DIR  If specified, use the given directory as working directory.
+  -v|vv|vvv, --verbose           Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+. . .
+</code></pre>
+<p>Это значит, что менеджер зависимостей Composer был успешно установлен и доступен в рамках всей системы.</p>
+
+<span class='note'><p>
+<strong>Примечание:</strong> если вы предпочитаете иметь отдельные исполняемые модули Composer для каждого проекта, который вы размещаете на этом сервере, вы можете выполнить установку локально для каждого проекта. Пользователи NPM должны быть знакомы с данным подходом. Этот метод также полезен, когда системный пользователь не имеет прав на установку программного обеспечения в рамках всей системы.</p>
+
+<p>Для этого воспользуйтесь командой <code>php composer-setup.php​​</code>. В результате будет сгенерирован файл <code>composer.phar</code> в текущей директории, который можно исполнить с помощью команды <code>./composer.phar</code>.<br></p></span>
+
+<p>А теперь давайте рассмотрим использование Composer для управления</p>
+
+<h2 id="Шаг-3-—-Использование-composer-в-php-проекте">Шаг 3 — Использование Composer в PHP проекте</h2>
+
+<p>PHP проекты часто зависят от внешних библиотек, и управление этими зависимостями и их версиями может вызывать затруднения. Composer решает эту проблему, отслеживая ваши зависимости и упрощая для других установку этих зависимостей.</p>
+
+<p>Чтобы использовать Composer в вашем проекте, вам потребуется файл <code>composer.json</code>. Файл <code>composer.json</code> указывает Composer, какие зависимости для вашего проекта нужно загрузить, а также какие версии каждого пакета можно использовать. Это очень важно для сохранения последовательности вашего проекта и отказа от установки нестабильных версий, которые могут вызывать проблемы с обратной совместимостью.</p>
+
+<p>Вам не нужно создавать этот файл вручную, потому что вы можете легко допустить ошибку в синтаксисе. Composer автоматически генерирует файл <code>composer.json</code>, когда вы добавляете в ваш проект зависимость с помощью команды <code>require</code>. Вы можете добавлять дополнительные зависимости таким же образом без необходимости вручную изменять файл.</p>
+
+<p>Использование Composer для установки пакета в качестве зависимости в проект подразумевает следующие шаги:</p>
+
+<ul>
+<li>Определите, какая библиотека необходима приложению.</li>
+<li>Изучите подходящую библиотеку из открытого источника на <a href="https://packagist.org/">Packagist.org</a>, официальном репозитории пакетов для Composer.</li>
+<li>Выберите пакет, который вы будете использовать в качестве зависимости.</li>
+<li>Запустите <code>composer require</code>, чтобы включить зависимость в файл <code>composer.json</code> и установить пакет.</li>
+</ul>
+
+<p>Давайте попробуем сделать это на примере демо-приложения.</p>
+
+<p>Приложение преобразует указанное предложение в понятную человеку часть <em>URL-адреса (slug)</em>. Как правило, подобные приложения используются для преобразования названия страницы в URL-адрес (например, последняя часть URL для данного обучающего руководства).</p>
+
+<p>Начнем с создания директории для нашего проекта. Мы назовем его <strong>slugify</strong>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">mkdir slugify
+</li><li class="line" prefix="$">cd slugify
+</li></ul></code></pre>
+<p>Теперь нужно найти <a href="https://packagist.org/">на Packagist.org</a> пакет, который поможет нам генерировать <em>понятные человеку части URL-адреса</em>. При поиске термина «slug» на Packagist вы получите примерно такой результат:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/composer_1404/packagist.png" alt="Packagist Search: easy-slug/easy-slug, muffin/slug, ddd/slug, zelenin/slug, webcastle/slug, anomaly/slug-field_type"></p>
+
+<p>Вы увидите два числа с правой стороны каждого пакета в списке. Число сверху указывает на количество установок пакета, а число внизу показывает, какие оценки пакету ставили на <a href="https://github.com">GitHub</a>. Вы можете изменить порядок результатов поиска на основе этих чисел (посмотрите на два значка с правой стороны панели поиска). Как правило, пакеты с большим количеством установок и большим количеством звезд более стабильны, потому что многие люди их используют. Также важно проверить описание пакета на соответствие тому, что вам нужно.</p>
+
+<p>Нам нужен простой конвертер ​​из строки в понятную человеку часть URL-адреса. Судя по результатам поиска пакет <code>cocur/slugify</code> кажется наиболее подходящим вариантом с большим количеством установок и звезд (Пакет расположен ниже в результатах поиска, чем видно на скриншоте).</p>
+
+<p>Пакеты на Packagist имеют имя <strong>автора</strong> и имя <strong>пакета.</strong> Каждый пакет имеет уникальный идентификатор (пространство имен) в том же формате, который использует GitHub для своих репозиториев в форме <code>автор/пакет</code>. Библиотека, которую мы хотим установить, использует пространство имен <code>cocur/slugif</code>. Вам нужно пространство имен, чтобы использовать пакет в вашем проекте.</p>
+
+<p>Теперь, когда вы знаете, какой пакет хотите установить, запустите <code>composer require</code>, чтобы использовать его в качестве зависимости, а также сгенерировать файл <code>composer.json</code> для проекта:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">composer require cocur/slugify
+</li></ul></code></pre>
+<p>Вы увидите следующий вывод, когда Composer загрузит зависимость:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Using version <span class="highlight">^3.1</span> for <span class="highlight">cocur/slugify</span>
+<span class="highlight">./composer.json</span> has been created
+Loading composer repositories with package information
+Updating dependencies (including require-dev)
+Package operations: 1 install, 0 updates, 0 removals
+  - <span class="highlight">Installing cocur/slugify (v3.1)</span>: Downloading (100%)
+Writing lock file
+Generating autoload files
+</code></pre>
+<p>Как видите, Composer автоматически определил, какую версию пакета использовать. Если вы сейчас проверите каталог вашего проекта, он будет содержать два новых файла: <code>composer.json</code> и <code>composer.lock</code>, а также каталог <code>vendor</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -l
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>total 12
+-rw-rw-r-- 1 sammy sammy   59 Jul 11 16:40 composer.json
+-rw-rw-r-- 1 sammy sammy 2934 Jul 11 16:40 composer.lock
+drwxrwxr-x 4 sammy sammy 4096 Jul 11 16:40 vendor
+</code></pre>
+<p>Файл <code>composer.lock</code> используется для хранения информации о том, какие версии каждого пакета установлены, а также для использования одних и тех же версий пакетов, если кто-либо будет клонировать ваш проект и устанавливать зависимости. Каталог <code>vendor</code> служит местом расположения зависимостей проекта. Папка <code>vendor</code> не обязательно будет использоваться для контроля версий, вы должны поместить туда только файлы <strong>composer.json</strong> и <strong>composer.lock</strong>.</p>
+
+<p><span class='note'>При установке проекта, который уже содержит файл <code>composer.json</code>, запустите <code>composer install</code>, чтобы загрузить зависимости проекта.<br></span></p>
+
+<p>Давайте быстро пробежимся по ограничениям версии. Если вы просмотрите содержимое файла <code>composer.json</code>, то увидите следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat composer.json
+</li></ul></code></pre><pre class="code-pre "><code class="code-highlight language-json"><div class="secondary-code-label " title="Output">Output</div>{
+    "require": {
+        "cocur/slugify": "^3.1"
+    }
+}
+sam
+</code></pre>
+<p>Вы можете заметить специальный символ <code>^</code> перед номером версии в файле <code>composer.json</code>. Composer поддерживает несколько ограничений и форматов для определения требуемой версии пакета, чтобы обеспечить гибкость и одновременно сохранить стабильность вашего проекта. Оператор карет ​​(<code>^</code>), используемый в автоматически генерируемом файле <code>composer.json</code>, рекомендуется применять для обеспечения максимальной совместимости в соответствии с <a href="http://semver.org/">семантическим управлением версиями</a>. В данном случае он определяет <strong>3.1</strong> в качестве минимальной совместимой версии и позволяет обновляться до любой будущей версии ниже <strong>4.0</strong>.</p>
+
+<p>Как правило, вам не нужно изменять ограничения версии в файле <code>composer.json</code>. Однако в некоторых ситуациях может потребоваться вручную отредактировать ограничения для экземпляра, например, при выходе крупного обновления требуемой библиотеки, а также в случае, когда библиотека, которую вы хотите использовать, не соответствует требованиям семантического управления версиями.</p>
+
+<p>Ниже представлены примеры, которые помогут лучше понять, как работают ограничения версии в Composer:</p>
+
+<table><thead>
+<tr>
+<th>Ограничение</th>
+<th>Значение</th>
+<th>Пример допустимых версий</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>^1.0</td>
+<td>&gt;= 1.0 &lt; 2.0</td>
+<td>1.0, 1.2.3, 1.9.9</td>
+</tr>
+<tr>
+<td>^1.1.0</td>
+<td>&gt;= 1.1.0 &lt; 2.0</td>
+<td>1.1.0, 1.5.6, 1.9.9</td>
+</tr>
+<tr>
+<td>~1.0</td>
+<td>&gt;= 1.0 &lt; 2.0.0</td>
+<td>1.0, 1.4.1, 1.9.9</td>
+</tr>
+<tr>
+<td>~1.0.0</td>
+<td>&gt;= 1.0.0 &lt; 1.1</td>
+<td>1.0.0, 1.0.4, 1.0.9</td>
+</tr>
+<tr>
+<td>1.2.1</td>
+<td>1.2.1</td>
+<td>1.2.1</td>
+</tr>
+<tr>
+<td>1.*</td>
+<td>&gt;= 1.0 &lt; 2.0</td>
+<td>1.0.0, 1.4.5, 1.9.9</td>
+</tr>
+<tr>
+<td>1.2. *</td>
+<td>&gt;= 1.2 &lt; 1.3</td>
+<td>1.2.0, 1.2.3, 1.2.9</td>
+</tr>
+</tbody></table>
+
+<p>Более подробное описание ограничений версии в Composer см. <a href="https://getcomposer.org/doc/articles/versions.md">в официальной документации</a>.</p>
+
+<p>Теперь нужно рассмотреть, как автоматически загружать зависимости с помощью Composer.</p>
+
+<h2 id="Шаг-4-—-Включение-скрипта-автозагрузки">Шаг 4 — Включение скрипта автозагрузки</h2>
+
+<p>Поскольку PHP не загружает классы автоматически, Composer предоставляет скрипт автозагрузки, который можно включить в ваш проект, чтобы использовать автозагрузку бесплатно. Это значительно упрощает работу с зависимостями.</p>
+
+<p>Вам нужно будет только включить файл <code>vendor/autoload.php</code> в скрипты PHP перед созданием экземпляра любого класса. Composer автоматически генерирует этот файл при добавлении первой зависимости.</p>
+
+<p>Давайте попробуем сделать это в нашем приложении. Создайте файл <code>test.php</code> и откройте его в текстовом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano test.php
+</li></ul></code></pre>
+<p>Добавьте следующий код, который будет подключать файл <code>vendor/autoload.php</code>, загружать зависимость <code>cocur/slugify</code> и использовать ее для создания понятной человеку части URL-адреса:</p>
+<div class="code-label " title="test.php">test.php</div><pre class="code-pre "><code class="code-highlight language-php">&lt;?php
+require __DIR__ . '/vendor/autoload.php';
+
+use Cocur\Slugify\Slugify;
+
+$slugify = new Slugify();
+
+echo $slugify-&gt;slugify('Hello World, this is a long sentence and I need to make a slug from it!');
+</code></pre>
+<p>Сохраните файл и закройте редактор.</p>
+
+<p>Запустите скрипт:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">php test.php
+</li></ul></code></pre>
+<p>Вы должны получить вывод <code>hello-world-this-is-a-long-sentence-and-i-need-to-make-a-slug-from-it</code>.</p>
+
+<p>Зависимости нуждаются в обновлениях при выходе новых версий, так что давайте рассмотрим, как решить эту проблему.</p>
+
+<h2 id="Шаг-5-—-Обновление-зависимостей-проекта">Шаг 5 — Обновление зависимостей проекта</h2>
+
+<p>Если вам нужно обновить зависимости проекта на более поздние версии, запустите команду <code>update</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">composer update
+</li></ul></code></pre>
+<p>Она будет проверять новые версии библиотек, которые требуются вам в вашем проекте. Если будет найдена новая версия, которая совместима с ограничением версии, определенным в файле <code>composer.json</code>, Composer заменит ранее установленную версию на новую. Файл <code>composer.lock</code> будет обновлен, чтобы отразить эти изменения.</p>
+
+<p>Вы также можете обновить одну или несколько конкретных библиотек, указав их следующим образом:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">composer update <span class="highlight">vendor/package vendor2/package2</span>
+</li></ul></code></pre>
+<p>Обязательно проверьте файлы <code>composer.json</code> и <code>composer.lock</code> после обновления зависимостей, чтобы другие тоже могли установить обновленные версии.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Composer — это мощный инструмент, который должен быть в арсенале каждого разработчика PHP. В этом обучающем руководстве вы установили Composer и использовали его при создании простого проекта. Теперь вы умеете устанавливать и обновлять зависимости.</p>
+
+<p>Помимо обеспечения удобного и надежного способа управления зависимостями проекта, этот инструмент задает новый стандарт для обмена и обнаружения пакетов PHP, созданных сообществом.</p>

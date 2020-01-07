@@ -1,0 +1,399 @@
+---
+layout: post
+title: How To Deploy and Manage Your DNS using OctoDNS on Debian 10
+network: digitalocean
+date: January 07, 2020 at 05:08PM
+url: https://www.digitalocean.com/community/tutorials/how-to-deploy-and-manage-your-dns-using-octodns-on-debian-10
+image: https://assets.digitalocean.com/articles/dnscontrols1804/step5.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>The author selected the <a href="https://www.brightfunds.org/organizations/electronic-frontier-foundation-inc">Electronic Frontier Foundation</a> to receive a donation as part of the <a href="https://do.co/w4do-cta">Write for DOnations</a> program.</em></p>
+
+<h3 id="introduction">Introduction</h3>
+
+<p><a href="https://github.com/github/octodns/">OctoDNS</a> is an <a href="https://en.wikipedia.org/wiki/Infrastructure_as_code">infrastructure-as-code</a> tool that allows you to deploy and manage your DNS zones using standard software development principles, including version control, testing, and automated deployment. OctoDNS was created by <a href="https://github.com/">GitHub</a> and is written in Python.</p>
+
+<p>Using OctoDNS eliminates many of the pitfalls of manual DNS management, as zone files are stored in a structured format (<a href="https://en.wikipedia.org/wiki/YAML">YAML</a>). This allows you to deploy zones to multiple DNS providers simultaneously, identify syntax errors, and push out your DNS configuration automatically, reducing the risk of human error. Another common usage of OctoDNS is to synchronize your DNS configuration between different providers, such as a testing and production system, or between live and failover environments.</p>
+
+<p>OctoDNS is similar to DNSControl, which is an equivalent tool created by Stack Exchange and written in Go. Unlike OctoDNS, DNSControl uses a JavaScript-based configuration language for defining DNS zones, which allows you to use advanced programmatic features such as loops to specify multiple similar records within the same zone. The article <a href="https://www.digitalocean.com/community/tutorials/how-to-deploy-and-manage-your-dns-using-dnscontrol-on-debian-10">How to Deploy and Manage Your DNS Using DNSControl on Debian 10</a> covers the basic setup and configuration of DNSControl.</p>
+
+<p>In this tutorial, you&rsquo;ll install and configure OctoDNS, create a basic DNS configuration, and begin deploying DNS records to a live provider. As part of this tutorial, we will use DigitalOcean as the example DNS provider. If you wish to use a <a href="https://github.com/github/octodns#supported-providers">different provider</a>, the setup is very similar. When you&rsquo;re finished, you&rsquo;ll be able to manage and test your DNS configuration in a safe, offline environment, and then automatically deploy it to production.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<p>Before you begin this guide you&rsquo;ll need the following:</p>
+
+<ul>
+<li>One Debian 10 server set up by following the <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-10">Initial Server Setup with Debian 10</a>, including a sudo non-root user and enabled firewall to block non-essential ports. <code><span class="highlight">your-server-ipv4-address</span></code> and <code><span class="highlight">your-server-ipv6-address</span></code> refer to the IP addresses of the server where you&rsquo;re hosting your website or domain.</li>
+<li>A fully registered domain name with DNS hosted by a <a href="https://github.com/github/octodns#supported-providers">supported provider</a>. This tutorial will use <code><span class="highlight">your-domain</span></code> throughout and DigitalOcean as the service provider.</li>
+<li>A DigitalOcean API key (Personal Access Token) with read and write permissions. To create one, visit <a href="https://www.digitalocean.com/docs/api/create-personal-access-token/">How to Create a Personal Access Token</a>.</li>
+</ul>
+
+<p>Once you have these ready, log in to your server as your non-root user to begin.</p>
+
+<h2 id="step-1-—-installing-octodns">Step 1 — Installing OctoDNS</h2>
+
+<p>OctoDNS is distributed as a Python pip package, and runs in a Python Virtual Environment (<a href="https://virtualenv.pypa.io/en/latest/"><code>virtualenv</code></a>), so you&rsquo;ll start this step by installing the packages required for this. A <code>virtualenv</code> is an isolated Python environment that can have its own libraries and configuration, separate from the main system-wide Python installation. Python and <code>virtualenv</code> are available within Debian&rsquo;s default software repositories, making it possible to install using conventional package management tools.</p>
+
+<p>Begin by updating the local package index to reflect any new upstream changes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Then, install the <code>python</code> and <code>virtualenv</code> packages:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install python virtualenv
+</li></ul></code></pre>
+<p>After confirming the installation, <code>apt</code> will download and install Python, <code>virtualenv</code>, and all of their required dependencies.</p>
+
+<p>Next, you&rsquo;ll create the required directories for OctoDNS, where your DNS and program configuration will be stored. Start by creating the <code>~/octodns</code> and <code>~/octodns/config</code> directories:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/octodns ~/octodns/config
+</li></ul></code></pre>
+<p>Now move into <code>~/octodns</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/octodns
+</li></ul></code></pre>
+<p>Next, you need to create the Python Virtual Environment—an isolated Python environment with its own libraries and configuration to run OctoDNS in:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">virtualenv <span class="highlight">env</span>
+</li></ul></code></pre>
+<p>Activate your environment with the following command:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source <span class="highlight">env</span>/bin/activate
+</li></ul></code></pre>
+<p>This will output something similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Running virtualenv with interpreter /usr/bin/python2
+New python executable in /home/user/octodns/env/bin/python2
+Also creating executable in /home/user/octodns/env/bin/python
+Installing setuptools, pkg_resources, pip, wheel...done.
+</code></pre>
+<p>Your Bash shell prompt will now also be prefixed with the name of the virtual environment. This shows that you are currently operating within the <code>virtualenv</code>:</p>
+<pre class="code-pre "><code langs="">(<span class="highlight">env</span>) user@digitalocean:~/octodns$
+</code></pre>
+<p>If you wish to exit the <code>virtualenv</code>, you can use the <code>deactivate</code> command at any time. However, you should stay in your <code>virtualenv</code> to continue with this tutorial.</p>
+
+<p>Now that you&rsquo;ve installed and configured Python and <code>virtualenv</code>, you can install OctoDNS. OctoDNS is distributed as a Python pip package, which is the standard package-management tool for Python packages and libraries.</p>
+
+<p>You can install the OctoDNS pip package using the following command within your <code>virtualenv</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">pip install octodns
+</li></ul></code></pre>
+<p>Once this is complete, you can check the installed version to make sure that everything is working:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">octodns-sync --version
+</li></ul></code></pre>
+<p>Your output will look similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>octoDNS <span class="highlight">0.9.9</span>
+</code></pre>
+<p>If you see a <code>octodns-sync: command not found</code> error, double-check that you&rsquo;re still inside your <code>virtualenv</code>.</p>
+
+<p>Now that you&rsquo;ve installed OctoDNS, you can create the required configuration files to connect OctoDNS to your DNS provider to allow it to make changes to your DNS records.</p>
+
+<h2 id="step-2-—-configuring-octodns">Step 2 — Configuring OctoDNS</h2>
+
+<p>In this step, you&rsquo;ll create the required configuration files for OctoDNS, and connect it to your DNS provider so that it can begin to make live changes to your DNS records.</p>
+
+<p><span class='note'><strong>Note:</strong> This tutorial will focus on the initial setup of OctoDNS; however for production use it is recommended to store your OctoDNS configuration in a version control system (VCS) such as <a href="https://www.digitalocean.com/community/tutorial_series/introduction-to-git-installation-usage-and-branches">Git</a>. The advantages of this include full version control, integration with CI/CD for testing, seamlessly rolling-back deployments, and so on.<br></span></p>
+
+<p>Firstly, you need to configure the <code>config.yaml</code> file, which defines the DNS zones for OctoDNS to manage, and allows it to authenticate to your DNS provider and make changes.</p>
+
+<p>The format of <code>config.yaml</code> differs slightly depending on the DNS provider that you are using. Please see the <a href="https://github.com/github/octodns#supported-providers">Supported Providers list</a> in the official OctoDNS documentation to find the configuration for your own provider. When viewing this hyperlink, the configuration details are presented as a code comment in the actual Python code for your provider, which is linked in the &lsquo;Provider&rsquo; column of the table. Once you have found the Python code for your provider, such as <code>cloudflare.py</code> or <code>route53.py</code>, the relevant code comment can be found directly under the <code>class</code> <code><span class="highlight">ProviderName</span>Provider</code>. For example:</p>
+<div class="code-label " title="Excerpt of octodns/provider/route53.py">Excerpt of octodns/provider/route53.py</div><pre class="code-pre route53.py"><code langs="">class Route53Provider(BaseProvider):
+  '''
+  AWS Route53 Provider
+  route53:
+      class: octodns.provider.route53.Route53Provider
+      # The AWS access key id
+      access_key_id:
+      # The AWS secret access key
+      secret_access_key:
+      # The AWS session token (optional)
+      # Only needed if using temporary security credentials
+      session_token:
+</code></pre>
+<p>Move into the <code>~/octodns/config</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/octodns/config
+</li></ul></code></pre>
+<p>Then create and open <code>config.yaml</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano config.yaml
+</li></ul></code></pre>
+<p>Add the sample <code>config.yaml</code> configuration for your DNS provider to the file. If you&rsquo;re using DigitalOcean as your DNS provider, you can use the following:</p>
+<div class="code-label " title="~/octodns/config/config.yaml">~/octodns/config/config.yaml</div><pre class="code-pre config"><code langs="">---
+providers:
+  config:
+    class: octodns.provider.yaml.YamlProvider
+    directory: ./config
+    default_ttl: 300
+    enforce_order: True
+  digitalocean:
+    class: octodns.provider.digitalocean.DigitalOceanProvider
+    token: <span class="highlight">your-digitalocean-oauth-token</span>
+
+zones:
+  <span class="highlight">your-domain</span>.:
+    sources:
+      - config
+    targets:
+      - digitalocean
+</code></pre>
+<p>This file tells OctoDNS which DNS providers you want it to connect to, and which DNS zones it should manage for those providers.</p>
+
+<p>You&rsquo;ll need to provide some form of authentication for your DNS provider. This is usually an API key or OAuth token.</p>
+
+<p>If you do not wish to store your access token in plain text in the configuration file, you can instead pass it as an environment variable when the program runs. To do this, you should use the following <code>token:</code> line instead in <code>config.yaml</code>:</p>
+<div class="code-label " title="~/octodns/config/config.yaml">~/octodns/config/config.yaml</div><pre class="code-pre config"><code langs="">token: env/DIGITALOCEAN\_OAUTH\_TOKEN
+</code></pre>
+<p>Then, before running OctoDNS, set the relevant environment variable to your access token, and OctoDNS will read it from there when run:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">export DIGITALOCEAN\_OAUTH\_TOKEN=<span class="highlight">your-digitalocean-oauth-token</span>
+</li></ul></code></pre>
+<p><span class='warning'><strong>Warning:</strong> This token will grant access to your DNS provider account, so you should protect it as you would a password. Also, ensure that if you&rsquo;re using a version control system, either the file containing the token is excluded (e.g. using <code>.gitignore</code>), or is securely encrypted in some way.<br></span></p>
+
+<p>If you&rsquo;re using DigitalOcean as your DNS provider, you can use the required OAuth token <a href="https://cloud.digitalocean.com/settings/applications">in your DigitalOcean account settings</a> that you generated as part of the prerequisites.</p>
+
+<p>If you have multiple different DNS providers—for example, for multiple domain names, or delegated DNS zones—you can define these all in the same <code>config.yaml</code> file.</p>
+
+<p>You&rsquo;ve set up the initial OctoDNS configuration file to allow the program to authenticate to your DNS provider and make changes. Next you&rsquo;ll create the configuration for your DNS zones.</p>
+
+<h2 id="step-3-—-creating-a-dns-configuration-file">Step 3 — Creating a DNS Configuration File</h2>
+
+<p>In this step, you&rsquo;ll create an initial DNS configuration file, which will contain the DNS records for your domain name or delegated DNS zone.</p>
+
+<p>Each DNS zone that you want to manage using OctoDNS has its own file, for example <code><span class="highlight">your-domain</span>.yaml</code>. In this file, the DNS records for the zone are defined using <a href="https://en.wikipedia.org/wiki/YAML">YAML</a>.</p>
+
+<p>To begin, move into the <code>~/octodns/config</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/octodns/config
+</li></ul></code></pre>
+<p>Then create and open <code><span class="highlight">your-domain</span>.yaml</code> for editing:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano <span class="highlight">your-domain</span>.yaml
+</li></ul></code></pre>
+<p>Add the following sample configuration to the file:</p>
+<div class="code-label " title="~/octodns/config/your-domain.yaml">~/octodns/config/your-domain.yaml</div><pre class="code-pre "><code langs="">---
+'':
+  - type: A
+    value: <span class="highlight">your-server-ipv4-address</span>
+
+www:
+  - type: A
+    value: <span class="highlight">your-server-ipv4-address</span>
+</code></pre>
+<p>This sample file defines a DNS zone for <code><span class="highlight">your-domain</span></code> with two <code>A</code> records, pointing to the IPv4 address that you&rsquo;re hosting your domain or website on. One <code>A</code> record is for the root domain (e.g. <code><span class="highlight">your-domain</span></code>), and the other is for the <code>www</code> subdomain (e.g. <code>www.<span class="highlight">your-domain</span></code>).</p>
+
+<p>Once complete, save and close the file.</p>
+
+<p>You&rsquo;ve set up a basic DNS zone configuration file for OctoDNS, with two basic <code>A</code> records pointing to the IPv4 address of your domain or website. Next, you&rsquo;ll expand the file with some useful DNS records.</p>
+
+<h2 id="step-4-—-populating-your-dns-configuration-file">Step 4 — Populating Your DNS Configuration File</h2>
+
+<p>Next, you can populate the DNS configuration file with a practical set of DNS records for your website or service, using the YAML structured configuration language.</p>
+
+<p>Unlike traditional <a href="https://en.wikipedia.org/wiki/Zone_file">BIND zone files</a>, where DNS records are written in a raw, line-by-line format, DNS records within OctoDNS are defined as YAML keys and subkeys with a number of associated values, as shown briefly in Step 3.</p>
+
+<p>The top-level key is usually the <code>'name'</code>, which is essentially the record identifier. <code>www</code>, <code>subdomain1</code>, and <code>mail</code> are all examples of DNS <code>'name'</code>. In OctoDNS, there are two special-use names, which are <code>''</code>, for the root record (usually referred to as <code>@</code>), and <code>'*'</code>, for wildcard records. A required value of each key (DNS record) is <code>type</code>. This defines which type of DNS record you are defining within that YAML top-level key. A <code>type</code> exists for each of the standard DNS record types, including <code>A</code>, <code>AAAA</code>, <code>MX</code>, <code>TXT</code>, <code>NS</code>, <code>CNAME</code>, and so on. A full list of available record types is available in the <a href="https://github.com/github/octodns/blob/master/docs/records.md">Records</a> section of the OctoDNS documentation.</p>
+
+<p>The values for your DNS records are defined either directly as values to the top-level keys (if you only have one value), or as a list (if you have multiple values, e.g. multiple IP addresses or MX addresses).</p>
+
+<p>For example, to define a single value, you could use the following configuration:</p>
+<div class="code-label " title="~/octodns/config/your-domain.yaml">~/octodns/config/your-domain.yaml</div><pre class="code-pre "><code langs="">'www':
+  type: A
+  value: 203.0.113.1
+</code></pre>
+<p>Alternatively, to define multiple values for a single record:</p>
+<div class="code-label " title="~/octodns/config/your-domain.yaml">~/octodns/config/your-domain.yaml</div><pre class="code-pre "><code langs="">'www':
+  type: A
+  values:
+  - 203.0.113.1
+  - 203.0.113.2
+</code></pre>
+<p>The syntax for setting DNS records varies slightly for each record type. Following are some examples for the most common record types:</p>
+
+<h3 id="a-records"><code>A</code> records:</h3>
+
+<p>Purpose: To point to an IPv4 address.</p>
+
+<p>Syntax:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">name</span>':
+  type: A
+  value: <span class="highlight">ipv4-address</span>
+</code></pre>
+<p>Example:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">www</span>':
+  type: A
+  value: <span class="highlight">your-server-ipv4-address</span>
+</code></pre>
+<h4 id="aaaa-records"><code>AAAA</code> records:</h4>
+
+<p>Purpose: To point to an IPv6 address.</p>
+
+<p>Syntax:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">name</span>':
+  type: AAAA
+  value: <span class="highlight">ipv6-address</span>
+</code></pre>
+<p>Example:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">www</span>':
+  type: AAAA
+  value: <span class="highlight">your-server-ipv6-address</span>
+</code></pre>
+<h3 id="cname-records"><code>CNAME</code> records:</h3>
+
+<p>Purpose: To make your domain/subdomain an alias of another.</p>
+
+<p>Syntax:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">name</span>':
+  type: CNAME
+  value: <span class="highlight">fully-qualified-domain-name</span>
+</code></pre>
+<p>Example:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">www</span>':
+  type: CNAME
+  value: <span class="highlight">www.example.org</span>
+</code></pre>
+<h3 id="mx-records"><code>MX</code> records:</h3>
+
+<p>Purpose: To direct email to specific servers/addresses.</p>
+
+<p>Syntax:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">name</span>':
+  type: MX
+  value:
+    exchange: <span class="highlight">mail-server</span>
+    preference: <span class="highlight">priority-value</span>
+</code></pre>
+<p>Note that a trailing <code>.</code> <strong>must</strong> be included if there are any dots in the MX value.</p>
+
+<p>Example:</p>
+<pre class="code-pre "><code langs="">'':
+  type: MX
+  value:
+    exchange: <span class="highlight">mail.your-domain</span>.
+    preference: <span class="highlight">10</span>
+</code></pre>
+<h3 id="txt-records"><code>TXT</code> records:</h3>
+
+<p>Purpose: To add arbitrary plain text, often used for configurations without their own dedicated record type.</p>
+
+<p>Syntax:</p>
+<pre class="code-pre "><code langs="">'<span class="highlight">name</span>':
+  type: TXT
+  value: <span class="highlight">content</span>
+</code></pre>
+<p>Example:</p>
+<pre class="code-pre "><code langs="">'':
+  type: TXT
+  value: <span class="highlight">This is a TXT record.</span>
+</code></pre>
+<p>In order to begin adding DNS records for your domain or delegated DNS zone, edit your DNS configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/octodns/config
+</li><li class="line" prefix="$">nano <span class="highlight">your-domain</span>.yaml
+</li></ul></code></pre>
+<p>Next, you can begin populating your DNS zone using the syntax described in the previous list, as well as the <a href="https://github.com/github/octodns/blob/master/docs/records.md">Records</a> section of the official OctoDNS documentation.</p>
+
+<p>For reference, the code block here contains a full sample configuration for an initial DNS setup:</p>
+<div class="code-label " title="~/octodns/config/your-domain.yaml">~/octodns/config/your-domain.yaml</div><pre class="code-pre your-domain.yaml"><code langs="">---
+'':
+  - type: A
+    value: <span class="highlight">your-server-ipv4-address</span>
+
+  - type: AAAA
+    value: <span class="highlight">your-server-ipv6-address</span>
+
+  - type: MX
+    value:
+      exchange: mail.<span class="highlight">your-domain</span>.
+      preference: 10
+
+  - type: TXT
+    value: v=spf1 -all
+
+_dmarc:
+  type: TXT
+  value: v=DMARC1\; p=reject\; rua=mailto:abuse@<span class="highlight">your-domain</span>\; aspf=s\; adkim=s\;
+
+mail:
+  - type: A
+    value: <span class="highlight">your-server-ipv4-address</span>
+
+  - type: AAAA
+    value: <span class="highlight">your-server-ipv6-address</span>
+
+www:
+  - type: A
+    value: <span class="highlight">your-server-ipv4-address</span>
+
+  - type: AAAA
+    value: <span class="highlight">your-server-ipv6-address</span>
+</code></pre>
+<p>Once you have completed your initial DNS configuration, save and close the file.</p>
+
+<p>In this step, you set up the initial DNS configuration file, containing your DNS records. Next, you will test the configuration and deploy it.</p>
+
+<h2 id="step-5-—-testing-and-deploying-your-dns-configuration">Step 5 — Testing and Deploying Your DNS Configuration</h2>
+
+<p>In this step, you will run a local syntax check on your DNS configuration, and then deploy the changes to the live DNS server/provider.</p>
+
+<p>Firstly, move into your <code>octodns</code> directory:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/octodns
+</li></ul></code></pre>
+<p>Double check that you&rsquo;re still operating within your Python <code>virtualenv</code> by looking for the name of it before your Bash prompt:</p>
+<pre class="code-pre "><code langs="">(env) user@digitalocean:~/octodns$
+</code></pre>
+<p>Next, use the <code>octodns-validate</code> command to check the syntax of your configuration file(s). You&rsquo;ll need to specify the path to your configuration file:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">octodns-validate --config=./config/config.yaml
+</li></ul></code></pre>
+<p>If the YAML syntax of your DNS configuration file is correct, OctoDNS will return with no output. If you see an error or warning in your output, OctoDNS will provide details on what and where the error is located within your YAML file.</p>
+
+<p>Next, you can perform a dry-run push of the DNS configuration, which will output which changes will be made, without actually making them:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">octodns-sync --config=./config/config.yaml
+</li></ul></code></pre>
+<p>This should produce an output similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>********************************************************************************
+* <span class="highlight">your-domain</span>.
+********************************************************************************
+* digitalocean (DigitalOceanProvider)
+*   Create &lt;ARecord A 300, mail.<span class="highlight">your-domain</span>., ['<span class="highlight">your-server-ipv4-address</span>']&gt; (config)
+*   Create &lt;AaaaRecord AAAA 300, mail.<span class="highlight">your-domain</span>., ['<span class="highlight">your-server-ipv6-address</span>']&gt; (config)
+*   Create &lt;TxtRecord TXT 300, <span class="highlight">your-domain</span>., ['v=spf1 -all']&gt; (config)
+*   Create &lt;AaaaRecord AAAA 300, <span class="highlight">your-domain</span>., ['<span class="highlight">your-server-ipv6-address</span>']&gt; (config)
+*   Create &lt;ARecord A 300, <span class="highlight">your-domain</span>., ['<span class="highlight">your-server-ipv4-address</span>']&gt; (config)
+*   Create &lt;ARecord A 300, www.<span class="highlight">your-domain</span>., ['<span class="highlight">your-server-ipv4-address</span>']&gt; (config)
+*   Create &lt;MxRecord MX 300, <span class="highlight">your-domain</span>., [''10 mail.<span class="highlight">your-domain</span>.'']&gt; (config)
+*   Create &lt;TxtRecord TXT 300, _dmarc.<span class="highlight">your-domain</span>., ['v=DMARC1\; p=reject\; rua=mailto:abuse@<span class="highlight">your-domain</span>\; aspf=s\; adkim=s\;']&gt; (config)
+*   Create &lt;AaaaRecord AAAA 300, www.<span class="highlight">your-domain</span>., ['<span class="highlight">your-server-ipv6-address</span>']&gt; (config)
+*   Summary: Creates=9, Updates=0, Deletes=0, Existing Records=2
+********************************************************************************
+</code></pre>
+<p><span class='warning'><strong>Warning:</strong> The next command will make live changes to your DNS records and possibly other settings. Please ensure that you are prepared for this, including taking a backup of your existing DNS configuration, as well as ensuring that you have the means to roll back if needed.<br></span></p>
+
+<p>Finally, you can push out the changes to your live DNS provider:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">octodns-sync --config=./config/config.yaml --doit
+</li></ul></code></pre>
+<p><span class='note'><strong>Note:</strong> In some cases, OctoDNS will refuse to push changes if it is making a significant number of adjustments. This is an automatic protection feature to prevent accidental misconfigurations. If you encounter this refusal, you can re-run <code>octodns-sync</code> using the <code>--force</code> option, but please ensure you are ready to do so.<br></span></p>
+
+<p>You&rsquo;ll see an output like the dry-run earlier in this step, but with the addition of something similar to the following:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>2019-07-07T23:17:27 INFO  DigitalOceanProvider[digitalocean] apply: making changes
+2019-07-07T23:17:30 INFO  Manager sync:   9 total changes
+</code></pre>
+<p>Now, if you check the DNS settings for your domain in the DigitalOcean control panel, you&rsquo;ll see the changes.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/dnscontrols1804/step5.png" alt="A screenshot of the DigitalOcean control panel, showing some of the DNS changes that OctoDNS has made."></p>
+
+<p>You can also check the record creation by running a DNS query for your domain/delegated zone using <code>dig</code>.</p>
+
+<p>If you don&rsquo;t have <code>dig</code> installed, you&rsquo;ll need to install the <code>dnsutils</code> package:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install dnsutils
+</li></ul></code></pre>
+<p>Once you&rsquo;ve installed <code>dig</code>, you can use it to make a DNS lookup for your domain. You&rsquo;ll see that the records have been updated accordingly:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">dig +short <span class="highlight">your-domain</span>
+</li></ul></code></pre>
+<p>You&rsquo;ll see output showing the IP address and relevant DNS record from your zone that you deployed using OctoDNS. DNS records can take some time to propagate, so you may need to wait and run this command again.</p>
+
+<p>In this final step, you ran a local syntax check of the DNS configuration file, then deployed it to your live DNS provider, and tested that the changes were made successfully.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this article you set up OctoDNS and deployed a DNS configuration to a live provider. Now you can manage and test your DNS configuration changes in a safe, offline environment before deploying them to production.</p>
+
+<p>If you wish to explore this subject further, OctoDNS is designed to be integrated into your CI/CD pipeline, allowing you to run in-depth tests and have more control over your deployment to production. You could also look into integrating OctoDNS into your infrastructure build/deployment processes, allowing you to deploy servers and add them to DNS completely automatically.</p>
+
+<p>If you wish to go further with OctoDNS, the following DigitalOcean articles provide some interesting next steps to help integrate OctoDNS into your change management and infrastructure deployment workflows:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-continuous-integration-delivery-and-deployment">An Introduction to Continuous Integration, Delivery, and Deployment</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/ci-cd-tools-comparison-jenkins-gitlab-ci-buildbot-drone-and-concourse">CI/CD Tools Comparison: Jenkins, GitLab CI, Buildbot, Drone, and Concourse</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorial_series/getting-started-with-configuration-management">Getting Started with Configuration Management</a></li>
+</ul>

@@ -1,0 +1,322 @@
+---
+layout: post
+title: Создание самоподписанных сертификатов SSL для Apache в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:23PM
+url: https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-apache-in-ubuntu-18-04-ru
+image: https://assets.digitalocean.com/articles/apache_ssl_1604/self_signed_warning.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Предыдущая версия данного обучающего руководства была написана <a href="https://www.digitalocean.com/community/users/jellingwood">Джастином Эллингвудом</a></em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p>Веб-протокол <strong>TLS</strong> или протокол безопасности транспортного уровня, а также предшествовавший ему веб-протокол <strong>SSL</strong> или протокол уровня защищенных сокетов, используются для помещения обычного трафика в защищенную оболочку с шифрованием.</p>
+
+<p>С помощью этой технологии серверы могут обеспечивать безопасный обмен трафиком между серверами и клиентами без возможности перехвата сообщений третьими сторонами. Система сертификатов также помогает пользователям подтверждать подлинность сайтов, к которым они подключаются.</p>
+
+<p>В этом обучающем модуле мы покажем, как создать самоподписанный сертификат SSL для использования с веб-сервером Apache в Ubuntu 18.04.</p>
+
+<span class='note'><p>
+<strong>Примечание.</strong> Самоподписанный сертификат шифрует данные, которыми ваш сервер обменивается с любыми клиентами. Однако поскольку он не подписан доверенным центром сертификации из числа встроенных в браузеры, пользователи не могут использовать этот сертификат для автоматической проверки подлинности вашего сервера.</p>
+
+<p>Самоподписанный сертификат полезен в ситуациях, когда у вашего сервера нет доменного имени, а также в случаях, когда шифрованный веб-интерфейс не предназначен для взаимодействия с пользователями. Если у вас <em>есть</em> доменное имя, в большинстве случае будет полезнее использовать сертификат, подписанный центром сертификации. Вы можете узнать, как создать бесплатный доверенный сертификат с помощью проекта Let&rsquo;s Encrypt, <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-apache-with-let-s-encrypt-on-ubuntu-18-04">здесь</a>.<br></p></span>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для начала у вас должен быть пользователь без прав root с привилегиями <code>sudo</code>. Чтобы создать такую учетную запись пользователя, следуйте указаниям руководства <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">«Начальная настройка сервера с Ubuntu 18.04»</a>.</p>
+
+<p>Также вам потребуется установить веб-сервер Apache. Если вы хотите установить на сервере полный комплект LAMP (Linux, Apache, MySQL, PHP), следуйте указаниям обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-ubuntu-18-04">«Установка LAMP в Ubuntu 18.04»</a>. Если вы хотите просто установить веб-сервер Apache, пропустите шаги, относящиеся к установке PHP и MySQL.</p>
+
+<p>Когда предварительные требования будут выполнены, переходите к приведенным ниже шагам.</p>
+
+<h2 id="Шаг-1-–-Создание-сертификата-ssl">Шаг 1 – Создание сертификата SSL</h2>
+
+<p>Протоколы TLS и SSL используют сочетание открытого сертификата и закрытого ключа. Секретный ключ SSL хранится на сервере. Он используется для шифрования отправляемых на клиентские системы данных. Сертификат SSL находится в открытом доступе для всех, кто запрашивает этот контент. Его можно использовать для расшифровки контента, подписанного соответствующим ключом SSL.</p>
+
+<p>Мы можем создать самоподписанный ключ и пару сертификатов OpenSSL с помощью одной команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/apache-selfsigned.key -out /etc/ssl/certs/apache-selfsigned.crt
+</li></ul></code></pre>
+<p>Вам будет предложено ответить на ряд вопросов. Прежде чем перейти к этому шагу, посмотрим, что делает отправляемая нами команда:</p>
+
+<ul>
+<li><strong>openssl</strong>: это базовый инструмент командной строки для создания и управления сертификатами OpenSSL, ключами и другими файлами.</li>
+<li><strong>req</strong>: данная субкоманда указывает, что мы хотим использовать управление запросами подписи сертификатов X.509 (CSR). X.509 — это стандарт инфраструктуры открытых ключей, используемый SSL и TLS для управления ключами и сертификатами. Вы хотим создать новый сертификат X.509, и поэтому используем эту субкоманду.</li>
+<li><strong>-x509</strong>: это дополнительно изменяет предыдущую субкоманду, сообщая утилите, что мы хотим создать самоподписанный сертификат, а не сгенерировать запрос на подпись сертификата, как обычно происходит.</li>
+<li><strong>-nodes</strong>: этот параметр указывает OpenSSL пропустить опцию защиты сертификата с помощью пароля. Для чтения этого файла при запуске сервера без вмешательства пользователя нам потребуется Apache. Кодовая фраза может предотвратить это, поскольку нам придется вводить ее после каждого перезапуска.</li>
+<li><strong>-days 365</strong>: данный параметр устанавливает срок, в течение которого сертификат будет считаться действительным. Здесь мы устанавливаем срок действия в один год.</li>
+<li><strong>-newkey rsa:2048</strong>: указывает, что мы хотим генерировать новый сертификат и новый ключ одновременно. Мы не создали требуемый ключ для подписи сертификата на предыдущем шаге, и поэтому нам нужно создать его вместе с сертификатом. Часть <code>rsa:2048</code> указывает, что мы создаем ключ RSA длиной 2048 бит.</li>
+<li><strong>-keyout</strong>: эта строка указывает OpenSSL, где мы разместим создаваемый закрытый ключ.</li>
+<li><strong>-out</strong>: данный параметр указывает OpenSSL, куда поместить создаваемый сертификат.</li>
+</ul>
+
+<p>Как мы указывали выше, эти опции создают и файл ключа, и сертификат. Нам будет задано несколько вопросов о нашем сервере, чтобы правильно вставить информацию в сертификат.</p>
+
+<p>Укажите подходящие ответы. <strong>Самая важная строка — это строка, где запрашивается <code>обычное имя (т. е. FQDN сервера или ВАШЕ имя)</code>. Вам нужно ввести доменное имя, связанное с вашим сервером или, что более вероятно, публичный IP-адрес вашего сервера.</strong></p>
+
+<p>В целом диалоги выглядят примерно так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Country Name (2 letter code) [AU]:<span class="highlight">US</span>
+State or Province Name (full name) [Some-State]:<span class="highlight">New York</span>
+Locality Name (eg, city) []:<span class="highlight">New York City</span>
+Organization Name (eg, company) [Internet Widgits Pty Ltd]:<span class="highlight">Bouncy Castles, Inc.</span>
+Organizational Unit Name (eg, section) []:<span class="highlight">Ministry of Water Slides</span>
+Common Name (e.g. server FQDN or YOUR name) []:<span class="highlight">server_IP_address</span>
+Email Address []:<span class="highlight">admin@your_domain.com</span>
+</code></pre>
+<p>Оба созданных вами файла будут помещены в соответствующие подкаталоги в каталоге <code>/etc/ssl</code>.</p>
+
+<h2 id="Шаг-2-—-Настройка-apache-для-использования-ssl">Шаг 2 — Настройка Apache для использования SSL</h2>
+
+<p>Мы создали файлы ключа и сертификата в каталоге <code>/etc/ssl</code>. Теперь нам просто нужно изменить конфигурацию Apache, чтобы воспользоваться их преимуществами.</p>
+
+<p>Внесем несколько небольших изменений в нашу конфигурацию:</p>
+
+<ol>
+<li>Создадим сниппет конфигурации, чтобы задать надежные параметры SSL по умолчанию.</li>
+<li>Мы изменим входящий в комплект файл виртуального хоста SSL Apache, чтобы он указывал на сгенерированные нами сертификаты SSL.</li>
+<li>(Рекомендуется) Мы изменим незашифрованный файл виртуального хоста, чтобы он автоматически перенаправлял запросы на шифрованный виртуальный хост.</li>
+</ol>
+
+<p>После завершения настройки мы получим защищенную конфигурацию SSL.</p>
+
+<h3 id="Создание-сниппета-конфигурации-apache-с-надежными-настройками-шифрования">Создание сниппета конфигурации Apache с надежными настройками шифрования</h3>
+
+<p>Прежде всего, мы создадим сниппет конфигурации Apache для определения некоторых параметров SSL. При этом в Apache будет настроен надежный пакет шифров SSL и будут включены расширенные функции, которые обеспечат безопасность нашего сервера. Настраиваемые нами параметры смогут использовать любые виртуальные хосты с SSL.</p>
+
+<p>Создайте новый сниппет в каталоге <code>/etc/apache2/conf-available</code>. Мы назовем файл <code>ssl-params.conf</code>, чтобы сделать его назначение очевидным:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/conf-available/ssl-params.conf
+</li></ul></code></pre>
+<p>Для безопасной настройки Apache SSL мы используем рекомендации Реми ван Эльста на сайте <a href="https://cipherli.st">Cipherli.st</a>. Этот сайт создан для предоставления удобных настроек шифрования для популярного программного обеспечения.</p>
+
+<span class='note'><p>
+Рекомендованные настройки на вышеуказанном сайте обеспечивают высокий уровень безопасности. Иногда это достигается за счет совместимости клиентских систем. Если вам требуется поддержка старых версий клиентов, вы можете использовать альтернативный список, нажав на странице ссылку «Да, мне нужны настройки шифрования для устаревшего / старого программного обеспечения». Этот список можно заменить для копируемых ниже элементов.</p>
+
+<p>Выбор конфигурации в основном зависит от того, какие системы вам нужно поддерживать. Оба варианта обеспечивают высокий уровень безопасности.<br></p></span>
+
+<p>Для наших целей мы скопируем предоставленные настройки полностью. Мы внесем только одно небольшое изменение. Мы отключим заголовок <code>Strict-Transport-Security</code> (HSTS).</p>
+
+<p>Предварительная загрузка HSTS повышает безопасность, но может иметь далеко идущие последствия, если ее включить случайно или неправильно. В этом обучающем модуле мы не будем включать настройки, но вы можете изменить их, если понимаете возможные последствия.</p>
+
+<p>Прежде чем принимать решения, прочитайте о <a href="https://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security">строгой безопасности транспорта HTTP или HSTS</a>, в особенности о <a href="https://hstspreload.appspot.com/">функции «предварительной загрузки»</a></p>
+
+<p>Вставьте конфигурацию в открытый нами файл <code>ssl-params.conf</code>:</p>
+<div class="code-label " title="/etc/apache2/conf-available/ssl-params.conf">/etc/apache2/conf-available/ssl-params.conf</div><pre class="code-pre "><code langs="">SSLCipherSuite EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH
+SSLProtocol All -SSLv2 -SSLv3 -TLSv1 -TLSv1.1
+SSLHonorCipherOrder On
+<span class="highlight"># Disable preloading HSTS for now.  You can use the commented out header line that includes</span>
+<span class="highlight"># the "preload" directive if you understand the implications.</span>
+<span class="highlight">#</span> Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+Header always set X-Frame-Options DENY
+Header always set X-Content-Type-Options nosniff
+# Requires Apache &gt;= 2.4
+SSLCompression off
+SSLUseStapling on
+SSLStaplingCache "shmcb:logs/stapling-cache(150000)"
+# Requires Apache &gt;= 2.4.11
+SSLSessionTickets Off
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<h3 id="Изменение-файла-виртуального-хоста-apache-ssl-по-умолчанию">Изменение файла виртуального хоста Apache SSL по умолчанию</h3>
+
+<p>Теперь изменим <code>/etc/apache2/sites-available/sl.conf</code>, используемый по умолчанию файл виртуального хоста Apache SSL. Если вы используете другой файл серверных блоков, используйте имя этого файла в приведенных ниже командах.</p>
+
+<p>Прежде чем продолжить, создадим резервную копию первоначального файла виртуального хоста SSL:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /etc/apache2/sites-available/default-ssl.conf /etc/apache2/sites-available/default-ssl.conf.bak
+</li></ul></code></pre>
+<p>Теперь откройте файл виртуального хоста SSL для внесения изменений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/default-ssl.conf
+</li></ul></code></pre>
+<p>С удалением большинства комментариев содержание файла виртуального хоста по умолчанию должно выглядеть примерно так:</p>
+<div class="code-label " title="/etc/apache2/sites-available/default-ssl.conf">/etc/apache2/sites-available/default-ssl.conf</div><pre class="code-pre "><code langs="">&lt;IfModule mod_ssl.c&gt;
+        &lt;VirtualHost _default_:443&gt;
+                ServerAdmin webmaster@localhost
+
+                DocumentRoot /var/www/html
+
+                ErrorLog ${APACHE_LOG_DIR}/error.log
+                CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+                SSLEngine on
+
+                SSLCertificateFile      /etc/ssl/certs/ssl-cert-snakeoil.pem
+                SSLCertificateKeyFile /etc/ssl/private/ssl-cert-snakeoil.key
+
+                &lt;FilesMatch "\.(cgi|shtml|phtml|php)$"&gt;
+                                SSLOptions +StdEnvVars
+                &lt;/FilesMatch&gt;
+                &lt;Directory /usr/lib/cgi-bin&gt;
+                                SSLOptions +StdEnvVars
+                &lt;/Directory&gt;
+
+        &lt;/VirtualHost&gt;
+&lt;/IfModule&gt;
+</code></pre>
+<p>Мы внесем в файл незначительные изменения. Мы внесем желаемые изменения в файл виртуального хоста (адрес электронной почты администратора сервера, имя сервера и т. д.), а также изменим директив SSL, чтобы они указывали на наши файлы сертификатов и ключей.</p>
+
+<p>После внесения изменений ваш серверный блок должен выглядеть примерно так:</p>
+<div class="code-label " title="/etc/apache2/sites-available/default-ssl.conf">/etc/apache2/sites-available/default-ssl.conf</div><pre class="code-pre "><code langs="">&lt;IfModule mod_ssl.c&gt;
+        &lt;VirtualHost _default_:443&gt;
+                ServerAdmin <span class="highlight">your_email@example.com</span>
+                <span class="highlight">ServerName server_domain_or_IP</span>
+
+                DocumentRoot /var/www/html
+
+                ErrorLog ${APACHE_LOG_DIR}/error.log
+                CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+                SSLEngine on
+
+                SSLCertificateFile      /etc/ssl/certs/<span class="highlight">apache-selfsigned.crt</span>
+                SSLCertificateKeyFile /etc/ssl/private/<span class="highlight">apache-selfsigned.key</span>
+
+                &lt;FilesMatch "\.(cgi|shtml|phtml|php)$"&gt;
+                                SSLOptions +StdEnvVars
+                &lt;/FilesMatch&gt;
+                &lt;Directory /usr/lib/cgi-bin&gt;
+                                SSLOptions +StdEnvVars
+                &lt;/Directory&gt;
+
+        &lt;/VirtualHost&gt;
+&lt;/IfModule&gt;
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<h3 id="Рекомендуется-Изменение-файла-хоста-http-для-перенаправления-на-https">(Рекомендуется) Изменение файла хоста HTTP для перенаправления на HTTPS</h3>
+
+<p>В настоящее время сервер будет предоставлять нешифрованный трафик HTTP и шифрованный трафик HTTPS. В большинстве случаев для обеспечения безопасности рекомендуется включить автоматическое перенаправление HTTP на HTTPS. Если вы не хотите использовать эту функцию, или она вам не нужна, вы можете спокойно пропустить этот раздел.</p>
+
+<p>Чтобы изменить файл нешифрованного виртуального хоста для перенаправления всего трафика для шифрования SSL, мы можем открыть файл <code>/etc/apache2/sites-available/000-default.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/000-default.conf
+</li></ul></code></pre>
+<p>Внутри файла в блоках конфигурации <code>VirtualHost</code> нам нужно добавить директиву <code>Redirect</code>, которая должна направлять весь трафик на версию сайта с шифрованием SSL:</p>
+<div class="code-label " title="/etc/apache2/sites-available/000-default.conf">/etc/apache2/sites-available/000-default.conf</div><pre class="code-pre "><code langs="">&lt;VirtualHost *:80&gt;
+        . . .
+
+        Redirect "/" "https://<span class="highlight">your_domain_or_IP</span>/"
+
+        . . .
+&lt;/VirtualHost&gt;
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<h2 id="Шаг-3-—-Настройка-брандмауэра">Шаг 3 — Настройка брандмауэра</h2>
+
+<p>Если у вас включен брандмаэр <code>ufw</code> в соответствии с предварительными требованиями, вам может потребоваться изменить настройки для поддержки трафика SSL . К счастью, Apache регистрирует несколько профилей <code>ufw</code> после установки.</p>
+
+<p>Мы можем просмотреть доступные профили с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw app list
+</li></ul></code></pre>
+<p>Список должен выглядеть примерно так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Available applications:
+  Apache
+  Apache Full
+  Apache Secure
+  OpenSSH
+</code></pre>
+<p>Вы можете просмотреть текущие настройки с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre>
+<p>Если вам разрешен только обычный трафик HTTP, результаты могут выглядеть следующий образ:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere
+Apache                     ALLOW       Anywhere
+OpenSSH (v6)               ALLOW       Anywhere (v6)
+Apache (v6)                ALLOW       Anywhere (v6)
+</code></pre>
+<p>Чтобы разрешить дополнительный трафик HTTPS, мы разрешим профиль «Apache Full» и удалим избыточный профиль «Apache»:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Apache Full'
+</li><li class="line" prefix="$">sudo ufw delete allow 'Apache'
+</li></ul></code></pre>
+<p>Теперь ваш статус должен выглядеть примерно так:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere
+Apache Full                ALLOW       Anywhere
+OpenSSH (v6)               ALLOW       Anywhere (v6)
+Apache Full (v6)           ALLOW       Anywhere (v6)
+</code></pre>
+<h2 id="Шаг-4-—-Активация-изменений-в-apache">Шаг 4 — Активация изменений в Apache</h2>
+
+<p>Мы внесли изменения и настроили брандмауэр, и теперь можем включить в Apache модули SSL и заголовков, активировать наш виртуальный хост SSL и перезапустить Apache.</p>
+
+<p>Мы можем активровать <code>mod_ssl</code>, модуль Apache SSL, и модуль <code>mod_headers</code>, необходимый для некоторых настроек нашего сниппета SSL, с помощью команды <code>a2enmod</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enmod ssl
+</li><li class="line" prefix="$">sudo a2enmod headers
+</li></ul></code></pre>
+<p>Теперь мы можем активировать виртуальный хост SSL с помощью команды <code>a2ensite</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2ensite default-ssl
+</li></ul></code></pre>
+<p>Также нам нужно будет активировать файл <code>ssl-params.conf</code> для считывания заданных значений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo a2enconf ssl-params
+</li></ul></code></pre>
+<p>Мы активировали наш сайт и все необходимые модули. Теперь нам нужно проверить наши файлы на наличие ошибок в синтаксисе. Для этого можно ввести следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>Если проверка будет успешно пройдена, мы получим результат, выглядящий примерно так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>AH00558: apache2: Could not reliably determine the server's fully qualified domain name, using 127.0.1.1. Set the 'ServerName' directive globally to suppress this message
+Syntax OK
+</code></pre>
+<p>Первая строка — это сообщение о том, что директива <code>ServerName</code> не задана глобально. Если вы хотите избавиться от этого сообщения, вы можете задать для <code>ServerName</code> доменное имя вашего сервера или IP-адрес в каталоге <code>/etc/apache2/apache2.conf</code>. Это необязательно, потому что данное сообщение не наносит никакого вреда.</p>
+
+<p>Если в результатах есть сообщение <code>Syntax OK</code>, в вашей конфигурации нет синтаксических ошибок. Мы можем безопасно перезапустить Apache для внесения изменений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<h2 id="Шаг-5-—-Тестирование-шифрования">Шаг 5 — Тестирование шифрования</h2>
+
+<p>Теперь мы готовы протестировать наш сервер SSL.</p>
+
+<p>Откройте браузер и введите <code>https://</code> и доменное имя или IP-адрес вашего сервера в адресную панель:</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">server_domain_or_IP</span>
+</code></pre>
+<p>Поскольку созданный нами сертификат не подписан одним из доверенных центров сертификации вашего браузера, вы увидите пугающее предупреждение, которое будет выглядеть примерно так:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/apache_ssl_1604/self_signed_warning.png" alt="Предупреждение о самоподписанном сертификате Apache"></p>
+
+<p>Такое предупреждение нормально, и его следует ожидать. Сертификат нам нужен только для шифрования, а не для подтверждения подлинности нашего хоста третьей стороной. Нажмите «Дополнительно», а затем нажмите на указанную ссылку, чтобы перейти к своему хосту:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/apache_ssl_1604/warning_override.png" alt="Обход предупреждения о самоподписанном сертификате Apache"></p>
+
+<p>Теперь должен открыться ваш сайт. Если вы посмотрите в адресную строку браузера, вы увидите символ замка со знаком «x». В данном случае это означает, что сертификат не удается проверить. Ваше соединение все равно шифруется.</p>
+
+<p>Если вы настроили Apache для перенаправления HTTP на HTTPS, вы можете проверить правильность перенаправления функций:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">server_domain_or_IP</span>
+</code></pre>
+<p>Если при этом появляется такой же значок, перенаправление работает правильно.</p>
+
+<h2 id="Шаг-6-–-Переключение-на-постоянное-перенаправление">Шаг 6 – Переключение на постоянное перенаправление</h2>
+
+<p>Если перенаправление работает правильно, и вы хотите разрешить только шифрованный трафик, вам следует снова изменить файл нешифрованного виртуального хоста Apache и сделать перенаправление постоянным.</p>
+
+<p>Откройте файл конфигурации серверного блока еще раз:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/sites-available/000-default.conf
+</li></ul></code></pre>
+<p>Найдите добавленную нами строку <code>Redirect</code>. Добавьте в эту строку атрибут <code>permanent</code>, который изменяет тип перенаправления с временного перенаправления 302 на постоянное перенаправление 301:</p>
+<div class="code-label " title="/etc/apache2/sites-available/000-default.conf">/etc/apache2/sites-available/000-default.conf</div><pre class="code-pre "><code langs="">&lt;VirtualHost *:80&gt;
+        . . .
+
+        Redirect <span class="highlight">permanent</span> "/" "https://<span class="highlight">your_domain_or_IP</span>/"
+
+        . . .
+&lt;/VirtualHost&gt;
+</code></pre>
+<p>Сохраните и закройте файл.</p>
+
+<p>Проверьте конфигурацию на ошибки синтаксиса:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apache2ctl configtest
+</li></ul></code></pre>
+<p>Когда вы будете готовы, перезапустите Apache, чтобы сделать перенаправление постоянным:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<h2 id="Заключение">Заключение</h2>
+
+<p>Вы настроили сервер Apache для использования защищенного шифрования клиентских соединений. Это обеспечит безопасное обслуживание запросов и не даст третьим сторонам возможности считывать ваш трафик.</p>

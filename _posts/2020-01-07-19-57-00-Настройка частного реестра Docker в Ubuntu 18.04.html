@@ -1,0 +1,290 @@
+---
+layout: post
+title: Настройка частного реестра Docker в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:57PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-a-private-docker-registry-on-ubuntu-18-04-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Автор выбрал <a href="https://www.brightfunds.org/organizations/apache-software-foundation">фонд Apache Software Foundation</a> для получения пожертвования в рамках программы <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://docs.docker.com/registry/#what-it-is">Реестр Docker</a> — это приложение, управляющее хранением и доставкой образов контейнеров Docker. Реестры централизуют образы контейнеров и помогают разработчикам сократить время сборки. Образы Docker гарантируют единство среды исполнения за счет виртуализации однако для создания образа может потребоваться много времени. Например, вместо отдельной установки зависимостей и пакетов для использования Docker, разработчики могут загрузить из реестра сжатый образ, содержащий все необходимые компоненты. Более того, разработчики могут автоматизировать отправку образов в реестр с помощью <a href="https://travis-ci.com/">TravisCI</a> или других средств непрерывной интеграции, позволяющих мгновенно обновлять образы во время разработки и использования проекта в производстве.</p>
+
+<p>Бесплатный публичный реестр <a href="https://hub.docker.com/">Docker Hub</a> позволяет храить персонализированные образы Docker, но в некоторых случаях вы можете не захотеть делать свой образ общедоступным. Образы обычно содержат весь необходимый для запуска приложения код, поэтому при работе с коммерческим программным обеспечением предпочтительно использовать частный реестр.</p>
+
+<p>В этом обучающем модуле вы научитесь настраивать и защищать собственный частный реестр Docker. Вы научитесь использовать <a href="https://docs.docker.com/compose/">Docker Compose</a> для определения конфигуарций запуска приложений Docker, а также Nginx для перенаправления серверного трафика с HTTPS в работающий контейнер Docker. После прохождения этого обучающего модуля вы научитесь размещать свои персональные образы Docker в собственном частном реестре и безопасно извлекать образы с удаленного сервера.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для прохождения этого обучающего модуля вам потребуется следующее:</p>
+
+<ul>
+<li>Два сервера Ubuntu 18.04, настроенных в соответствии с <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">руководством по начальной настройке сервера Ubuntu 18.04</a>, включая пользователя sudo без прав root и брандмауэр. На одном сервере будет располагаться ваш частный реестр Docker, а другой будет выступать в качестве сервера-<strong>клиента</strong>.</li>
+<li>На обоих серверах должны быть установлены Docker и Docker-Compose в соответствии с указаниями обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">«Установка Docker-Compose в Ubuntu 18.04»</a>. Для установки Docker Compose достаточно выполнить первый шаг этого обучающего модуля. В этом обучающем модуле объясняется, как устанавливать Docker для выполнения предварительных требований.</li>
+<li>На сервере частного реестра Docker должен быть установлен веб-сервер Nginx в соответствии с указаниями руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">«Установка Nginx в Ubuntu 18.04»</a>.</li>
+<li>Веб-сервер Nginx на сервере частного реестра Docker должен быть защищен Let&rsquo;s Encrypt в соответствии с указаниями обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">«Защита Nginx с помощью Let&rsquo;s Encrypt»</a>. Убедитесь, что весь трафик протокола HTTP перенаправляется на протокол HTTPS в соответствии с указаниями шага 4.</li>
+<li>Доменное имя для сервера, используемого вами для частного реестра Docker. Вы должны были настроить его во время выполнения предварительных требований по защите с помощью Let&rsquo;s Encrypt.</li>
+</ul>
+
+<h2 id="Шаг-1-—-Установка-и-настройка-реестра-docker">Шаг 1 — Установка и настройка реестра Docker</h2>
+
+<p>Инструмент командной строки Docker подойдет для запуска и управления одним или двумя контейнерами Docker, но для полноценного развертывания большинства приложений, запущенных внутри контейнеров Docker, необходимо, чтобы параллельно работали и другие компоненты. Например, многие приложения включают Nginx или другой веб-сервер, обслуживающий код приложения, а также PHP или другой язык интерпретации скриптов и MySQL или другой сервер СУБД.</p>
+
+<p>С помощью Docker Compose вы можете записать один файл <code>.yml</code> для настройки конфигурации каждого контейнера и информации, необходимой контейнерам для взаимодействия друг с другом. Затем вы можете использовать инструмент командной строки <code>docker-compose</code> для отправки команд всем компонентам, составляющим ваше приложение.</p>
+
+<p>Реестр Docker сам по себе является приложением с несколькими компонентами, и поэтому вы будете использовать Docker Compose для управления его конфигурацией. Чтобы запустить экземпляр реестра, вам нужно задать в файле <code>docker-compose.yml</code> место, где ваш реестр будет хранить свои данные.</p>
+
+<p>На том же сервере, который вы создали для размещения частного реестра Docker, вы можете создать каталог <code>docker-registry</code>, перейти в него, а затем создать подпапку <code>data</code> с помощью следующих команд:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/docker-registry &amp;&amp; cd $_
+</li><li class="line" prefix="$">mkdir data
+</li></ul></code></pre>
+<p>Используйте текстовый редактор для создания файла конфигурации <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Добавьте в файл следующие строки, описывающие базовую конфигурацию реестра Docker:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre docker-compose"><code langs="">version: '3'
+
+services:
+  registry:
+    image: registry:2
+    ports:
+    - "5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data
+    volumes:
+      - ./data:/data
+</code></pre>
+<p>Раздел <code>environment</code> задает в контейнере реестра Docker переменную среды с путем <code>/data</code>. Приложение Docker Registry проверяет эту переменную среды при запуске и в результате сохраняет свои данные в папку <code>/data</code>.</p>
+
+<p>Однако поскольку вы добавили строку <code>volumes: - ./data:/data</code>, Docker начнет сопоставлять каталог <code>/data</code> в этом контейнере с <code>каталогом /data</code> на вашем сервере реестра. В конечном итоге все данные реестра Docker будут храниться в каталоге <code>~/docker-registry/data</code> на сервере реестра.</p>
+
+<p>Раздел <code>ports</code> с конфигурацией <code>5000:5000</code> предписывает Docker сопоставить порт <code>5000</code> на сервере с портом <code>5000</code> запущенного контейнера. Это позволяет отправить запрос на порт <code>5000</code> на сервере так, чтобы этот запрос был перенаправлен в приложение реестра.</p>
+
+<p>Теперь вы можете запустить Docker Compose для проверки настройки:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up
+</li></ul></code></pre>
+<p>В результатах вы увидите панели загрузки, показывающие, что Docker загружает образ реестра Docker из собственного реестра Docker. Через одну или две минуты вы увидите примерно следующее (номера версий могут отличаться):</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output of docker-compose up">Output of docker-compose up</div>Starting docker-registry_registry_1 ... done
+Attaching to docker-registry_registry_1
+registry_1  | time="2018-11-06T18:43:09Z" level=warning msg="No HTTP secret provided - generated random secret. This may cause problems with uploads if multiple registries are behind a load-balancer. To provide a shared secret, fill in http.secret in the configuration file or set the REGISTRY_HTTP_SECRET environment variable." go.version=go1.7.6 instance.id=c63483ee-7ad5-4205-9e28-3e809c843d42 version=v2.6.2
+registry_1  | time="2018-11-06T18:43:09Z" level=info msg="redis not configured" go.version=go1.7.6 instance.id=c63483ee-7ad5-4205-9e28-3e809c843d42 version=v2.6.2
+registry_1  | time="2018-11-06T18:43:09Z" level=info msg="Starting upload purge in 20m0s" go.version=go1.7.6 instance.id=c63483ee-7ad5-4205-9e28-3e809c843d42 version=v2.6.2
+registry_1  | time="2018-11-06T18:43:09Z" level=info msg="using inmemory blob descriptor cache" go.version=go1.7.6 instance.id=c63483ee-7ad5-4205-9e28-3e809c843d42 version=v2.6.2
+registry_1  | time="2018-11-06T18:43:09Z" level=info msg="listening on [::]:5000" go.version=go1.7.6 instance.id=c63483ee-7ad5-4205-9e28-3e809c843d42 version=v2.6.2
+</code></pre>
+<p>С предупреждающим сообщением <code>No HTTP secret provided</code> мы разберемся в этом же обучающем модуле, но чуть позднее. Экран результатов показывает, что контейнер запускается. Последняя строка результатов показывает, что прослушивание порта <code>5000</code> началось успешно.</p>
+
+<p>Docker Compose по умолчанию будет ожидать от вас команд, так что нажмите <code>CTRL+C</code>, чтобы закрыть контейнер реестра Docker.</p>
+
+<p>Вы настроили полный реестр Docker, прослушивающий порт <code>5000</code>. Сейчас реестр не будет запускаться, если вы не запустите его вручную. Также в реестре Docker отсутствуют встроенные механизмы аутентификации, и это значит, что сейчас он не защищен и полностью открыт для публики. На следующих шагах вы решите эти проблемы безопасности.</p>
+
+<h2 id="Шаг-2-—-Настройка-перенаправления-портов-nginx">Шаг 2 — Настройка перенаправления портов Nginx</h2>
+
+<p>Вы уже настроили на сервере реестра Docker протокол HTTPS с Nginx, и это значит, что теперь вы можете настроить переадресацию портов с Nginx на порт <code>5000</code>. После выполнения этого шага вы сможете получать доступ к своему реестру непосредственно по адресу <span class="highlight">example.com</span>.</p>
+
+<p>На предварительном этапе <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">«Защита Nginx с помощью Let&rsquo;s Encrypt»</a> вы уже создали и настроили файл <code>/etc/nginx/sites-available/<span class="highlight">example.com</span></code> с конфигурацией вашего сервера.</p>
+
+<p>Откройте этот файл в предпочитаемом текстовом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Найдите существующую строку <code>location</code>. Он будет выглядеть примерно так:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code langs="">...
+location / {
+  ...
+}
+...
+</code></pre>
+<p>Вам нужно перенаправить трафик на порт <code>5000</code>, где будет работать ваш реестр. Также вам следует добавить в запрос реестра заголовки, которые будут предоставлять дополнительную информацию сервера в каждом запросе и ответе. Удалите содержимое раздела <code>location</code> и добавьте в него следующее:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code langs="">...
+location / {
+    # Do not allow connections from docker 1.5 and earlier
+    # docker pre-1.6.0 did not properly set the user agent on ping, catch "Go *" user agents
+    if ($http_user_agent ~ "^(docker\/1\.(3|4|5(?!\.[0-9]-dev))|Go ).*$" ) {
+      return 404;
+    }
+
+    proxy_pass                          http://localhost:5000;
+    proxy_set_header  Host              $http_host;   # required for docker client's sake
+    proxy_set_header  X-Real-IP         $remote_addr; # pass on real client's IP
+    proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header  X-Forwarded-Proto $scheme;
+    proxy_read_timeout                  900;
+}
+...
+</code></pre>
+<p>Раздел <code>$http_user_agent</code> подтверждает, что версия клиента Docker выше <code>1.5</code> и что <code>UserAgent</code> не является приложением <code>Go</code>. Поскольку вы используете версию реестра <code>2.0</code>, старые клиенты не поддерживаются. Дополнительную информацию можно найти в конфигурации заголовка <code>nginx</code> в <a href="https://docs.docker.com/registry/recipes/nginx/#setting-things-up">руководстве по Nginx в реестре Docker</a>.</p>
+
+<p>Сохраните и закройте файл. Перезапустите Nginx для активации изменений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service nginx restart
+</li></ul></code></pre>
+<p>Для подтверждения перенаправления трафика Nginx на порт <code>5000</code> запустите реестр:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/docker-registry
+</li><li class="line" prefix="$">docker-compose up
+</li></ul></code></pre>
+<p>Откройте в окне браузера следующий url:</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">example.com</span>/v2
+</code></pre>
+<p>Вы увидите пустой объект JSON или:</p>
+<pre class="code-pre "><code langs="">{}
+</code></pre>
+<p>Вы увидите на терминале следующий экран результатов:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output of docker-compose up">Output of docker-compose up</div>registry_1  | time="2018-11-07T17:57:42Z" level=info msg="response completed" go.version=go1.7.6 http.request.host=cornellappdev.com http.request.id=a8f5984e-15e3-4946-9c40-d71f8557652f http.request.method=GET http.request.remoteaddr=128.84.125.58 http.request.uri="/v2/" http.request.useragent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/604.4.7 (KHTML, like Gecko) Version/11.0.2 Safari/604.4.7" http.response.contenttype="application/json; charset=utf-8" http.response.duration=2.125995ms http.response.status=200 http.response.written=2 instance.id=3093e5ab-5715-42bc-808e-73f310848860 version=v2.6.2
+registry_1  | 172.18.0.1 - - [07/Nov/2018:17:57:42 +0000] "GET /v2/ HTTP/1.0" 200 2 "" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_2) AppleWebKit/604.4.7 (KHTML, like Gecko) Version/11.0.2 Safari/604.4.7"
+</code></pre>
+<p>Из последней строки видно, что запрос <code>GET</code> был направлен по адресу <code>/v2/</code>, который представляет собой конечную точку отправки запроса из браузера. Контейнер получил отправленный запрос посредством перенаправления портов и возвратил ответ <code>{}</code>. Код <code>200</code> в последней строке на экране результатов означает, что контейнер успешно обработал запрос.</p>
+
+<p>Теперь вы успешно настроили переадресацию портов и можете перейти к дальнейшему повышению безопасности вашего реестра.</p>
+
+<h2 id="Шаг-3-—-Настройка-аутентификации">Шаг 3 — Настройка аутентификации</h2>
+
+<p>Теперь веб-сервер Nginx правильно перенаправляет запросы, и вы можете защитить свой реестр Docker системой аутентификации HTTP, чтобы контролировать доступ к нему. Для этого вам потребуется создать файл аутентификации с помощью <code>htpasswd</code> и добавить в него пользователей. Аутентификация HTTP быстро настраивается и обеспечивает безопасность, если использовать соединение HTTPS, как в случае нашего реестра.</p>
+
+<p>Для установки пакета <code>htpasswd</code> запустите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install apache2-utils
+</li></ul></code></pre>
+<p>Теперь вы создадите каталог, где будут храниться учетные данные аутентификации, и перейдете в этот каталог. <code>$_</code> раскрывается в последний аргумент предыдущей команды, в данном случае <code>~/docker-registry/auth</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/docker-registry/auth &amp;&amp; cd $_
+</li></ul></code></pre>
+<p>Теперь вы создадите первого пользователя, заменив <code><span class="highlight">username</span></code> желаемым именем пользователя. Флаг <code>-B</code> указывает, что нужно использовать шифрование <code>bcrypt</code>, которое более безопасно, чем шифрование по умолчанию. Введите пароль в диалоговом окне:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">htpasswd -Bc registry.password <span class="highlight">username</span>
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Примечание.</strong> Для добавления дополнительных пользователей запустите предыдущую команду еще раз с опцией <code>-c</code> («c» означает создание):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">htpasswd registry.password <span class="highlight">username</span>
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Теперь вам нужно отредактировать файл <code>docker-compose.yml</code>, чтобы предписать Docker использовать созданный файл для аутентификации пользователей.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/docker-registry
+</li><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Вы можете добавить переменные среды и том для созданного вами каталога <code>auth/</code>, отредактировав файл <code>docker-compose.yml</code>, чтобы указать Docker желаемый способ аутентификации пользователей. Добавьте в файл следующий выделенный код:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre docker-compose"><code langs="">version: '3'
+
+services:
+  registry:
+    image: registry:2
+    ports:
+    - "5000:5000"
+    environment:
+      <span class="highlight">REGISTRY_AUTH: htpasswd</span>
+      <span class="highlight">REGISTRY_AUTH_HTPASSWD_REALM: Registry</span>
+      <span class="highlight">REGISTRY_AUTH_HTPASSWD_PATH: /auth/registry.password</span>
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /data
+    volumes:
+      <span class="highlight">- ./auth:/auth</span>
+      - ./data:/data
+</code></pre>
+<p>Для <code>REGISTRY_AUTH</code> вы задали <code>htpasswd</code> как используемую схему аутентификации, а для <code>REGISTRY_AUTH_HTPASSWD_PATH</code> вы задали путь к файлу аутентификации. Наконец, <code>REGISTRY_AUTH_HTPASSWD_REALM</code> означает имя области <code>htpasswd</code>.</p>
+
+<p>Теперь вы можете убедиться в нормальной работе аутентификации, попробовав запустить реестр и проверив, запрашивает ли система имя пользователя и пароль.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up
+</li></ul></code></pre>
+<p>Откройте в окне браузера адрес <code>https://<span class="highlight">example.com</span>/v2</code>.</p>
+
+<p>Введите <code><span class="highlight">username</span></code> и соответствующий пароль, и вы снова увидите <code>{}</code>. Вы подтвердили базовую настройку аутентификации. Реестр возвратил результат только после ввода правильного имени пользователя и пароля. Вы защитили свой реестр и теперь можете переходить к его использованию.</p>
+
+<h2 id="Шаг-4-—-Запуск-реестра-docker-как-службы">Шаг 4 — Запуск реестра Docker как службы</h2>
+
+<p>Вам нужно, чтобы реестр запускался каждый раз во время загрузки вашей системы. В случае непредвиденного сбоя системы вам нужно сделать так, чтобы реестр перезапускался при перезагрузке сервера. Откройте файл <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Добавьте следующую строку в раздел <code>registry:</code>:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre docker-compose"><code langs="">...
+  registry:
+    <span class="highlight">restart: always</span>
+...
+</code></pre>
+<p>Вы можете запускать реестр как фоновый процесс, и тогда вы сможете выходить из сеанса <code>ssh</code> с сохранением процесса:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Теперь реестр работает в фоновом режиме, и вы можете подготовить Nginx к выгрузке файлов.</p>
+
+<h2 id="Шаг-5-—-Увеличение-размера-выгрузки-файлов-для-nginx">Шаг 5 — Увеличение размера выгрузки файлов для Nginx</h2>
+
+<p>Прежде чем вы сможете отправить образ в реестр, нужно убедиться, что реестр может принимать большие файлы. Хотя Docker разделяет выгружаемые большие образы на несколько слоев, их размер иногда может превышать <code>1 ГБ</code>. По умолчанию в Nginx установлен лимит выгрузки файлов <code>1 МБ</code>, так что вам нужно отредактировать файл конфигурации <code>nginx</code> и задать максимальный размер выгрузки файла <code>2 ГБ</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/nginx.conf
+</li></ul></code></pre>
+<p>Найдите раздел <code>http</code> и добавьте в него следующую строку:</p>
+<div class="code-label " title="/etc/nginx/nginx.conf">/etc/nginx/nginx.conf</div><pre class="code-pre "><code langs="">...
+http {
+        <span class="highlight">client_max_body_size 2000M;</span>
+        ...
+}
+...
+</code></pre>
+<p>Перезапустите Nginx, чтобы применить изменения конфигурации:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo service nginx restart
+</li></ul></code></pre>
+<p>Теперь вы можете выгружать большие файлы образов в реестр Docker, не получая сообщения об ошибках Nginx.</p>
+
+<h2 id="Шаг-6-—-Публикация-в-частном-реестре-docker">Шаг 6 — Публикация в частном реестре Docker</h2>
+
+<p>Теперь вы готовы к публикации образов в частном реестре Docker, но вначале вам потребуется создать образ. Для целей этого обучающего модуля мы создадим простой образ на базе образа <code>ubuntu</code> из Docker Hub. Docker Hub — это публичный реестр с множеством настроенных образов, которые можно использовать для быстрой контейнеризации приложений с помощью Docker. С помощью образа <code>ubuntu</code> вы протестируете отправку образов в реестр и их извлечение из реестра.</p>
+
+<p>Создайте на своем <strong>клиентском</strong> сервере небольшой пустой образ для отправки в новый реестр. Флаги <code>-i</code> и <code>-t</code> обеспечивают доступ к контейнеру через интерактивную оболочку:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker run -t -i ubuntu /bin/bash
+</li></ul></code></pre>
+<p>После завершения выгрузки вы попадете в диалог Docker. Обратите внимание, что идентификатор контейнера после <code>root@</code> может отличаться. Внесите быстрые изменения в файловую систему, создав файл с именем <code>SUCCESS</code>. На следующем шаге вы сможете использовать данный файл, чтобы определить, была ли публикация успешной:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@f7e13d5464d1:/#">touch /SUCCESS
+</li></ul></code></pre>
+<p>Выход из контейнера Docker:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="root@f7e13d5464d1:/#">exit
+</li></ul></code></pre>
+<p>Следующая команда создает новый образ под названием <code>test-image</code> на основе уже запущенного образа и всех внесенных изменений. В нашем случае добавление файла <code>/SUCCESS</code> включается в новый образ.</p>
+
+<p>Сохраните изменение:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker commit $(docker ps -lq) test-image
+</li></ul></code></pre>
+<p>Сейчас образ существует только на локальном компьютере. Теперь вы можете отправить его в новый реестр, который вы создали. Войдите в свой реестр Docker:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker login https://<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Введите <code><span class="highlight">username</span></code> и соответствующий пароль, заданный ранее. Затем поставьте для образа метку расположения частного реестра, чтобы отправить туда образ:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker tag test-image <span class="highlight">example.com</span>/test-image
+</li></ul></code></pre>
+<p>Отправьте образ с меткой в реестр:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker push <span class="highlight">example.com</span>/test-image
+</li></ul></code></pre>
+<p>Экран результатов должен выглядеть примерно следующим образом:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>The push refers to a repository [<span class="highlight">example.com</span>/test-image]
+e3fbbfb44187: Pushed
+5f70bf18a086: Pushed
+a3b5c80a4eba: Pushed
+7f18b442972b: Pushed
+3ce512daaf78: Pushed
+7aae4540b42d: Pushed
+...
+
+</code></pre>
+<p>Вы убедились, что ваш реестр успешно выполняет аутентификацию пользователей, и что прошедшие аутентификацию пользователи могут отправлять образы в реестр. Теперь вы должны убедиться, что вы можете извлекать образы из реестра.</p>
+
+<h2 id="Шаг-7-—-Извлечение-образов-из-частного-реестра-docker">Шаг 7 — Извлечение образов из частного реестра Docker</h2>
+
+<p>Вернитесь на сервер реестра, чтобы вы могли протестировать извлечение образа с <strong>клиентского</strong> сервера. Также для тестирования можно использовать третий сервер.</p>
+
+<p>Войдите в систему, указав имя пользователя и пароль, которые вы задали ранее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker login https://<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Теперь вы готовы к извлечению образа. Используйте доменное имя и имя образа, к которому вы добавили метку на предыдущем шаге:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker pull <span class="highlight">example.com</span>/test-image
+</li></ul></code></pre>
+<p>Docker загрузит образ и вернется в командную строку. Если вы запустите образ на сервере реестра, вы увидите, что ранее созданный файл <code>SUCCESS</code> находится в этом образе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker run -it <span class="highlight">example.com</span>/test-image /bin/bash
+</li></ul></code></pre>
+<p>Выведите список файлов в оболочке bash:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls
+</li></ul></code></pre>
+<p>Вы увидите файл <code>SUCCESS</code>, который вы создали для этого образа:</p>
+<pre class="code-pre "><code langs="">SUCCESS  bin  boot  dev  etc  home  lib  lib64  media   mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var
+</code></pre>
+<p>Вы завершили настройку защищенного реестра для отправки и получения образов.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем модуле вы настроили собственный частный реестр Docker и опубликовали образ Docker. Как указывалось во введении, вы также можете использовать <a href="https://docs.travis-ci.com/user/docker/">TravisCI</a> или другой подобный инструмент CI для автоматизации прямой отправки образов в частный реестр. Используя Docker и реестры в своем рабочем процессе, вы можете убедиться, что образ с кодом будет вести себя одинаково на любом компьютере в производственной среде или в среде разработки. Дополнительную информацию о написании файлов Docker можно найти в следующем <a href="https://docs.docker.com/develop/develop-images/dockerfile_best-practices/">обучающем модуле по Docker</a>, где разъясняется данная процедура.</p>

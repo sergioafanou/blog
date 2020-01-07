@@ -1,0 +1,109 @@
+---
+layout: post
+title: [Краткое] руководство по установке Anaconda в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:24PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-anaconda-on-ubuntu-18-04-quickstart-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Anaconda — диспетчер пакетов с открытым исходным кодом, диспетчер среды и средство дистрибуции языков программирования Python и R. Решение Anaconda предназначено для рабочих процессов аналитики данных и машинного обучения.</p>
+
+<p>Настоящее обучающее руководство рассказывает об устаовке Anaconda на сервере Ubuntu 18.04. Более детальный вариант настоящего руководства с подробным разъяснениями каждого шага можно найти в <a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-anaconda-python-distribution-on-ubuntu-18-04">документе «Установка дистрибутива Anaconda Python на Ubuntu 18.04»</a>.</p>
+
+<h2 id="Шаг-1-—-Получение-последней-версии-anaconda">Шаг 1 — Получение последней версии Anaconda</h2>
+
+<p>Откройте в браузере следующую ссылку на <a href="https://www.anaconda.com/distribution/">страницу дистрибутива Anaconda:</a></p>
+<pre class="code-pre "><code langs="">https://www.anaconda.com/distribution/
+</code></pre>
+<p>Найдите последнюю версию Linux и скопируйте скрипт установщика bash.</p>
+
+<h2 id="Шаг-2-—-Загрузка-скрипта-anaconda-bash">Шаг 2 — Загрузка скрипта Anaconda Bash</h2>
+
+<p>Войдите на сервер Ubuntu 18.04 как пользователь sudo (не root), перейдите в каталог <code>/tmp</code> и используйте <code>curl</code> для загрузки ссылки, скопированной с сайта Anaconda:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li><li class="line" prefix="$">curl -O https://repo.anaconda.com/archive/Anaconda3-<span class="highlight">2019.03</span>-Linux-x86_64.sh
+</li></ul></code></pre>
+<h2 id="Шаг-3-—-Проверка-целостности-данных-установщика">Шаг 3 — Проверка целостности данных установщика</h2>
+
+<p>Проверьте целостность данных установщика, используя криптографическую проверку хэша через контрольную сумму SHA-256:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sha256sum Anaconda3-<span class="highlight">2019.03</span>-Linux-x86_64.sh
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">45c851b7497cc14d5ca060064394569f724b67d9b5f98a926ed49b834a6bb73a  Anaconda3-2019.03-Linux-x86_64.sh</span>
+</code></pre>
+<h2 id="Шаг-4-—-Запустите-сценарий-anaconda">Шаг 4 — Запустите сценарий Anaconda</h2>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">bash Anaconda3-<span class="highlight">2019.03</span>-Linux-x86_64.sh
+</li></ul></code></pre>
+<p>Откроется экран просмотра лицензионного соглашения, где нужно будет нажимать <code>ENTER</code>, пока вы не дочитаете соглашение до конца.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+Welcome to Anaconda3 2019.03
+
+In order to continue the installation process, please review the license
+agreement.
+Please, press ENTER to continue
+&gt;&gt;&gt;
+...
+Do you approve the license terms? [yes|no]
+</code></pre>
+<p>Прочитав соглашение введите <code>yes</code> для завершения установки, если вы согласны с условиями лицензии.</p>
+
+<h2 id="Шаг-5-—-Завершение-установки">Шаг 5 — Завершение установки</h2>
+
+<p>После принятия условий лицензии вам будет предложено выбрать место для установки. Вы можете нажать <code>ENTER</code>, чтобы принять место установки по умолчанию, или указать другое место установки.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Anaconda3 will now be installed into this location:
+/home/<span class="highlight">sammy</span>/anaconda3
+
+  - Press ENTER to confirm the location
+  - Press CTRL-C to abort the installation
+  - Or specify a different location below
+
+[/home/<span class="highlight">sammy</span>/anaconda3] &gt;&gt;&gt;
+</code></pre>
+<p>После этого начнется процедура установки. Процедура установки займет некоторое время.</p>
+
+<h2 id="Шаг-6-—-Выбор-параметров">Шаг 6 — Выбор параметров</h2>
+
+<p>После завершения установки появится следующий экран:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+installation finished.
+Do you wish the installer to prepend the Anaconda3 install location
+to PATH in your /home/sammy/.bashrc ? [yes|no]
+[no] &gt;&gt;&gt;
+</code></pre>
+<p>Рекомендуется ввести <code>yes</code>, чтобы использовать команду <code>conda</code>.</p>
+
+<h2 id="Шаг-7-—-Активация-установки">Шаг 7 — Активация установки</h2>
+
+<p>Теперь вы можете активировать установку с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ~/.bashrc
+</li></ul></code></pre>
+<h2 id="Шаг-8-—-Тестирование-установки">Шаг 8 — Тестирование установки</h2>
+
+<p>Используйте команду <code>conda</code>, чтобы протестировать установку и активацию:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">conda list
+</li></ul></code></pre>
+<p>Будут выведены все пакеты. доступные через установку Anaconda.</p>
+
+<h2 id="Шаг-9-—-Настройка-сред-anaconda">Шаг 9 — Настройка сред Anaconda</h2>
+
+<p>Вы можете создавать среды Anaconda с помощью команды <code>conda create</code>. Например, среду Python 3 с именем <code><span class="highlight">my_env</span></code> можно создать с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">conda create --name <span class="highlight">my_env</span> python=3
+</li></ul></code></pre>
+<p>Активируйте новую среду, как показано далее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">conda activate <span class="highlight">my_env</span>
+</li></ul></code></pre>
+<p>Префикс командной строки изменится и покажет, что вы находитесь в активной среде Anaconda и готовы начать работу над проектом.</p>
+
+<h2 id="Другие-обучающие-руководства">Другие обучающие руководства</h2>
+
+<p>Здесь представлены ссылки на более подробные обучающие руководства, связанные с настоящим руководством:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-anaconda-python-distribution-on-ubuntu-18-04">Как установить дистрибутив Anaconda Python на Ubuntu 18.04</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-jupyter-notebook-for-python-3">Как настроить Jupyter Notebook для Python 3</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-the-pandas-package-and-work-with-data-structures-in-python-3">Как установить пакет pandas и работать со структурами данных в Python 3</a></li>
+</ul>

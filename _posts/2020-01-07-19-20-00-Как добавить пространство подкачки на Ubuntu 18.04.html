@@ -1,0 +1,184 @@
+---
+layout: post
+title: Как добавить пространство подкачки на Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:20PM
+url: https://www.digitalocean.com/community/tutorials/how-to-add-swap-space-on-ubuntu-18-04-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Предыдущая версия данного обучающего руководства была написана <a href="https://www.digitalocean.com/community/users/jellingwood">Джастином Эллингвудом</a></em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p>Один из наиболее простых способов предотвратить ошибки нехватки памяти в приложениях — добавить пространство подкачки на сервер. В этом руководстве мы расскажем, как добавить файл подкачки на сервер Ubuntu 18.04.</p>
+
+<span class='warning'><p>
+<strong>Предупреждение:</strong> Хотя подкачка в целом рекомендуется для систем с использованием традиционных жестких дисков, ее использование с SSD-накопителями может со временем вызывать ухудшение аппаратного обеспечения. В связи с этим мы не рекомендуем использовать подкачку с DigitalOcean или с любым другим провайдером, использующим SSD-накопители. Использование подкачки может повлиять на надежность соответствующего аппаратного обеспечения у вас и ваших соседей. Настоящее руководство предоставляет справочные данные для пользователей, у которых в других местах имеются системы вращающихся дисков.</p>
+
+<p>Если вам нужно повысить производительность сервера на DigitalOcean, рекомендуем обновить Droplet. Это приведет к лучшим результатам в целом и снизит вероятность создания проблем с аппаратным обеспечением, способных повлиять на ваши работы.<br></p></span>
+
+<h2 id="Что-такое-подкачка">Что такое подкачка?</h2>
+
+<p><em>Область подкачки</em> — раздел на жестком диске, отведенный для того, чтобы операционная система могла временно хранить данные, которые она больше не может удерживать в оперативной памяти. По сути, она дает возможность увеличить количество информации, которую сервер может сохранить в рабочей «памяти», с некоторыми оговорками. Область подкачки на жестком диске будет использоваться в основном тогда, когда в оперативной памяти больше нет достаточного места хранения данных для приложений.</p>
+
+<p>Чтение и запись информации с диска намного медленнее, чем из оперативной памяти. Операционная система будет по-прежнему предпочитать работать с данными приложений в памяти, а подкачку использовать для более старых данных. Как правило, полезно перестраховываться и иметь область подкачки в качестве резерва на случай нехватки оперативной памяти, чтобы исключить ошибки памяти в системах без SSD.</p>
+
+<h2 id="Шаг-1 —-Проверка-информации-о-подкачке-в-системе">Шаг 1 — Проверка информации о подкачке в системе</h2>
+
+<p>Сначала мы можем посмотреть, есть ли уже в системе область подкачки. Можно иметь несколько файлов или разделов подкачки, но обычно одного достаточно.</p>
+
+<p>Можно узнать, сконфигурирована ли в системе подкачка, введя:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo swapon --show
+</li></ul></code></pre>
+<p>Если после этой команды ничего не появляется, в системе сейчас нет области подкачки.</p>
+
+<p>Можно убедиться в отсутствии активной подкачки при помощи утилиты <code>free</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">free -h
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>              total        used        free      shared  buff/cache   available
+Mem:           985M         84M        222M        680K        678M        721M
+<span class="highlight">Swap:            0B          0B          0B</span>
+</code></pre>
+<p>В строке <strong>​​​Swap</strong> видно​​​, что в системе отсутствует активная подкачка.</p>
+
+<h2 id="Шаг-2 —-Проверка-свободного-пространства-в-разделе-жесткого-диска">Шаг 2 — Проверка свободного пространства в разделе жесткого диска</h2>
+
+<p>Перед созданием файла подкачки проверим текущее состояние диска, чтобы убедиться, что у нас достаточно места. Вводим:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">df -h
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Filesystem      Size  Used Avail Use% Mounted on
+udev            481M     0  481M   0% /dev
+tmpfs            99M  656K   98M   1% /run
+<span class="highlight">/dev/vda1        25G  1.4G   23G   6% /</span>
+tmpfs           493M     0  493M   0% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+tmpfs           493M     0  493M   0% /sys/fs/cgroup
+/dev/vda15      105M  3.4M  102M   4% /boot/efi
+tmpfs            99M     0   99M   0% /run/user/1000
+</code></pre>
+<p>В данном случае устройство с <code>/</code> в столбце <code>​​​​​​Mounted on​​​</code> — наш диск. В данном примере у нас достаточно места (использовано только 1,4 Гбайт). Ваше использование, вероятно, будет другим.</p>
+
+<p>Хотя существует много мнений относительно правильного размера области подкачки, на самом деле он зависит от ваших личных предпочтений и требований приложений. Обычно можно начать с объема, равного объему оперативной памяти в системе, или в два раза большего. Еще одно полезное общее правило — любое превышение 4 Гбайт для области подкачки, скорее всего, не нужно, если вы используете ее только для резервирования оперативной памяти.</p>
+
+<h2 id="Шаг-3 —-Создание-файла-подкачки">Шаг 3 — Создание файла подкачки</h2>
+
+<p>Теперь, когда известно свободное место на жестком диске, можно создать файл подкачки в нашей файловой системе. Поместим файл под названием <code>swapfile</code> с необходимым для подкачки размером в корневую (/) директорию.</p>
+
+<p>Лучше всего создавать файл подкачки при помощи программы <code>fallocate</code>. Эта команда мгновенно создает файл указанного размера.</p>
+
+<p>Поскольку на сервере в нашем случае 1 Гбайт оперативной памяти, в этом руководстве создадим файл размером 1 Гбайт. Скорректируйте с учетом необходимости на вашем сервере:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo fallocate -l <span class="highlight">1G</span> /swapfile
+</li></ul></code></pre>
+<p>Чтобы проверить правильность выделенного объема памяти, введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -lh /swapfile
+</li></ul></code></pre><pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">-rw-r--r-- 1 root root 1.0G Apr 25 11:14 /swapfile
+</li></ul></code></pre>
+<p>Файл создан с правильным выделенным объемом памяти.</p>
+
+<h2 id="Шаг-4 —-Активация-файла-подкачки">Шаг 4 — Активация файла подкачки</h2>
+
+<p>Теперь, когда у нас есть файл правильного размера, нам нужно превратить его в пространство подкачки.</p>
+
+<p>Сначала нужно изменить права доступа к файлу, чтобы только пользователи с правами <strong>root</strong> могли читать его содержимое. Это предотвращает доступ обычных пользователей к файлу — такой доступ может существенно влиять на безопасность.</p>
+
+<p>Чтобы передать все права доступа пользователям <strong>root</strong>, введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod 600 /swapfile
+</li></ul></code></pre>
+<p>Проверьте изменение прав доступа, введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -lh /swapfile
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">-rw-------</span> 1 root root 1.0G Apr 25 11:14 /swapfile
+</code></pre>
+<p>Теперь только у пользователя <strong>root</strong> отмечены флажки чтения и записи.</p>
+
+<p>Теперь можем отметить файл как пространство подкачки, введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkswap /swapfile
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Setting up swapspace version 1, size = 1024 MiB (1073737728 bytes)
+no label, UUID=6e965805-2ab9-450f-aed6-577e74089dbf
+</code></pre>
+<p>После этого можем активировать файл подкачки, чтобы система начала использовать его:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo swapon /swapfile
+</li></ul></code></pre>
+<p>Убедитесь, что пространство подкачки активировано, введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo swapon --show
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      TYPE  SIZE USED PRIO
+/swapfile file 1024M   0B   -2
+</code></pre>
+<p>Чтобы подтвердить наши выводы, можем снова проверить ответ утилиты <code>free</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">free -h
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>              total        used        free      shared  buff/cache   available
+Mem:           985M         84M        220M        680K        680M        722M
+<span class="highlight">Swap:          1.0G          0B        1.0G</span>
+</code></pre>
+<p>Подкачка успешно настроена, и операционная система начнет использовать ее по мере необходимости.</p>
+
+<h2 id="Шаг-5 —-Сделать-файл-подкачки-постоянным">Шаг 5 — Сделать файл подкачки постоянным</h2>
+
+<p>В результате внесенных нами изменений файл подкачки активирован для текущей сессии. После перезагрузки сервер не сохранит настройки подкачки автоматически. Мы можем изменить это, добавив файл подкачки к файлу <code>/etc/fstab</code>.</p>
+
+<p>Сделайте резервную копию файла <code>/etc/fstab</code> на случай если что-то пойдет не так:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /etc/fstab /etc/fstab.bak
+</li></ul></code></pre>
+<p>Добавьте информацию о файле подкачки в конец файла <code>/etc/fstab</code>, введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+</li></ul></code></pre>
+<p>Далее рассмотрим некоторые настройки, которые мы сможем обновить, чтобы настроить пространство подкачки.</p>
+
+<h2 id="Шаг-6 —-Изменение-настроек-подкачки">Шаг 6 — Изменение настроек подкачки</h2>
+
+<p>Существует несколько настраиваемых опций, влияющих на производительность системы при работе с пространством подкачки.</p>
+
+<h3 id="Настройка-параметра-swappiness">Настройка параметра Swappiness</h3>
+
+<p>Параметр <code>swappiness</code> определяет, как часто система выгружает данные из оперативной памяти в пространство подкачки. Его значение выражается числом от 0 до 100 процентов.</p>
+
+<p>При значениях, близких к нулю, ядро не будет выгружать данные на диск, если в этом нет абсолютной необходимости. Взаимодействие с файлом подкачки требует гораздо больше времени, чем взаимодействие с оперативной памятью, и может вызывать значительное снижение производительности. Если система не зависит от подкачки, то, как правило, ее производительность повышается.</p>
+
+<p>При значениях, близких к 100, система будет пытаться выгрузить больше данных на подкачку, чтобы разгрузить оперативную память. В зависимости от профиля памяти приложений и от тех задач, которые ставятся перед сервером, в некоторых случаях это плюс.</p>
+
+<p>Можем увидеть текущее значение фактора swappiness, введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /proc/sys/vm/swappiness
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>60
+</code></pre>
+<p>Для настольного компьютера неплохое значение swappiness — 60. Для сервера, возможно, вы захотите приблизить его к 0.</p>
+
+<p>Можно задать другое значение swappiness при помощи команды <code>sysctl</code>.</p>
+
+<p>Например, чтобы установить значение swappiness 10, можно ввести следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl vm.swappiness=10
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>vm.swappiness = 10
+</code></pre>
+<p>Эта настройка будет сохраняться до следующей перезагрузки. Можно автоматически задать это значение при перезагрузке, добавив строку в файл <code>/etc/sysctl.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysctl.conf
+</li></ul></code></pre>
+<p>Внизу можно ввести следующее:</p>
+<div class="code-label " title="/etc/sysctl.conf">/etc/sysctl.conf</div><pre class="code-pre "><code langs="">vm.swappiness=10
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<h3 id="Изменение-настроек-нагрузки-кэш-памяти">Изменение настроек нагрузки кэш-памяти</h3>
+
+<p>Еще одно связанное значение, которое вы, возможно, захотите изменить — <code>vfs_cache_pressure</code>. Эта настройка определяет, насколько система будет кэшировать данные <em>inode</em> и <em>dentry</em> по сравнению с другими данными.</p>
+
+<p>По сути, это данные доступа к файловой системе. Как правило, искать их довольно сложно, а запрашиваются они часто, так что кэш-память в этом случае весьма полезна. Чтобы узнать текущее значение этого параметра, можно еще раз запросить файловую систему <code>proc</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /proc/sys/vm/vfs_cache_pressure
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>100
+</code></pre>
+<p>Согласно текущим настройкам, система удаляет данные инодов из кэша слишком быстро. Можно задать более консервативное значение — например, 50 — введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl vm.vfs_cache_pressure=50
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>vm.vfs_cache_pressure = 50
+</code></pre>
+<p>Опять-таки, это значение действительно только для текущей сессии. Чтобы сделать его постоянным, нужно (как и в случае со swappiness) изменить файл конфигурации:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysctl.conf
+</li></ul></code></pre>
+<p>Внизу добавьте строку с новым значением:</p>
+<div class="code-label " title="/etc/sysctl.conf">/etc/sysctl.conf</div><pre class="code-pre "><code langs="">vm.vfs_cache_pressure=50
+</code></pre>
+<p>Сохраните и закройте файл после завершения.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Следуя настоящему руководству, можно использовать оперативную память более эффективно, предотвращая исключения нехватки памяти. Пространство подкачки может быть весьма полезным для предотвращения некоторых распространенных проблем.</p>
+
+<p>Когда возникают ошибки нехватки памяти или когда система не может запустить нужные приложения, наилучшее решение — оптимизировать конфигурации приложений или обновить сервер.</p>

@@ -1,0 +1,537 @@
+---
+layout: post
+title: Как создать кластер Kubernetes с помощью Kubeadm в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:23PM
+url: https://www.digitalocean.com/community/tutorials/how-to-create-a-kubernetes-cluster-using-kubeadm-on-ubuntu-18-04-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Автор выбрал <a href="https://www.brightfunds.org/funds/foss-nonprofits">фонд Free and Open Source Fund</a> для получения пожертвования в рамках программы <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://kubernetes.io">Kubernetes</a> — это система оркестровки контейнеров, обеспечивающая управление контейнерами в масштабе. Система Kubernetes была первоначально разработана Google на основе опыта компании в использовании контейнеров в рабочей среде. Это решение с открытым исходным кодом, и в его разработке активно участвуют представители сообщества разработчиков со всего мира.</p>
+
+<p><span class='note'><strong>Примечание.</strong> В этом обучающем модуле используется версия Kubernetes 1.14, последняя официальная поддерживаемая версия на момент публикации данной статьи. Актуальную информацию о последней версии можно найти в <a href="https://kubernetes.io/docs/setup/release/notes/">текущих примечаниях к выпуску</a> в официальной документации Kubernetes.<br></span></p>
+
+<p><a href="https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm/">Kubeadm</a> автоматизирует установку и настройку компонентов Kubernetes, в том числе сервера API, Controller Manager и Kube DNS. Однако данное средство не создает пользователей и не выполняет установку зависимостей уровня операционной системы и их конфигурации. Для предварительных задач существует возможность использования инструментов управления конфигурацией, таких как <a href="https://www.ansible.com/">Ansible</a> и <a href="https://saltstack.com/">SaltStack</a>. Использование этих инструментов упрощает создание дополнительных кластеров или воссоздание существующих кластеров, а также снижает вероятность ошибок.</p>
+
+<p>В этом обучающем модуле вы научитесь создавать кластер Kubernetes с помощью Ansible и Kubeadm, а затем развертывать в нем приложение Nginx в контейнерах.</p>
+
+<h2 id="Цели">Цели</h2>
+
+<p>Ваш кластер будет включать следующие физические ресурсы:</p>
+
+<ul>
+<li><strong>Один главный узел</strong></li>
+</ul>
+
+<p>Главный узел (под <em>узлом</em> в Kubernetes  подразумевается сервер), отвечающиой за управление состоянием кластера. На нем работает <a href="https://github.com/coreos/etcd">система Etcd</a>, которая хранит данные кластера среди компонентов, распределяющих рабочие задачи по рабочим узлам.</p>
+
+<ul>
+<li><strong>Два рабочих узла</strong></li>
+</ul>
+
+<p>Рабочие узлы — это серверы, где выполняются рабочие <em>задачи</em> (т. е. приложения и службы в контейнерах). Рабочий узел продолжает выполнять назначенную задачу, даже если главный узел отключается после распределения задач. Добавление рабочих узлов позволяет увеличить объем кластера.</p>
+
+<p>После прохождения данного обучающего модуля вы получите кластер, готовый к запуску приложений в контейнерах, при условии, что серверы кластера имеют достаточные ресурсы процессорной мощности и оперативной памяти для выполнения этих приложений. Практически любые традиционные приложения Unix, в том числе веб-приложения, базы данных, демоны и инструменты командной строки, можно поместить в контейнеры и запускать в кластере. Сам кластер потребляет примерно 300-500 МБ оперативной памяти и 10% ресурсов процессора на каждом узле.</p>
+
+<p>После настройки кластера вы развернете веб-сервер <a href="https://nginx.org/en/">Nginx</a> для проверки правильного выполнения рабочих задач.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<ul>
+<li><p>Пара ключей SSH на локальном компьютере под управлением Linux/macOS/BSD. Если вы еще не использовали ключи SSH, вы можете научиться настраивать их в соответствии с указаниями <a href="https://www.digitalocean.com/community/tutorials/ssh-essentials-working-with-ssh-servers-clients-and-keys#generating-and-working-with-ssh-keys">этого разъяснения по настройке ключей SSH на локальном компьютере</a>.</p></li>
+<li><p>Три сервера с Ubuntu 18.04, имеющие не менее 2 ГБ оперативной памяти и 2 виртуальных процессоров каждый. Вы должны иметь возможность подключаться к каждому серверу через SSH как пользователь root, используя вашу пару ключей SSH.</p></li>
+<li><p>Система Ansible, установленная на локальном компьютере. Если вы используете операционную систему Ubuntu 18.04, выполните указания раздела «Шаг 1 - Установка Ansible» обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-ansible-on-ubuntu-18-04#step-1-%E2%80%94-installing-ansible">«Установка и настройка Ansible в Ubuntu 18.04»</a> для установки Ansible. Инструкции по установке на других платформах, включая macOS и CentOS, можно найти в <a href="http://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html#installing-the-control-machine">официальной документации по установке Ansible</a>.</p></li>
+<li><p>Знакомство с плейбуками Ansible. Прочитайте руководство <a href="https://www.digitalocean.com/community/tutorials/configuration-management-101-writing-ansible-playbooks">«Все об управлении конфигурацией: создание плейбуков Ansible»</a>.</p></li>
+<li><p>Умение запускать контейнеры из образа Docker. Ознакомьтесь с разделом «Шаг 5 — запуск контейнера Docker» обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04#step-5-%E2%80%94-running-a-docker-container">«Установка и использование Docker в Ubuntu 18.04»</a>, если вам требуется освежить знания.</p></li>
+</ul>
+
+<h2 id="Шаг-1-—-Настройка-каталога-рабочего-пространства-и-файла-инвентаризации-ansible">Шаг 1 — Настройка каталога рабочего пространства и файла инвентаризации Ansible</h2>
+
+<p>В этом разделе вы создадите на локальном компьютере каталог, который будет выступать в качестве рабочего пространства. Вы выполните локальную настройку Ansible, чтобы обеспечить возможность связи с вашими удаленными серверами и выполнения команд на этих серверах. После этого вы создадите файл <code>hosts</code> с данными инвентаризации, в том числе с IP-адресами ваших серверов и данными групп, к которым принадлежит каждый сервер.</p>
+
+<p>Из трех ваших серверов один сервер будет главным сервером, и его IP-адрес будет отображаться как <code><span class="highlight">master_ip</span></code>. Другие два сервера будут рабочими узлами и будут иметь IP-адреса <code><span class="highlight">worker_1_ip</span></code> и <code><span class="highlight">worker_2_ip</span></code>.</p>
+
+<p>Создайте каталог <code>~/kube-cluster</code> в домашнем каталоге локального компьютера и перейдите в него с помощью команды <code>cd</code>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir ~/kube-cluster
+</li><li class="line" prefix="$">cd ~/kube-cluster
+</li></ul></code></pre>
+<p>В рамках этого обучающего модуля данный каталог будет выступать в качестве рабочего пространства, и в нем будут храниться все ваши плейбуки Ansible. Также в этом каталоге вы будете запускать все локальные команды.</p>
+
+<p>Создайте файл с именем <code>~/kube-cluster/hosts</code> с помощью <code>nano</code> или своего любимого текстового редактора:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/kube-cluster/hosts
+</li></ul></code></pre>
+<p>Добавьте в файл следующий текст с информацией о логической структуре вашего кластера:</p>
+<div class="code-label " title="~/kube-cluster/hosts">~/kube-cluster/hosts</div><pre class="code-pre yaml local-environment"><code langs="">[masters]
+master ansible_host=<span class="highlight">master_ip</span> ansible_user=root
+
+[workers]
+worker1 ansible_host=<span class="highlight">worker_1_ip</span> ansible_user=root
+worker2 ansible_host=<span class="highlight">worker_2_ip</span> ansible_user=root
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+</code></pre>
+<p>Возможно вы помните, что <a href="http://docs.ansible.com/ansible/latest/user_guide/intro_inventory.html"><em>файлы инвентаризации</em></a> в Ansible используются для указания данных серверов, в том числе IP-адресов, удаленных пользователей и группировок серверов как единый объем для целей выполнения команд. Файл <code>~/kube-cluster/hosts</code> будет вашим файлом инвентаризации, и вы добавили в него две группы Ansible (<strong>masters</strong> и <strong>workers</strong>) для определения логической структуры вашего кластера.</p>
+
+<p>В группе <strong>masters</strong> имеется запись сервера master, в которой указан IP-адрес главного узла (<code><span class="highlight">master_ip</span></code>) и указывается, что система Ansible должна запускать удаленные команды от имени пользователя root.</p>
+
+<p>В группе <strong>workers</strong> также есть две записи для серверов рабочих узлов (<code><span class="highlight">worker_1_ip</span></code> и <code><span class="highlight">worker_2_ip</span></code>), где пользователь <code>ansible_user</code> также задается как пользователь root.</p>
+
+<p>В последней строке файла Ansible предписывается использовать для операций управления интерпретаторы Python 3 удаленных серверов.</p>
+
+<p>Сохраните и закройте файл после добавления текста.</p>
+
+<p>После настойки инвентаризации сервера с помощью групп мы переходим к установке зависимостей уровня операционной системы и создания параметров конфигурации.</p>
+
+<h2 id="Шаг-2-—-Создание-пользователя-без-привилегий-root-на-всех-удаленных-серверах">Шаг 2 — Создание пользователя без привилегий root на всех удаленных серверах</h2>
+
+<p>В этом разделе вы создадите пользователя без привилегий root с привилегиями sudo на всех серверах, чтобы вы могли вручную подключаться к ним через SSH как пользователь без привилегий. Это полезно на случай, если вы захотите посмотреть информацию о системе с помощью таких команд как <code>top/htop</code>, просмотреть список работающих контейнеров или изменить файлы конфигурации, принадлежащие пользователю root. Данные операции обычно выполняются во время технического обслуживания кластера, и использование пользователя без привилегий root для выполнения таких задач минимизирует риск изменения или удаления важных файлов или случайного выполнения других опасных операций.</p>
+
+<p>Создайте в рабочем пространстве файл с именем <code>~/kube-cluster/initial.yml</code>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/kube-cluster/initial.yml
+</li></ul></code></pre>
+<p>Добавьте в файл следующую строку сценария <em>play</em> для создания пользователя без привилегий root с привилегиями sudo на всех серверах. Сценарий в Ansible — это набор выполняемых шагов, нацеленных на определенные серверы и группы. Следующий сценарий создаст пользователя без привилегий root с привилегиями sudo:</p>
+<div class="code-label " title="~/kube-cluster/initial.yml">~/kube-cluster/initial.yml</div><pre class="code-pre yaml local-environment"><code langs="">- hosts: all
+  become: yes
+  tasks:
+    - name: create the 'ubuntu' user
+      user: name=ubuntu append=yes state=present createhome=yes shell=/bin/bash
+
+    - name: allow 'ubuntu' to have passwordless sudo
+      lineinfile:
+        dest: /etc/sudoers
+        line: 'ubuntu ALL=(ALL) NOPASSWD: ALL'
+        validate: 'visudo -cf %s'
+
+    - name: set up authorized keys for the ubuntu user
+      authorized_key: user=ubuntu key="{{item}}"
+      with_file:
+        - ~/.ssh/id_rsa.pub
+</code></pre>
+<p>Далее приведено детальное описание операций, выполняемых этим плейбуком:</p>
+
+<ul>
+<li><p>Создает пользователя без привилегий root с именем <code>ubuntu</code>.</p></li>
+<li><p>Настраивает файл <code>sudoers</code>, чтобы пользователь <code>ubuntu</code> мог запускать команды <code>sudo</code> без ввода пароля.</p></li>
+<li><p>Добавляет на локальный компьютер открытый ключ (обычно <code>~/.ssh/id_rsa.pub</code>) в список авторизованных ключей удаленного пользователя <code>ubuntu</code>. Это позволит вам подключаться к каждому серверу через SSH под именем пользователя <code>ubuntu</code>.</p></li>
+</ul>
+
+<p>Сохраните и закройте файл после добавления текста.</p>
+
+<p>Затем запустите плейбук на локальном компьютере:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible-playbook -i hosts ~/kube-cluster/initial.yml
+</li></ul></code></pre>
+<p>Выполнение команды займет от двух до пяти минут. После завершения вы увидите примерно следующий результат:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>PLAY [all] ****
+
+TASK [Gathering Facts] ****
+ok: [master]
+ok: [worker1]
+ok: [worker2]
+
+TASK [create the 'ubuntu' user] ****
+changed: [master]
+changed: [worker1]
+changed: [worker2]
+
+TASK [allow 'ubuntu' user to have passwordless sudo] ****
+changed: [master]
+changed: [worker1]
+changed: [worker2]
+
+TASK [set up authorized keys for the ubuntu user] ****
+changed: [worker1] =&gt; (item=ssh-rsa AAAAB3...)
+changed: [worker2] =&gt; (item=ssh-rsa AAAAB3...)
+changed: [master] =&gt; (item=ssh-rsa AAAAB3...)
+
+PLAY RECAP ****
+master                     : ok=5    changed=4    unreachable=0    failed=0   
+worker1                    : ok=5    changed=4    unreachable=0    failed=0   
+worker2                    : ok=5    changed=4    unreachable=0    failed=0   
+</code></pre>
+<p>Теперь предварительная настройка завершена, и вы можете перейти к установке зависимостей Kubernetes.</p>
+
+<h2 id="Шаг-3-—-Установка-зависимостей-kubernetetes">Шаг 3 — Установка зависимостей Kubernetetes</h2>
+
+<p>В этом разделе вы научитесь устанавливать требующиеся Kubernetes пакеты уровня операционной системы с помощью диспетчера пакетов Ubuntu. Вот эти пакеты:</p>
+
+<ul>
+<li><p>Docker — среда исполнения контейнеров. Это компонент, который запускает ваши контейнеры. В настоящее время для Kubernetes активно разрабатывается поддержка других сред исполнения, в том числе <a href="https://coreos.com/rkt/">rkt</a>.</p></li>
+<li><p><code>kubeadm</code> — инструмент командной строки, который устанавливает и настраивает различные компоненты кластера стандартным образом.</p></li>
+<li><p><code>kubelet</code> — системная служба / программа, которая работает на всех узлах и обрабатывает операции на уровне узлов.</p></li>
+<li><p><code>kubectl</code> — инструмент командной строки, используемый для отправки команд на кластер через сервер API.</p></li>
+</ul>
+
+<p>Создайте в рабочем пространстве файл с именем <code>~/kube-cluster/kube-dependencies.yml</code>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/kube-cluster/kube-dependencies.yml
+</li></ul></code></pre>
+<p>Добавьте в файл следующие сценарии, чтобы установить данные пакеты на ваши серверы:</p>
+<div class="code-label " title="~/kube-cluster/kube-dependencies.yml">~/kube-cluster/kube-dependencies.yml</div><pre class="code-pre yaml local-environment"><code langs="">- hosts: all
+  become: yes
+  tasks:
+   - name: install Docker
+     apt:
+       name: docker.io
+       state: present
+       update_cache: true
+
+   - name: install APT Transport HTTPS
+     apt:
+       name: apt-transport-https
+       state: present
+
+   - name: add Kubernetes apt-key
+     apt_key:
+       url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+       state: present
+
+   - name: add Kubernetes' APT repository
+     apt_repository:
+      repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+      filename: 'kubernetes'
+
+   - name: install kubelet
+     apt:
+       name: kubelet=1.14.0-00
+       state: present
+       update_cache: true
+
+   - name: install kubeadm
+     apt:
+       name: kubeadm=1.14.0-00
+       state: present
+
+- hosts: master
+  become: yes
+  tasks:
+   - name: install kubectl
+     apt:
+       name: kubectl=1.14.0-00
+       state: present
+       force: yes
+</code></pre>
+<p>Первый сценарий в плейбуке выполняет следующие операции:</p>
+
+<ul>
+<li><p>Устанавливает среду исполнения контейнеров Docker.</p></li>
+<li><p>Устанавливает <code>apt-transport-https</code>, позволяя добавлять внешние источники HTTPS в список источников APT.</p></li>
+<li><p>Добавляет ключ apt-key репозитория Kubernetes APT для проверки ключей.</p></li>
+<li><p>Добавляет репозиторий Kubernetes APT в список источников APT ваших удаленных серверов.</p></li>
+<li><p>Устанавливает <code>kubelet</code> и <code>kubeadm</code>.</p></li>
+</ul>
+
+<p>Второй сценарий состоит из одной задачи, которая устанавливает <code>kubectl</code> на главном узле.</p>
+
+<p><span class='note '><strong>Примечание.</strong> Хотя документация по Kubernetes рекомендует использовать для вашей среды последнюю стабильную версию Kubernetes, в данном обучающем модуле используется конкретная версия. Это обеспечит успешное следование процедуре, поскольку Kubernetes быстро изменяется и последняя версия может не соответствовать этому обучающему модулю. </span></p>
+
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Затем запустите плейбук на локальном компьютере:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible-playbook -i hosts ~/kube-cluster/kube-dependencies.yml
+</li></ul></code></pre>
+<p>После завершения вы увидите примерно следующий результат:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>PLAY [all] ****
+
+TASK [Gathering Facts] ****
+ok: [worker1]
+ok: [worker2]
+ok: [master]
+
+TASK [install Docker] ****
+changed: [master]
+changed: [worker1]
+changed: [worker2]
+
+TASK [install APT Transport HTTPS] *****
+ok: [master]
+ok: [worker1]
+changed: [worker2]
+
+TASK [add Kubernetes apt-key] *****
+changed: [master]
+changed: [worker1]
+changed: [worker2]
+
+TASK [add Kubernetes' APT repository] *****
+changed: [master]
+changed: [worker1]
+changed: [worker2]
+
+TASK [install kubelet] *****
+changed: [master]
+changed: [worker1]
+changed: [worker2]
+
+TASK [install kubeadm] *****
+changed: [master]
+changed: [worker1]
+changed: [worker2]
+
+PLAY [master] *****
+
+TASK [Gathering Facts] *****
+ok: [master]
+
+TASK [install kubectl] ******
+ok: [master]
+
+PLAY RECAP ****
+master                     : ok=9    changed=5    unreachable=0    failed=0   
+worker1                    : ok=7    changed=5    unreachable=0    failed=0  
+worker2                    : ok=7    changed=5    unreachable=0    failed=0  
+</code></pre>
+<p>После выполнения на всех удаленных серверах будут установлены Docker, <code>kubeadm</code> и <code>kubelet</code>. <code>kubectl</code> не является обязательным компонентом и требуется только для выполнения команд кластера. В этом контексте имеет смысл производить установку только на главный узел, поскольку вы будете запускать команды <code>kubectl</code> только на главном узле. Однако следует отметить, что команды <code>kubectl</code> можно запускать с любых рабочих узлов и на любом компьютере, где их можно установить и настроить для указания на кластер.</p>
+
+<p>Теперь все системные зависимости установлены. Далее мы настроим главный узел и проведем инициализацию кластера.</p>
+
+<h2 id="Шаг-4-—-Настройка-главного-узла">Шаг 4 — Настройка главного узла</h2>
+
+<p>На этом шаге вы настроите главный узел. Прежде чем создавать любые плейбуки, следует нружно познакомиться с концепциями <em>подов и плагинов</em>__ сети подов, которые будут использоваться в вашем кластере.</p>
+
+<p>Под — это атомарная единица, запускающая один или несколько контейнеров. Эти контейнеры используют общие ресурсы, такие как файловые тома и сетевые интерфейсы. Под — это базовая единица планирования в Kubernetes: все контейнеры в поде гарантированно запускаются на том же узле, который назначен для этого пода.</p>
+
+<p>Каждый под имеет собственный IP-адрес, и под на одном узле должен иметь доступ к поду на другом узле через IP-адрес пода. Контейнеры в одном узле могут легко взаимодействовать друг с другом через локальный интерфейс. Однако связь между подами более сложная, и для нее требуется отдельный сетевой компонент, обеспечивающий прозрачную маршрутизацию трафика между подами на разных узлах.</p>
+
+<p>Эту функцию обеспечивают плагины сети подов. Для этого кластера мы используем стабильный и производительный плагин <a href="https://github.com/coreos/flannel">Flannel</a>.</p>
+
+<p>Создайте на локальном компьютере плейбук Ansible с именем <code>master.yml</code>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/kube-cluster/master.yml
+</li></ul></code></pre>
+<p>Добавьте в файл следующий сценарий для инициализации кластера и установки Flannel:</p>
+<div class="code-label " title="~/kube-cluster/master.yml">~/kube-cluster/master.yml</div><pre class="code-pre yaml local-environment"><code langs="">- hosts: master
+  become: yes
+  tasks:
+    - name: initialize the cluster
+      shell: kubeadm init --pod-network-cidr=10.244.0.0/16 &gt;&gt; cluster_initialized.txt
+      args:
+        chdir: $HOME
+        creates: cluster_initialized.txt
+
+    - name: create .kube directory
+      become: yes
+      become_user: ubuntu
+      file:
+        path: $HOME/.kube
+        state: directory
+        mode: 0755
+
+    - name: copy admin.conf to user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+
+    - name: install Pod network
+      become: yes
+      become_user: ubuntu
+      shell: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/a70459be0084506e4ec919aa1c114638878db11b/Documentation/kube-flannel.yml &gt;&gt; pod_network_setup.txt
+      args:
+        chdir: $HOME
+        creates: pod_network_setup.txt
+</code></pre>
+<p>Далее приведена детализация этого сценария:</p>
+
+<ul>
+<li><p>Первая задача инициализирует кластер посредством запуска <code>kubeadm init</code>. При передаче аргумента <code>--pod-network-cidr=10.244.0.0/16</code> задается частная подсеть, из которой назначаются IP-адреса подов. Flannel использует вышеуказанную подсеть по умолчанию, и мы предпишем <code>kubeadm</code> использовать ту же подсеть.</p></li>
+<li><p>Вторая задача создает каталог <code>.kube</code> по адресу <code>/home/ubuntu</code>. В это каталоге будут храниться данные конфигурации, в том числе файлы ключа администратора, необходимые для подключения к кластеру, и адрес API кластера.</p></li>
+<li><p>Третья задача копирует файл <code>/etc/kubernetes/admin.conf</code>, сгенерированный <code>kubeadm init</code> в домашнем каталоге пользователя без привилегий root. Это позволит вам использовать <code>kubectl</code> для доступа к новому кластеру.</p></li>
+<li><p>Последняя задача запускает <code>kubectl apply</code> для установки <code>Flannel</code>. Синтаксис <code>kubectl apply -f descriptor.[yml|json]</code> предписывает <code>kubectl</code> создать объекты, описанные в файле <code>descriptor.[yml|json]</code>. Файл <code>kube-flannel.yml</code> содержит описания объектов, требуемых для настроки <code>Flannel</code> в кластере.</p></li>
+</ul>
+
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Запустите плейбук на локальной системе с помощью команды:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible-playbook -i hosts ~/kube-cluster/master.yml
+</li></ul></code></pre>
+<p>После завершения вы увидите примерно следующий результат:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+PLAY [master] ****
+
+TASK [Gathering Facts] ****
+ok: [master]
+
+TASK [initialize the cluster] ****
+changed: [master]
+
+TASK [create .kube directory] ****
+changed: [master]
+
+TASK [copy admin.conf to user's kube config] *****
+changed: [master]
+
+TASK [install Pod network] *****
+changed: [master]
+
+PLAY RECAP ****
+master                     : ok=5    changed=4    unreachable=0    failed=0  
+</code></pre>
+<p>Чтобы проверить статус главного узла, подключитесь к нему через SSH с помощью следующей команды:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh ubuntu@<span class="highlight">master_ip</span>
+</li></ul></code></pre>
+<p>Запустите на главном узле следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get nodes
+</li></ul></code></pre>
+<p>Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      STATUS    ROLES     AGE       VERSION
+master    Ready     master    1d        v1.14.0
+</code></pre>
+<p>В результатах показано, что главный узел <code>master</code> завершил выполнение всех задач инициализации и находится в состоянии готовности <code>Ready</code>, из которого он может принимать подключения от рабочих узлов и выполнять задачи, отправленные на сервер API. Теперь вы можете добавить рабочие узлы с локального компьютера.</p>
+
+<h2 id="Шаг-5-—-Настройка-рабочих-узлов">Шаг 5 — Настройка рабочих узлов</h2>
+
+<p>Для добавления рабочих узлов в кластер нужно запустить на каждом из них отдельную команду. Эта команда предоставляет всю необходимую информацию о кластере, включая IP-адрес, порт сервера API главного узла и защищенный токен. К кластеру могут подключаться только те узлы, которые проходят проверку с защищенным токеном.</p>
+
+<p>Вернитесь в рабочее пространство и создайте плейбук с именем <code>workers.yml</code>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/kube-cluster/workers.yml
+</li></ul></code></pre>
+<p>Добавьте в файл следующий текст для добавления рабочих узлов в кластер:</p>
+<div class="code-label " title="~/kube-cluster/workers.yml">~/kube-cluster/workers.yml</div><pre class="code-pre yaml local-environment"><code langs="">- hosts: master
+  become: yes
+  gather_facts: false
+  tasks:
+    - name: get join command
+      shell: kubeadm token create --print-join-command
+      register: join_command_raw
+
+    - name: set join command
+      set_fact:
+        join_command: "{{ join_command_raw.stdout_lines[0] }}"
+
+
+- hosts: workers
+  become: yes
+  tasks:
+    - name: join cluster
+      shell: "{{ hostvars['master'].join_command }} &gt;&gt; node_joined.txt"
+      args:
+        chdir: $HOME
+        creates: node_joined.txt
+</code></pre>
+<p>Вот что делает этот плейбук:</p>
+
+<ul>
+<li><p>Первый сценарий получает команду join, которую нужно запустить на рабочих узлах. Эта команда имеет следующий форматt: <code>kubeadm join --token &lt;token&gt; &lt;master-ip&gt;:&lt;master-port&gt; --discovery-token-ca-cert-hash sha256:&lt;hash&gt;</code>. После получения фактической команды с правильными значениями <strong>token</strong> и <strong>hash</strong> задача задает их как фактические, чтобы следующий сценарий имел доступ к этой информации.</p></li>
+<li><p>Второй сценарий содержит одну задачу, которая запускает команду join на всех рабочих узлах. После завершения этой задачи два рабочих узла становятся частью кластера.</p></li>
+</ul>
+
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Запустите плейбук на локальном компьютере:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible-playbook -i hosts ~/kube-cluster/workers.yml
+</li></ul></code></pre>
+<p>После завершения вы увидите примерно следующий результат:</p>
+<pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>PLAY [master] ****
+
+TASK [get join command] ****
+changed: [master]
+
+TASK [set join command] *****
+ok: [master]
+
+PLAY [workers] *****
+
+TASK [Gathering Facts] *****
+ok: [worker1]
+ok: [worker2]
+
+TASK [join cluster] *****
+changed: [worker1]
+changed: [worker2]
+
+PLAY RECAP *****
+master                     : ok=2    changed=1    unreachable=0    failed=0   
+worker1                    : ok=2    changed=1    unreachable=0    failed=0  
+worker2                    : ok=2    changed=1    unreachable=0    failed=0  
+</code></pre>
+<p>Теперь рабочие узлы добавлены, ваш кластер полностью настроен и готов к работе, а рабочие узлы готовы к выполнению рабочих задач. Перед назначением приложений следует убедиться, что кластер работает надлежащим образом.</p>
+
+<h2 id="Шаг-6-—-Проверка-кластера">Шаг 6 — Проверка кластера</h2>
+
+<p>Иногда при установке и настройке кластера может произойти ошибка, если один из узлов отключен или имеются проблемы сетевого соединения между главным узлом и рабочими узлами. Сейчас мы проверим кластер и убедимся, что все узлы работают правильно.</p>
+
+<p>Вам нужно будет проверить текущее состояние кластера с главного узла, чтобы убедиться в готовности всех узлов. Если вы отключились от главного узла, вы можете снова подключиться к нему через SSH с помощью следующей команды:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh ubuntu@<span class="highlight">master_ip</span>
+</li></ul></code></pre>
+<p>Затем выполните следующую команду, чтобы получить данные о статусе кластера:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get nodes
+</li></ul></code></pre>
+<p>Вы увидите примерно следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      STATUS    ROLES     AGE       VERSION
+master    Ready     master    1d        v1.14.0
+worker1   Ready     &lt;none&gt;    1d        v1.14.0
+worker2   Ready     &lt;none&gt;    1d        v1.14.0
+</code></pre>
+<p>Если на всех ваших узлах отображается значение <code>Ready</code> для параметра <code>STATUS</code>, это означает, что они являются частью кластера и готовы к выполнению рабочих задач.</p>
+
+<p>Если же на некоторых узлах отображается значение <code>NotReady</code> для параметра <code>STATUS</code>, это может означать, что настройка рабочих узлов еще не завершена. Подождите от пяти до десяти минут, а затем снова запустите команду <code>kubectl get nodes</code> и проверьте полученные результаты. Если для некоторых узлов еще отображается статус <code>NotReady</code>, вам нужно проверить и заново запустить команды, которые выполнялись на предыдущих шагах.</p>
+
+<p>Теперь кластер успешно проверен, и мы запланируем запуск на кластере образца приложения Nginx.</p>
+
+<h2 id="Шаг-7-—-Запуск-приложения-на-кластере">Шаг 7 — Запуск приложения на кластере</h2>
+
+<p>Теперь вы можете развернуть на кластере любое приложение в контейнере. Для удобства мы развернем Nginx с помощью <em>Deployments</em> и <em>Services</em> и посмотрим, как можно развернуть это приложение на кластере. Вы можете использовать приведенные ниже команды для других приложений в контейнерах, если вы измените имя образа Docker и дополнительные параметры (такие как <code>ports</code> и <code>volumes</code>).</p>
+
+<p>Запустите на главном узле следующую команду для создания развертывания с именем <code>nginx</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create deployment <span class="highlight">nginx</span> --image=<span class="highlight">nginx</span>
+</li></ul></code></pre>
+<p>Развертывание — это тип объекта Kubernetes, обеспечивающий постоянную работу определенного количества подов на основе заданного шаблона, даже в случае неисправности пода в течение срока службы кластера. Вышеуказанное развертывание создаст под с одним контейнером из <a href="https://hub.docker.com/_/nginx/">образа Nginx Docker</a> в реестре Docker.</p>
+
+<p>Запустите следующую команду, чтобы создать службу <code>nginx</code>, которая сделает приложение общедоступным. Для этого используется схема <em>NodePort</em>, которая делает под доступным на произвольном порту, который открывается на каждом узле кластера:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl expose deploy <span class="highlight">nginx</span> --port <span class="highlight">80</span> --target-port <span class="highlight">80</span> --type NodePort
+</li></ul></code></pre>
+<p>Службы — это еще один тип объектов Kubernetes, который открывает внутренние службы кластера для внутренних и внешних клиентов. Они поддерживают запросы балансировки нагрузки на разные поды и являются неотъемлемым компонентом Kubernetes, который часто взаимодействует с другими компонентами.</p>
+
+<p>Запустите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get services
+</li></ul></code></pre>
+<p>Будет выведен текст следующего вида:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME         TYPE        CLUSTER-IP       EXTERNAL-IP           PORT(S)             AGE
+kubernetes   ClusterIP   10.96.0.1        &lt;none&gt;                443/TCP             1d
+<span class="highlight">nginx</span>        NodePort    10.109.228.209   &lt;none&gt;                80:<span class="highlight">nginx_port</span>/TCP   40m
+</code></pre>
+<p>В третьей сроке результатов указан номер порта, на котором запущен Nginx. Kubernetes автоматически назначает случайный порт с номером выше <code>30000</code> и при этом проверяет, не занят ли этот порт другой службой.</p>
+
+<p>Чтобы убедиться в работе всех элементов, откройте адрес <code>http://<span class="highlight">worker_1_ip</span>:<span class="highlight">nginx_port</span></code> или <code>http://<span class="highlight">worker_2_ip</span>:<span class="highlight">nginx_port</span></code> в браузере на локальном компьютере. Вы увидите знакомую начальную страницу Nginx.</p>
+
+<p>Если вы захотите удалить приложение Nginx, предварительно удалите службу <code>nginx</code> с главного узла:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl delete service <span class="highlight">nginx</span>
+</li></ul></code></pre>
+<p>Запустите следующую команду, чтобы проверить удаление службы:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get services
+</li></ul></code></pre>
+<p>Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME         TYPE        CLUSTER-IP       EXTERNAL-IP           PORT(S)        AGE
+kubernetes   ClusterIP   10.96.0.1        &lt;none&gt;                443/TCP        1d
+</code></pre>
+<p>Затем удалите развертывание:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl delete deployment <span class="highlight">nginx</span>
+</li></ul></code></pre>
+<p>Запустите следующую команду для проверки успешности выполнения:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get deployments
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>No resources found.
+</code></pre>
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем модуле вы научились успешно настраивать кластер Kubernetes в Ubuntu 18.04, используя для автоматизации Kubeadm и Ansible.</p>
+
+<p>Если вы не знаете, что дальше делать с настроенным кластером, попробуйте развернуть на нем собственные приложения и службы. Далее приведен список ссылок с дополнительной информацией, которая будет вам полезна:</p>
+
+<ul>
+<li><p><a href="https://docs.docker.com/engine/examples/">Докеризация приложений</a> — детальные примеры контейнеризации приложений с помощью Docker.</p></li>
+<li><p><a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-overview/">Обзор подов</a> — детальное описание принципов работы подов и их отношений с другими объектами Kubernetes. Поды используются в Kubernetes повсеместно, так что понимание этой концепции упростит вашу работу.</p></li>
+<li><p><a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/">Обзор развертывания</a> — обзор концепции развертывания. С его помощью проще понять принципы работы таких контроллеров как развертывания, поскольку они часто используются для масштабирования в приложениях без сохранения состояния и для автоматического восстановления поврежденных приложений.</p></li>
+<li><p><a href="https://kubernetes.io/docs/concepts/services-networking/service/">Обзор служб</a>  — рассказывает о службах, еще одном часто используемом объекте кластеров Kubernetes. Понимание типов служб и доступных для них опций важно для использования приложений с сохранением состояния и без сохранения состояния.</p></li>
+</ul>
+
+<p>Другие важные концепции, полезные при развертывании рабочих приложений: <a href="https://kubernetes.io/docs/concepts/storage/volumes/">тома</a>, <a href="https://kubernetes.io/docs/concepts/services-networking/ingress/">входы</a> и <a href="https://kubernetes.io/docs/concepts/configuration/secret/">секреты</a>.</p>
+
+<p>В Kubernetes имеется множество функций и возможностей. <a href="https://kubernetes.io/docs/">Официальная документация Kubernetes</a> — лучший источник информации о концепциях, руководств по конкретным задачам и ссылок API для различных объектов.</p>

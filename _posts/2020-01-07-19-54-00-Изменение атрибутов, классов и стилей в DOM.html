@@ -1,0 +1,294 @@
+---
+layout: post
+title: Изменение атрибутов, классов и стилей в DOM
+network: digitalocean
+date: January 07, 2020 at 07:54PM
+url: https://www.digitalocean.com/community/tutorials/how-to-modify-attributes-classes-and-styles-in-the-dom-ru
+image: https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-shark.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>В предыдущем руководстве данной <a href="https://www.digitalocean.com/community/tutorial_series/understanding-the-dom-document-object-model">серии</a>, <a href="https://www.digitalocean.com/community/tutorials/how-to-make-changes-to-the-dom">«Внесение изменений в DOM»</a>, мы рассказали о том, как создать, вставить и удалить элементы в объектной модели документов (DOM) с помощью встроенных методов. Благодаря повышению вашего уровня владения манипуляциями с DOM, вы сможете более эффективно использовать интерактивные возможности JavaScript и изменять веб-элементы.</p>
+
+<p>В этом руководстве мы узнаем, как вносить дальнейшие изменения в DOM, меняя стили, классы и другие атрибуты узлов HTML-элементов. Это позволит вам получить более полное представление о том, как манипулировать основными элементами в DOM.</p>
+
+<h2 id="Описание-выбора-элементов">Описание выбора элементов</h2>
+
+<p>До недавнего времени популярная JavaScript-библиотека <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-jquery">jQuery</a> чаще всего использовалась для выбора и изменения элементов в DOM. jQuery упрощал процесс выбора одного или нескольких элементов и внесения изменений для всех этих элементов одновременно. В статье <a href="https://www.digitalocean.com/community/tutorials/how-to-access-elements-in-the-dom">«Доступ к элементам в DOM»</a> мы описали методы DOM для захвата и работы с узлами в ванильном JavaScript.</p>
+
+<p>Напоминаем, <code>что document.querySelector()</code> и <code>document.getElementById()</code> — это методы, которые используются для доступа к отдельному элементу. Используя <code>div</code> с атрибутом <code>id</code> в примере ниже, мы так или иначе можем получить доступ к этому элементу.</p>
+<pre class="code-pre "><code class="code-highlight language-html">&lt;div id="demo-id"&gt;Demo ID&lt;/div&gt;
+</code></pre>
+<p>Метод <code>querySelector()​​​</code> обладает большей надежностью, поскольку с его помощью можно выбрать элемент на странице по любому типу селектора.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Both methods will return a single element
+const demoId = document.querySelector('#demo-id');
+</code></pre>
+<p>Получая доступ к отдельному элементу, мы легко можем обновить часть элемента, например, текст внутри него.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Change the text of one element
+demoId.textContent = 'Demo ID text updated.';
+</code></pre>
+<p>Однако при получении доступа к нескольким элементам с общим селектором, например, к какому-то конкретному классу, мы вынуждены проходить по всем элементам в списке. В коде ниже мы имеем два элемента <code>div</code> с общим значением класса.</p>
+<pre class="code-pre "><code class="code-highlight language-html">&lt;div class="demo-class"&gt;Demo Class 1&lt;/div&gt;
+&lt;div class="demo-class"&gt;Demo Class 2&lt;/div&gt;
+</code></pre>
+<p>Мы будем использовать <code>querySelectorAll()</code> для захвата всех элементов с примененным атрибутом <code>demo-class</code> и <code>forEach()</code> для прохождения по ним и внесения изменений. Также возможно доступ к определенному элементу с помощью <code>querySelectorAll()</code> таким же образом, как и к массиву, т.е. с помощью квадратных скобок.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Get a NodeList of all .demo elements
+const demoClasses = document.querySelectorAll('.demo-class');
+
+// Change the text of multiple elements with a loop
+demoClasses.forEach(element =&gt; {
+  element.textContent = 'All demo classes updated.';
+});
+
+// Access the first element in the NodeList
+demoClasses[0];
+</code></pre>
+<p>Это одно из самых важных отличий, о которых необходимо помнить при переходе с jQuery на ванильный JavaScript. Многие примеры изменения элементов не будут объяснять процесс применения этих методов и свойств для нескольких элементов.</p>
+
+<p>Свойства и методы в этой статье часто будут сопровождать <a href="https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener">слушателей событий</a> для ответа на клики, наведения или прочие триггеры.</p>
+
+<p><span class='note'><strong>Примечание.</strong> Методы <code>getElementsByClassName()</code> и <code>getElementsByTagName()</code> будут возвращать коллекции HTML, которые не имеют доступа к методу <code>forEach()</code>, в отличие от <code>querySelectorAll()</code>. В этих случаях вам нужно будет использовать стандартный <a href="https://www.digitalocean.com/community/tutorials/how-to-construct-for-loops-in-javascript">цикл <code>for</code></a> для прохождения по коллекции.<br></span></p>
+
+<h2 id="Изменение-атрибутов">Изменение атрибутов</h2>
+
+<p>Атрибуты — это значения, которые содержат дополнительную информацию об элементах HTML. Обычно они идут в паре <strong>название/значение</strong> и могут быть обязательными в зависимости от элемента.</p>
+
+<p>Среди самых распространенных атрибутов HTML необходимо отметить атрибут <code>src</code> тега <code>img</code>, <code>href</code>  для тега <code>a</code>, <code>class</code>, <code>id</code> и <code>style</code>. Полный список атрибутов HTML см. в <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes">списке атрибутов</a> в Mozilla Developer Network. Пользовательские элементы, которые не являются частью стандарта HTML, будут сопровождаться префиксом <code>data-</code>.</p>
+
+<p>В JavaScript есть четыре метода для изменения атрибутов элементов:</p>
+
+<table><thead>
+<tr>
+<th>Метод</th>
+<th>Описание</th>
+<th>Пример</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><code>hasAttribute()</code></td>
+<td>Возвращает <code>true</code> или <code>false</code></td>
+<td><code>element.hasAttribute('href');</code></td>
+</tr>
+<tr>
+<td><code>getAttribute()</code></td>
+<td>Возвращает значение определенного атрибута или  <code>null</code></td>
+<td><code>element.getAttribute('href');</code></td>
+</tr>
+<tr>
+<td><code>setAttribute()</code></td>
+<td>Добавляет или обновляет заданный атрибут</td>
+<td><code>element.setAttribute('href', 'index.html');</code></td>
+</tr>
+<tr>
+<td><code>removeAttribute()</code></td>
+<td>Удаляет атрибут элемента</td>
+<td><code>element.removeAttribute('href');</code></td>
+</tr>
+</tbody></table>
+
+<p>Давайте создадим новый файл HTML с тегом <code>img</code> с одним атрибутом. Мы привяжем открытое изображение через URL, но вы можете использовать другое локальное изображение, если вы работаете оффлайн.</p>
+<div class="code-label " title="attributes.html">attributes.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;body&gt;
+
+    &lt;img src="https://js-tutorials.nyc3.digitaloceanspaces.com/shark.png"&gt;
+
+&lt;/body&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>При загрузке указанного выше файла HTML в современном веб-браузере и открытии консоли <a href="https://www.digitalocean.com/community/tutorials/how-to-use-the-javascript-developer-console">разработчика</a>, вы должны получить примерно следующий вывод:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-shark.png" alt="Первый рендеринг classes.html"></p>
+
+<p>Теперь мы можем протестировать все методы атрибутов на ходу.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Assign image element
+const img = document.querySelector('img');
+
+img.hasAttribute('src');                // returns true
+img.getAttribute('src');                // returns "...shark.png"
+img.removeAttribute('src');             // remove the src attribute and value
+</code></pre>
+<p>К этому моменту вы удалите атрибут <code>src</code> и значение, связанное с тегом <code>img</code>, но вы можете сбросить этот атрибут и присвоить значение другому изображению с помощью <code>img.setAttribute()</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-js">img.setAttribute('src', 'https://js-tutorials.nyc3.digitaloceanspaces.com/octopus.png');
+</code></pre>
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-octopus.png" alt="Второй рендеринг classes.html"></p>
+
+<p>Наконец, мы можем изменить атрибут напрямую, присвоив новое значение атрибуту в качестве свойства элемента, установив <code>src</code> обратно для файла <code>shark.png</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">img.src = 'https://js-tutorials.nyc3.digitaloceanspaces.com/shark.png';
+</code></pre>
+<p>Любой атрибут можно изменить таким образом, а также с помощью описанных выше методов.</p>
+
+<p>Методы <code>hasAttribute()</code> и <code>getAttribute()</code> обычно используются с <a href="https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-javascript">условными операторами</a>, а методы <code>setAttribute()</code> и <code>removeAttribute()</code> используются для прямого изменения DOM.</p>
+
+<h2 id="Изменение-классов">Изменение классов</h2>
+
+<p>Атрибут <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/class">class</a> соответствует <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/Class_selectors">селекторам класса CSS</a>. Не путайте с <a href="https://www.digitalocean.com/community/tutorials/understanding-classes-in-javascript">классами ES6</a>, особым типом функции JavaScript.</p>
+
+<p>Классы CSS используются для применения стилей для нескольких элементов, в отличие от идентификаторов, которые могут существовать только один раз на странице. В JavaScript есть свойства <a href="https://developer.mozilla.org/en-US/docs/Web/API/Element/className"><code>className</code></a> и <a href="https://developer.mozilla.org/en-US/docs/Web/API/Element/classList"><code>classList</code></a> для работы с атрибутом класса.</p>
+
+<table><thead>
+<tr>
+<th>Метод/Свойство</th>
+<th>Описание</th>
+<th>Пример</th>
+</tr>
+</thead><tbody>
+<tr>
+<td><code>className</code></td>
+<td>Получает или устанавливает значение класса</td>
+<td><code>element.className;</code></td>
+</tr>
+<tr>
+<td><code>classList.add()</code></td>
+<td>Добавляет одно или несколько значений класса</td>
+<td><code>element.classList.add('active');</code></td>
+</tr>
+<tr>
+<td><code>classList.toggle()</code></td>
+<td>Включает или отключает класс</td>
+<td><code>element.classList.toggle('active');</code></td>
+</tr>
+<tr>
+<td><code>classList.contains()</code></td>
+<td>Проверяет, существует ли значение класса</td>
+<td><code>element.classList.contains('active');</code></td>
+</tr>
+<tr>
+<td><code>classList.replace()</code></td>
+<td>Заменяет существующее значение класса на новое значение класса</td>
+<td><code>element.classList.replace('old', 'new');</code></td>
+</tr>
+<tr>
+<td><code>classList.remove()</code></td>
+<td>Удаляет значение класса</td>
+<td><code>element.classList.remove('active');</code></td>
+</tr>
+</tbody></table>
+
+<p>Мы создадим другой файл HTML для работы с методами класса, с двумя элементами и несколькими классами.</p>
+<div class="code-label " title="classes.html">classes.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+
+&lt;style&gt;
+    body {
+        max-width: 600px;
+        margin: 0 auto;
+        font-family: sans-serif;
+    }
+    .active {
+        border: 2px solid blue;
+    }
+
+    .warning {
+        border: 2px solid red;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    div {
+        border: 2px dashed lightgray;
+        padding: 15px;
+        margin: 5px;
+    }
+&lt;/style&gt;
+
+&lt;body&gt;
+
+    &lt;div&gt;Div 1&lt;/div&gt;
+    &lt;div class="active"&gt;Div 2&lt;/div&gt;
+
+&lt;/body&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>При открытии файла <code>classes.html</code> в браузере вы должны получить примерно следующий результат:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-classes-1.png" alt="Первый рендеринг classes.html"></p>
+
+<p>Свойство <code>className</code> было введено для предотвращения конфликтов с ключевым словом <code>class</code> в JavaScript и другими языками, которые имеют доступ к DOM. Вы можете использовать <code>className</code> для присвоения значения напрямую в классе.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Select the first div
+const div = document.querySelector('div');
+
+// Assign the warning class to the first div
+div.className = 'warning';
+</code></pre>
+<p>Мы присвоили класс <code>warning</code>, определенный в значениях CSS в <code>classes.html</code>, для первого <code>div</code>. Вывод должен выглядеть следующим образом:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-classes-2.png" alt="Второй рендеринг classes.html"></p>
+
+<p>Обратите внимание, что если любые классы уже существуют в элементе, это действие будет перезаписывать их. Вы можете добавить несколько классов с разделителями-пробелами с помощью свойства <code>className</code> или используйте его без операторов присвоения для получения значения класса в элементе.</p>
+
+<p>Другой способ изменения классов — это свойство <a href="https://developer.mozilla.org/en-US/docs/Web/API/Element/classList"><code>classList</code></a>, которое имеет несколько полезных методов. Эти методы аналогичны методами <code>addClass</code>, <code>removeClass</code> и <code>toggleClass</code> в jQuery.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Select the second div by class name
+const activeDiv = document.querySelector('.active');
+
+activeDiv.classList.add('hidden');                // Add the hidden class
+activeDiv.classList.remove('hidden');             // Remove the hidden class
+activeDiv.classList.toggle('hidden');             // Switch between hidden true and false
+activeDiv.classList.replace('active', 'warning'); // Replace active class with warning class
+</code></pre>
+<p>После использования описанных выше методов ваша веб-страница будет выглядеть следующим образом:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-classes-3.png" alt="Первый рендеринг classes.html"></p>
+
+<p>В отличие от примера <code>с className</code>, использование <code>classList.add()</code> будет добавлять новый класс в список существующих классов. Также вы можете добавить несколько в виде разделенной запятыми строки. Также вы можете использовать <code>setAttribute</code> для изменения класса элемента.</p>
+
+<h2 id="Изменение-стилей">Изменение стилей</h2>
+
+<p>Свойство <a href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/style">style</a> отражает вложенные стили элемента HTML. Часто стили будут применяться к элементам через таблицу стилей, как мы делали ранее в этой статье, но иногда нам будет нужно добавить или изменить вложенный стиль напрямую.</p>
+
+<p>Мы создадим небольшой пример для демонстрации редактирования стилей с помощью JavaScript. Ниже представлен новый файл HTML с блоком <code>div</code>, который имеет вложенные стили, применяемые для отображения квадрата.</p>
+<div class="code-label " title="styles.html">styles.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+
+&lt;body&gt;
+
+    &lt;div style="height: 100px;
+                width: 100px;
+                border: 2px solid black;"&gt;Div&lt;/div&gt;
+
+&lt;/body&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>После открытия в браузере, <code>styles.html</code> будет выглядеть примерно следующим образом:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-style-1.png" alt="Первый рендеринг styles.html"></p>
+
+<p>Один из вариантов редактирования стилей подразумевает использование <code>setAttribute()</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Select div
+const div = document.querySelector('div');
+
+// Apply style to div
+div.setAttribute('style', 'text-align: center');
+</code></pre>
+<p>Однако при этом будут удалены все существующие вложенные стили для элемента. Поскольку это вряд ли является желаемым результатом, рекомендуется использовать напрямую атрибут <code>style</code></p>
+<pre class="code-pre "><code class="code-highlight language-js">div.style.height = '100px';
+div.style.width = '100px';
+div.style.border = '2px solid black';
+</code></pre>
+<p>Свойства CSS записаны в кебаб-регистре, т.е. в нижнем регистре, разделенные тире. Важно отметить, что свойства CSS в кебаб-регистре не могут использоваться для свойства стиля JavaScript. Вместо этого они будут заменены на их эквивалент в верблюжьем регистре, когда первое слово имеет нижний регистр, а все последующие слова начинаются с заглавной буквы. Иными словами, вместо <code>text-align</code> мы будем использовать <code>textAlign</code> для свойства стиля JavaScript.</p>
+<pre class="code-pre "><code class="code-highlight language-js">// Make div into a circle and vertically center the text
+div.style.borderRadius = '50%';
+div.style.display = 'flex';
+div.style.justifyContent = 'center';
+div.style.alignItems = 'center';
+</code></pre>
+<p>После внесения описанных выше изменений стиля итоговый рендеринг  <code>styles.html</code> будет представлять собой круг:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/eng_javascript/dom/attributes-style-2.png" alt="Итоговый рендеринг styles.html"></p>
+
+<p>Если для элемента применяется много стилистических изменений, лучше всего будет применять стили для класса и добавить новый класс. Однако в некоторых случаях необходимо использовать изменение атрибута вложенного стиля или более простой формат.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>HTML-элементы часто содержат дополнительную информацию в форме атрибутов. Активы могут состоять из пар название/значение, а самыми распространенными атрибутами являются атрибуты <code>class</code> и <code>style</code>.</p>
+
+<p>В этом руководстве мы узнали, как получить доступ, изменять и удалять атрибуты для элемента HTML в DOM с помощью простого JavaScript. Также мы научились добавлять, удалять, переключать и заменять классы CSS для элемента и редактировать вложенные стили CSS. Для получения дополнительной информации ознакомьтесь с документацией по <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes">атрибутам</a> в Mozilla Developer Network.</p>

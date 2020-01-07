@@ -1,0 +1,200 @@
+---
+layout: post
+title: Установка и настройка Ansible в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 07:24PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-ansible-on-ubuntu-18-04-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Системы управления конфигурацией разрабатываются для администраторов и операционных отделов с целью ускорить процедуры управления большим количеством серверов. Они позволяют автоматически контролировать много разных систем из единого центра.</p>
+
+<p>Хотя для систем Linux выпущено много популярных инструментов управления конфигурациями, в том числе <a href="https://www.chef.io/">Chef</a> и <a href="https://puppet.com/">Puppet</a>, эти инструменты сложнее, чем требуется большинству людей. <a href="https://www.ansible.com/">Система Ansible</a> — отличная альтернатива этим инструментам, поскольку имеет простую архитектуру, не требует установки на узлы специального программного обеспечения, использует SSH для выполнения задач автоматизации и файлы YAML для определения деталей выделения ресурсов.</p>
+
+<p>Это руководство поможет научиться устанавливать Ansible на сервер Ubuntu 18.04 и покажет основы использования этого программного обеспечения.</p>
+
+<h2 id="Как-работает-ansible">Как работает Ansible?</h2>
+
+<p>Система управления Ansible настраивает <em>хосты Ansible</em> (клиентские компьютеры) с <em>узла управления Ansible</em> (компьютер, где установлены и настроены компоненты Ansible).</p>
+
+<p>Для получения информации с удаленных компьютеров, отправки команд и копирования файлов система использует обычные каналы SSH. В связи с этим, система Ansible не требует установки дополнительного программного обеспечения на клиентские компьютеры.</p>
+
+<p>Так Ansible упрощает администрирование серверов. Любой сервер с открытым портом SSH можно включить в конфигурацию Ansible, вне зависимости от этапа его жизненного цикла. Это означает, что через Ansible можно администрировать любой компьютер, который можно администрировать через SSH.</p>
+
+<p>Система Ansible построена на модульной основе, что позволяет легко расширять функционал основной системы для конкретных ситуаций. Модули можно писать на любом языке и передавать в стандартном формате JSON.</p>
+
+<p>Файлы конфигурации в основном записаны в формате сериализации данных YAML, что связано с его выразительным характером и сходством с популярными языками разметки. Ansible может взаимодействовать с хостами через инструменты командной строки или сценарии конфигурации, называемые плейбуками.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для данного обучающего модуля вам потребуется следующее:</p>
+
+<ul>
+<li><p><strong>Один узел управления Ansible</strong>: узел управления Ansible — это система, которую мы будем использовать для подключения к хостам Ansible через SSH и управления этими хостами. В качестве узла управления Ansible может выступать локальный компьютер или специально выделенный для Ansible сервер. В настоящем руководстве предполагается, что на узле управления используется операционная система Ubuntu 18.04. Убедитесь, что на узле управления имеется следующее:</p>
+
+<ul>
+<li>Пользователь без привилегий root с привилегиями sudo. Для начала вы можете выполнить <strong>шаги 2 и 3</strong>, указанные в документе <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">«Руководство по начальной настройке сервера с Ubuntu 18.04»</a>. Если вы используете в качестве узла управления Ansible удаленный сервер, вы должны выполнить <strong>все шаги,</strong> перечисленные в этом руководстве. Это позволит настроить на сервере брандмауэр с помощью <code>ufw</code> и активировать внешний доступ для профиля пользователя без привилегий root, что повысит безопасность удаленного сервера.</li>
+<li>Пара ключей SSH, ассоциированная с этим пользователем. Для настройки выполните <strong>шаг 1</strong> руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-1804">«Настройка ключей SSH в Ubuntu 18.04»</a>.</li>
+</ul></li>
+<li><p><strong>Один или несколько хостов Ansible</strong>: хост Ansible — это любой компьютер, для автоматизации которого настроен узел управления Ansible. В настоящем руководстве предполагается, что ваши хосты Ansible представляют собой удаленные серверы под управлением Ubuntu 18.04. Убедитесь, что каждый хост Ansible соответствует следующим требованиям:</p>
+
+<ul>
+<li>Открытый ключ SSH узла управления Ansible добавлен в файл <code>authorized_keys</code> пользователя системы. Это может быть пользователь <strong>root</strong> или обычный пользователь с привилегиями sudo. Для настройки вы можете выполнить <strong>шаг 2</strong> руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-1804">«Настройка ключей SSH в Ubuntu 18.04»</a>.</li>
+</ul></li>
+</ul>
+
+<h2 id="Шаг-1-—-Установка-ansible">Шаг 1 — Установка Ansible</h2>
+
+<p>Чтобы начать использовать Ansible для управления серверной инфраструктурой, необходимо предварительно установить программное обеспечение Ansible на компьютер, который будет выступать в качестве узла управления Ansible.</p>
+
+<p>Чтобы добавить архив PPA (архив персональных пакетов) официального проекта в список источников вашей системы, запустите на узле управления следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-add-repository ppa:ansible/ansible
+</li></ul></code></pre>
+<p>Нажмите <code>ENTER</code> в диалоговом окне, чтобы подтвердить добавление PPA.</p>
+
+<p>Обновите указатель системного пакета еще раз, чтобы в нем отразились все пакеты, доступные в добавленном архиве PPA:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>После этого обновления вы можете установить программное обеспечение Ansible следующим образом:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install ansible
+</li></ul></code></pre>
+<p>Теперь на узле управления Ansible есть все программное обеспечение, необходимое для администрирования хостов. Затем мы научимся добавлять хосты в файл инвентаризации узла управления, чтобы он мог управлять этими хостами.</p>
+
+<h2 id="Шаг-2-—-Настройка-файла-инвентаризации">Шаг 2 — Настройка файла инвентаризации</h2>
+
+<p><em>Файл инвентаризации</em> содержит информацию о хостах, которыми вы будете управлять с помощью Ansible. Вы можете включить в файл инвентаризации от одного до нескольких сотен серверов и распределить хосты по группам и подгруппам. Файл инвентаризации также часто задает переменные, действующие только для определенных хостов или групп, чтобы их можно было использовать с плейбуками и шаблонами. Некоторые переменные также влияют на способ запуска плейбука, и в их число входит переменная <code>ansible_python_interpreter</code>, которую мы сейчас увидим.</p>
+
+<p>Чтобы изменить заданное по умолчанию содержание файла инвентаризации Ansible, откройте файл <code>/etc/ansible/hosts</code> в предпочитаемом редакторе командной строки на локальном компьютере или на узле управления Ansible:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ansible/hosts
+</li></ul></code></pre>
+<p><span class='note'><strong>Примечание.</strong> В некоторых системах Ansible не создает файл инвентаризации по умолчанию. Если такого файла нет в системе, вы можете создать новый файл в каталоге <code>/etc/ansible/hosts</code> или задать путь к своему файлу инвентаризации с помощью параметра <code>-i</code> при запуске команд и плейбуков.<br></span></p>
+
+<p>Файл инвентаризации, используемый Ansible по умолчанию, содержит ряд примеров, которые вы можете использовать как образец при настройке инвентаризации. В следующем примере определяется группа <code>[servers]</code> с тремя разными серверами, каждый из которых имеет собственный индентификатор: <strong>server1</strong>, <strong>server2</strong> и <strong>server3</strong>. Обязательно замените выделенные IP-адреса IP-адресами ваших хостов Ansible.</p>
+<div class="code-label " title="/etc/ansible/hosts">/etc/ansible/hosts</div><pre class="code-pre "><code langs="">[servers]
+server1 ansible_host=<span class="highlight">203.0.113.111</span>
+server2 ansible_host=<span class="highlight">203.0.113.112</span>
+server3 ansible_host=<span class="highlight">203.0.113.113</span>
+
+[servers:vars]
+ansible_python_interpreter=/usr/bin/python3
+</code></pre>
+<p>Подгруппа <code>server:vars</code> задает параметр хоста <code>ansible_python_interpreter</code>, который будет действителен для всех хостов в группе <code>servers</code>. С этим значением параметра удаленный сервер использует исполняемый файл Python 3 <code>/usr/bin/python3</code>, а не <code>/usr/bin/python</code> (Python 2.7), отсутствующий в последних версиях Ubuntu.</p>
+
+<p>После завершения работы сохраните и закройте файл. Для этого нажмите <code>CTRL+X</code>, а затем <code>Y</code> для подтверждения изменений, а после этого нажмите <code>ENTER</code>.</p>
+
+<p>Если вы захотите проверить файл инвентаризации, вы можете запустить команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible-inventory --list -y
+</li></ul></code></pre>
+<p>Результат будет выглядеть примерно так, только в нем будет показана ваша серверная инфраструктура, определенная в файле инвентаризации:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>all:
+  children:
+    servers:
+      hosts:
+        server1:
+          ansible_host: <span class="highlight">203.0.113.111</span>
+          ansible_python_interpreter: /usr/bin/python3
+        server2:
+          ansible_host: <span class="highlight">203.0.113.112</span>
+          ansible_python_interpreter: /usr/bin/python3
+        server3:
+          ansible_host: <span class="highlight">203.0.113.113</span>
+          ansible_python_interpreter: /usr/bin/python3
+    ungrouped: {}
+</code></pre>
+<p>После настройки файла инвентаризации у вас появится все необходимое для тестирования подключения к хостам Ansible.</p>
+
+<h2 id="Шаг-3-—-Тестирование-подключения">Шаг 3 — Тестирование подключения</h2>
+
+<p>После настройки файла инвентаризации для вашего сервера, вы можете проверить способность Ansible подключаться к этим серверам и запускать команды через SSH.</p>
+
+<p>Для этого руководства мы будем использовать учетную запись <strong>root</strong> в Ubuntu, поскольку обычно это единственная учетная запись, которая доступна по умолчанию на новых серверах. Если на ваших хостах Ansible уже имеются учетные записи sudo, вам рекомендуется использовать эту учетную запись.</p>
+
+<p>Вы можете использовать аргумент <code>-u</code>, чтобы задать пользователя дистанционной системы. Если не указано иное, Ansible попытается подключиться от имени текущего пользователя системы на узле управления.</p>
+
+<p>Запустите на локальном компьютере или узле управления Ansible следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible all -m ping -u <span class="highlight">root</span>
+</li></ul></code></pre>
+<p>Эта команда будет использовать встроенный <a href="https://docs.ansible.com/ansible/latest/modules/ping_module.html">модуль <code>ping</code></a> хоста Ansible'для тестирования подключения на всех узлах из файла инвентаризации по умолчанию. При этом выполняется подключение от имени пользователя <strong>root</strong>. Модуль <code>ping</code> тестирует следующее:</p>
+
+<ul>
+<li>доступность хостов;</li>
+<li>наличие действующих учетных данных SSH;</li>
+<li>способность хостов запускать модули Ansible с помощью Python.</li>
+</ul>
+
+<p>Результаты должны выглядеть примерно следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>server1 | SUCCESS =&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+server2 | SUCCESS =&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+server3 | SUCCESS =&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+</code></pre>
+<p>Если это ваше первое подключение к данным серверам через SSH, вы должны будете подтвердить подлинность хостов, к которым подключаетесь через Ansible. Введите <code>yes</code> в диалоговом окне, а затем нажмите <code>ENTER</code> для подтверждения.</p>
+
+<p>Когда вы получите от хоста ответ <code>«pong»</code>, это будет означать, что вы готовы запускать команды и плейбуки Ansible на этом сервере.</p>
+
+<p><span class='note'><strong>Примечание.</strong> Если вам не удается успешно получить ответ от ваших серверов, ознакомьтесь в нашем <a href="https://www.digitalocean.com/community/tutorials/how-to-use-ansible-cheat-sheet-guide">«Руководстве с полезными советами по Ansible»</a> вы найдете подробную информацию о запуске команд Ansible с разными параметрами подключения.<br></span></p>
+
+<h2 id="Шаг-4-—-Запуск-ситуативных-команд-опционально">Шаг 4 — Запуск ситуативных команд (опционально)</h2>
+
+<p>Убедившись, что узел управления Ansible может взаимодействовать с хостами, вы можете запускать на серверах ситуативные команды и плейбуки.</p>
+
+<p>Любая команда, обычно запускаемая на удаленном сервере через SSH, может быть запущена с помощью Ansible на серверах, заданных в файле инвентаризации. Например, вы можете проверить использования дисковых ресурсов всеми серверами с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible all -a "<span class="highlight">df -h</span>" -u <span class="highlight">root</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+server1 | CHANGED | rc=0 &gt;&gt;
+Filesystem      Size  Used Avail Use% Mounted on
+udev            3.9G     0  3.9G   0% /dev
+tmpfs           798M  624K  798M   1% /run
+/dev/vda1       155G  2.3G  153G   2% /
+tmpfs           3.9G     0  3.9G   0% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+tmpfs           3.9G     0  3.9G   0% /sys/fs/cgroup
+/dev/vda15      105M  3.6M  101M   4% /boot/efi
+tmpfs           798M     0  798M   0% /run/user/0
+
+server2 | CHANGED | rc=0 &gt;&gt;
+Filesystem      Size  Used Avail Use% Mounted on
+udev            2.0G     0  2.0G   0% /dev
+tmpfs           395M  608K  394M   1% /run
+/dev/vda1        78G  2.2G   76G   3% /
+tmpfs           2.0G     0  2.0G   0% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+tmpfs           2.0G     0  2.0G   0% /sys/fs/cgroup
+/dev/vda15      105M  3.6M  101M   4% /boot/efi
+tmpfs           395M     0  395M   0% /run/user/0
+
+...
+</code></pre>
+<p>При желании вы можете заменить выделенную команду <code>df -h</code> любой другой командой.</p>
+
+<p>Также вы можете запускать <a href="https://docs.ansible.com/ansible/latest/modules/modules_by_category.html">модули Ansible</a> с помощью ситуативных команд, как мы это делали с модулем <code>ping</code> при тестировании подключения. Например, мы можем использовать модуль <code>apt</code> для установки последней версии <code>vim</code> на все серверы из файла инвентаризации:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible all -m <span class="highlight">apt</span> -a "name=<span class="highlight">vim</span> state=latest" -u <span class="highlight">root</span>
+</li></ul></code></pre>
+<p>Вы можете использовать команды Ansible как для отдельных хостов, так и для групп и подгрупп хостов. Например, вы можете проверить время <code>uptime</code> каждого хоста в группе <code>servers</code> с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible <span class="highlight">servers</span> -a "<span class="highlight">uptime</span>" -u <span class="highlight">root</span>
+</li></ul></code></pre>
+<p>Можно указать несколько хостов, разделив их имена двоеточиями:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ansible <span class="highlight">server1</span>:<span class="highlight">server2</span> -m ping -u <span class="highlight">root</span>
+</li></ul></code></pre>
+<p>Дополнительную информацию по использованию Ansible, в том числе по применению плейбуков для автоматизации настройки сервера, можно найти в документе <a href="https://www.digitalocean.com/community/cheatsheets/how-to-use-ansible-cheat-sheet-guide">«Справочное руководство по Ansible»</a>.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем модуле вы выполнили установку Ansible и создали файл инвентаризации для выполнения ситуативных команд с узла управления Ansible.</p>
+
+<p>После подтверждения возможности подключения и управления инфраструктурой с центрального узла управления Ansible вы можете запускать на этих хостах любые команды или плейбуки. При работе с новыми серверами полезно использовать плейбук сообщества <a href="https://www.digitalocean.com/community/tutorials/how-to-automate-server-setup-with-ansible-on-ubuntu-18-04">«Начальная настройка сервера»</a>. Узнать, как писать собственные плейбуки, можно в нашем руководстве <a href="https://www.digitalocean.com/community/tutorials/configuration-management-101-writing-ansible-playbooks">Configuration Management 101: Writing Ansible Playbooks</a>.</p>
+
+<p>Дополнительную информацию по использованию Ansible можно <a href="https://www.digitalocean.com/community/cheatsheets/how-to-use-ansible-cheat-sheet-guide">найти в «Руководстве с полезными советами по Ansible»</a>.</p>

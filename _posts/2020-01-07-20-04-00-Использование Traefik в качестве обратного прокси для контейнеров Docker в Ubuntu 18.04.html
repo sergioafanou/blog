@@ -1,0 +1,374 @@
+---
+layout: post
+title: Использование Traefik в качестве обратного прокси для контейнеров Docker в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 08:04PM
+url: https://www.digitalocean.com/community/tutorials/how-to-use-traefik-as-a-reverse-proxy-for-docker-containers-on-ubuntu-18-04-ru
+image: http://assets.digitalocean.com/articles/63957_Traefik/Empty_Traefik_dashboard.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Автор выбрал <a href="https://www.brightfunds.org/organizations/girls-who-code">Girls Who Code</a> для получения пожертвования в рамках программы <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://www.docker.com">Docker</a> может эффективно запускать веб-приложения в производственном среде, но бывает так, что вам нужно запустить несколько приложений на одном хосте Docker. В этой ситуации вам нужно настроить обратный прокси, поскольку вы хотите открывать для мира только порты <code>80</code> и <code>443</code>.</p>
+
+<p><a href="https://traefik.io">Traefik</a> — это обратный прокси с поддержкой Docker, имеющий собственную панель мониторинга. В этом обучающем модуле вы используете Traefik для перенаправления запросов двух разных контейнеров веб-приложений: контейнера <a href="http://wordpress.org">Wordpress</a> и контейнера <a href="https://www.adminer.org/">Adminer</a>, каждый из которых взаимодействует с базой данных <a href="https://www.mysql.com/">MySQL</a>. Вы настроите Traefik для обслуживания соединений через HTTPS с помощью <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a>.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для выполнения этого обучающего модуля вам потребуется следующее:</p>
+
+<ul>
+<li>Один сервер Ubuntu 18.04, настроенный в соответствии с <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">руководством по начальной настройке сервера Ubuntu 18.04</a>, включая пользователя sudo без прав root и брандмауэр.</li>
+<li>Docker, установленный  на сервере в соответствии с указаниями обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04">«Установка и использование Docker в Ubuntu 18.04»</a>.</li>
+<li>Docker Compose, установленный в соответствии с указаниями обучающего модуля <a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">«Установка Docker Compose в Ubuntu 18.04»</a>.</li>
+<li>Домен и три записи A, <code>db-admin</code>, <code>blog</code> и <code>monitor</code>, каждая из которых указывает на IP-адрес вашего сервера. Вы можете научиться включать переадресацию доменов на дроплеты DigitalOcean, ознакомившись с <a href="https://www.digitalocean.com/docs/networking/dns/">документацией DigitalOcean по доменам и DNS</a>. Для целей этого обучающего модуля указывайте свой домен вместо <code><span class="highlight">your_domain</span></code> в файлах конфигурации и примерах.</li>
+</ul>
+
+<h2 id="Шаг-1-—-Настройка-и-запуск-traefik">Шаг 1 — Настройка и запуск Traefik</h2>
+
+<p>Проект Traefik имеет <a href="https://hub.docker.com/_/traefik">официальный образ Docker</a>, так что мы будем использовать его для запуска Traefik в контейнере Docker.</p>
+
+<p>Однако прежде чем мы запустим наш контейнер Traefik, нам нужно будет создать файл конфигурации и настроить шифрованный пароль для доступа к информационной панели мониторинга.</p>
+
+<p>Для создания шифрованного пароля мы используем утилиту <code>htpasswd</code>. Вначале следует установить эту утилиту, которая входит в пакет <code>apache2-utils</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install apache2-utils
+</li></ul></code></pre>
+<p>Затем нужно сгенерировать пароль с помощью <code>htpasswd</code>. Замените <code><span class="highlight">secure_password</span></code> паролем, который вы хотите использовать для административного пользователя Traefik:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">htpasswd -nb admin <span class="highlight">secure_password</span>
+</li></ul></code></pre>
+<p>Программа выдаст следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>admin:<span class="highlight">$apr1$ruca84Hq$mbjdMZBAG.KWn7vfN/SNK/</span>
+</code></pre>
+<p>Используйте этот результат в файле конфигурации Traefik для настройки базовой аутентификации HTTP для проверки состояния Traefik и информационной панели мониторинга. Скопируйте всю строку результатов, чтобы ее можно было вставить.</p>
+
+<p>Для настройки сервера Traefik мы создадим новый файл конфигурации с именем <code>traefik.toml</code> в формате TOML. <a href="https://github.com/toml-lang/toml">TOML</a> — это язык конфигурации, похожий на используемый в файлах INI, но при этом стандартизированный. Этот файл позволит нам настроить сервер Traefik и различные интеграции или <em>провайдеров</em>, которых мы хотим использовать. В этом обучающем модуле мы будем использовать три из числа доступных провайдеров Traefik: <code>api</code>, <code>docker</code> и <code>acme</code>, который используется для поддержки TLS при использовании Let&rsquo;s Encrypt.</p>
+
+<p>Откройте новый файл в <code>nano</code> или в другом предпочитаемом текстовом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano traefik.toml
+</li></ul></code></pre>
+<p>Добавьте две точки входа с именами <code>http</code> и <code>https</code>, которые будут по умолчанию доступны всем серверным компонентам:</p>
+<div class="code-label " title="traefik.toml">traefik.toml</div><pre class="code-pre toml"><code langs="">defaultEntryPoints = ["http", "https"]
+</code></pre>
+<p>Мы настроим точки входа <code>http</code> и <code>https</code> в следующих шагах.</p>
+
+<p>Затем настройте провайдер <code>api</code>, который дает доступ к интерфейсу информационной панели. Здесь вам нужно вставить результат выполнения команды <code>htpasswd</code>:</p>
+<div class="code-label " title="traefik.toml">traefik.toml</div><pre class="code-pre toml"><code langs="">...
+[entryPoints]
+  [entryPoints.dashboard]
+    address = ":8080"
+    [entryPoints.dashboard.auth]
+      [entryPoints.dashboard.auth.basic]
+        users = ["<span class="highlight">admin:your_encrypted_password</span>"]
+
+[api]
+entrypoint="dashboard"
+</code></pre>
+<p>Информационная панель — это отдельное веб-приложение, работающее в контейнере Traefik. Мы настроим информационную панель для запуска на порту <code>8080</code>.</p>
+
+<p>Раздел <code>entrypoints.dashboard</code> настраивает способ подключения с помощью провайдера <code>api</code>, а раздел <code>entrypoints.dashboard.auth.basic</code> настраивает базовую аутентификацию HTTP для информационной панели. Используйте результат выполнения команды <code>htpasswd</code> для получения значения записи <code>users</code>. Вы можете указать дополнительные имена пользователей, отделяя их с помощью запятых.</p>
+
+<p>Мы определили первую точку входа <code>entryPoint</code>, но теперь нам нужно определить другие точки входа для стандартных коммуникаций HTTP и HTTPS, которые не направлены на провайдер <code>api</code>. В разделе <code>entryPoints</code> настраиваются адреса, которые могут прослушивать Traefik и контейнеры, подключенные через прокси. Добавьте в файл следующие строки под заголовком <code>entryPoints:</code></p>
+<div class="code-label " title="traefik.toml">traefik.toml</div><pre class="code-pre toml"><code langs="">...
+  [entryPoints.http]
+    address = ":80"
+      [entryPoints.http.redirect]
+        entryPoint = "https"
+  [entryPoints.https]
+    address = ":443"
+      [entryPoints.https.tls]
+...
+</code></pre>
+<p>Точка входа <code>http</code> использует порт <code>80</code>, а точка входа <code>https</code> использует порт <code>443</code> для TLS/SSL. Мы автоматически перенаправляем весь трафик порта <code>80</code> на точку входа <code>https</code>, чтобы принудительно использовать защищенные соединения для всех запросов.</p>
+
+<p>Затем добавьте этот раздел для настройки поддержки сертификата Let&rsquo;s Encrypt для Traefik:</p>
+<div class="code-label " title="traefik.toml">traefik.toml</div><pre class="code-pre toml"><code langs="">...
+[acme]
+email = "<span class="highlight">your_email@your_domain</span>"
+storage = "acme.json"
+entryPoint = "https"
+onHostRule = true
+  [acme.httpChallenge]
+  entryPoint = "http"
+</code></pre>
+<p>Этот раздел называется <code>acme</code>, потому что <a href="https://github.com/ietf-wg-acme/acme/">ACME</a> — это имя протокола, используемое для связи с Let&rsquo;s Encrypt для управления сертификатами. Служба Let&rsquo;s Encrypt требует для регистрации действующий адрес электронной почты, и чтобы дать Traefik возможность генерировать сертификаты для наших хостов, установите для ключа <code>email</code> свой адрес электронной почты. Затем мы укажем, что будем сохранять получаемую от Let&rsquo;s Encrypt информацию в файле JSON с именем <code>acme.json</code>. Ключ <code>entryPoint</code> должен указывать на точку входа, использующую порт <code>443</code>, и в нашем случае это будет точка входа <code>https</code>.</p>
+
+<p>Ключ <code>onHostRule</code> указывает, как Traefik следует генерировать сертификаты. Мы хотим получать сертификаты сразу же после создания контейнеров с заданными именами хостов, и для этого мы используем параметр <code>onHostRule</code>.</p>
+
+<p>Раздел <code>acme.httpChallenge</code> позволяет указать, как Let&rsquo;s Encrypt сможет проверять необходимость генерирования сертификата. Мы настроим его для обслуживания файла в рамках запроса через точку входа <code>http</code>.</p>
+
+<p>В заключение мы настроим провайдер <code>docker</code>, добавив в файл следующие строки:</p>
+<div class="code-label " title="traefik.toml">traefik.toml</div><pre class="code-pre toml"><code langs="">...
+[docker]
+domain = "<span class="highlight">your_domain</span>"
+watch = true
+network = "web"
+</code></pre>
+<p>Провайдер <code>docker</code> позволяет Traefik выступать в качестве прокси для контейнеров Docker. Мы настроили провайдер на <code>отслеживание</code> новых контейнеров в сети <code>web</code> (которую мы вскоре создадим) и для предоставления доступа к ним как к субдоменам домена <code><span class="highlight">your_domain</span></code>.</p>
+
+<p>На данный момент <code>файл traefik.toml</code> должен иметь следующее содержание:</p>
+<div class="code-label " title="traefik.toml">traefik.toml</div><pre class="code-pre toml"><code langs="">defaultEntryPoints = ["http", "https"]
+
+[entryPoints]
+  [entryPoints.dashboard]
+    address = ":8080"
+    [entryPoints.dashboard.auth]
+      [entryPoints.dashboard.auth.basic]
+        users = ["<span class="highlight">admin:your_encrypted_password</span>"]
+  [entryPoints.http]
+    address = ":80"
+      [entryPoints.http.redirect]
+        entryPoint = "https"
+  [entryPoints.https]
+    address = ":443"
+      [entryPoints.https.tls]
+
+[api]
+entrypoint="dashboard"
+
+[acme]
+email = "<span class="highlight">your_email@your_domain</span>"
+storage = "acme.json"
+entryPoint = "https"
+onHostRule = true
+  [acme.httpChallenge]
+  entryPoint = "http"
+
+[docker]
+domain = "<span class="highlight">your_domain</span>"
+watch = true
+network = "web"
+</code></pre>
+<p>Сохраните файл и выйдите из редактора. Настроив эти параметры конфигурации, мы можем запускать Traefik.</p>
+
+<h2 id="Шаг-2-—-Запуск-контейнера-traefik">Шаг 2 — Запуск контейнера Traefik</h2>
+
+<p>Затем создайте сеть Docker, которую прокси будет использовать для связи с контейнерами. Сеть Docker необходима, чтобы мы могли использовать ее для приложений, запущенных с помощью Docker Compose. Присвоим этой сети имя <code>web</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker network create <span class="highlight">web</span>
+</li></ul></code></pre>
+<p>После запуска контейнера Traefik мы добавим его в эту сеть. Теперь мы можем добавить в эту сеть дополнительные контейнеры, для которых Traefik будет выступать в качестве прокси.</p>
+
+<p>Создайте пустой файл, где будет храниться информация Let&rsquo;s Encrypt. Мы передадим ее в контейнер, чтобы Traefik мог ее использовать:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">touch <span class="highlight">acme.json</span>
+</li></ul></code></pre>
+<p>Traefik сможет использовать этот файл, только если пользователь root внутри контейнера будет иметь уникальный доступ к этому файлу для чтения и записи. Для этого нам нужно будет заблокировать разрешения файла <code>acme.json</code>, чтобы права записи и чтения были только у владельца файла.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod 600 <span class="highlight">acme.json</span>
+</li></ul></code></pre>
+<p>После передачи файла в Docker владелец автоматически сменяется на пользователя <strong>root</strong> внутри контейнера.</p>
+
+<p>Затем создайте контейнер Traefik с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker run -d \
+</li><li class="line" prefix="$">  -v /var/run/docker.sock:/var/run/docker.sock \
+</li><li class="line" prefix="$">  -v $PWD/traefik.toml:/traefik.toml \
+</li><li class="line" prefix="$">  -v $PWD/acme.json:/acme.json \
+</li><li class="line" prefix="$">  -p 80:80 \
+</li><li class="line" prefix="$">  -p 443:443 \
+</li><li class="line" prefix="$">  -l traefik.frontend.rule=Host:monitor.<span class="highlight">your_domain</span> \
+</li><li class="line" prefix="$">  -l traefik.port=8080 \
+</li><li class="line" prefix="$">  --network web \
+</li><li class="line" prefix="$">  --name traefik \
+</li><li class="line" prefix="$">  traefik:1.7.2-alpine
+</li></ul></code></pre>
+<p>Это команда немного длинная, так что попробуем ее разбить.</p>
+
+<p>Мы используем флаг <code>-d</code> для запуска контейнера в фоновом режиме как демона. Затем мы передадим файл <code>docker.sock</code> в контейнер, чтобы процесс Traefik могу отслеживать изменения в контейнерах. Также мы передадим в контейнер созданные нами файл конфигурации <code>traefik.toml</code> и файл <code>acme.json</code>.</p>
+
+<p>Затем мы сопоставим порты <code>:80</code> и <code>:443</code> нашего хоста Docker с аналогичными портами контейнера Traefik, чтобы Traefik принимал весь трафик HTTP и HTTPS, поступающий на сервер.</p>
+
+<p>Затем мы создадим два ярлыка Docker, которые будут предписывать Traefik направлять трафик хоста <code>monitor.<span class="highlight">your_domain</span></code> на порт <code>:8080</code> в контейнере Traefik, открывая доступ к информационной панели мониторинга.</p>
+
+<p>Мы зададим для контейнера сеть <code>web</code> и присвоим ему имя <code>traefik</code>.</p>
+
+<p>В заключение мы используем образ <code>traefik:1.7.2-alpine</code> для этого контейнера, поскольку он имеет небольшой размер.</p>
+
+<p>Команда  <code>ENTRYPOINT</code> всегда запускается при создании контейнера из образа Docker. В данном случае команда представялет собой двоичный файл <code>traefik</code> в контейнере. При запуске контейнера вы можете передать для команды дополнительные аргументы, но мы настроили все параметры в файле <code>traefik.toml</code>.</p>
+
+<p>После запуска контейнера вы получили информационную панель, которую можете использовать для просмотра состояния ваших контейнеров. Также вы можете использовать эту информационную панель для визуализации клиентских и серверных ресурсов, зарегистрированных Traefik. Откройте панель мониторинга, введя в браузер адрес <code>https://monitor.<span class="highlight">your_domain</span></code>. Вам будет предложено ввести имя пользователя и пароль. Используйте имя пользователя <strong>admin</strong> и пароль, заданный на шаге 1.</p>
+
+<p>После входа вы увидите интерфейс, который будет выглядеть примерно так:</p>
+
+<p><img src="http://assets.digitalocean.com/articles/63957_Traefik/Empty_Traefik_dashboard.png" alt="Пустая информационная панель Traefik"></p>
+
+<p>Сейчас на панели почти ничего нет, но вам следует это окно открытым, и вы увидите, как будет меняться его содержание при добавлении в Traefik контейнеров.</p>
+
+<p>Мы запустили прокси Traefik, настроили его для работы с Docker и подготовились к отслеживанию других контейнеров Docker. Теперь запустим контейнеры, для которых Traefik будет выступать в качестве прокси.</p>
+
+<h2 id="Шаг-3-—-Регистрация-контейнеров-в-traefik">Шаг 3 — Регистрация контейнеров в Traefik</h2>
+
+<p>Теперь у вас работает контейнер Traefik и вы готовы запускать через него приложения. Давайте запустим через Traefik следующие контейнеры:</p>
+
+<ol>
+<li>Блог, использующий <a href="https://hub.docker.com/_/wordpress/">официальный образ Wordpress</a>.</li>
+<li>Сервер управления базами данных, использующий <a href="https://hub.docker.com/_/adminer/">официальный образ Adminer</a>.</li>
+</ol>
+
+<p>Для управления этими приложениями мы будем использовать Docker Compose с файлом <code>docker-compose.yml</code>. Откройте файл <code>docker-compose.yml</code> в редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Добавьте в файл следующие строки, чтобы указать версию и сети, которые мы будем использовать:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yaml"><code langs="">version: "3"
+
+networks:
+  web:
+    external: true
+  internal:
+    external: false
+</code></pre>
+<p>Мы будем использовать Docker Compose версии <code>3</code>, потому что это последняя крупная версия формата файлов Compose.</p>
+
+<p>Чтобы у Traefik была возможность распознавать наши приложения, они должны входить в ту же сеть. Поскольку мы создали сеть вручную, мы подключим ее, указав имя сети <code>web</code> и задав для параметра <code>external</code> значение <code>true</code>. Затем мы определим другую сеть, чтобы мы могли подключать наши открытые контейнеры к контейнеру базы данных, доступ к которому мы не будем предоставлять через Traefik. Мы присвоим этой сети имя <code>internal</code>.</p>
+
+<p>Теперь мы определим наши <code>службы</code>, по одной за раз. Начнем с контейнера <code>blog</code>, который будет основан на официальном образе WordPress. Добавьте эту конфигурацию в файл:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yaml"><code langs="">version: "3"
+...
+
+services:
+  blog:
+    image: wordpress:4.9.8-apache
+    environment:
+      WORDPRESS_DB_PASSWORD:
+    labels:
+      - traefik.backend=blog
+      - traefik.frontend.rule=Host:blog.<span class="highlight">your_domain</span>
+      - traefik.docker.network=web
+      - traefik.port=80
+    networks:
+      - internal
+      - web
+    depends_on:
+      - mysql
+</code></pre>
+<p>Ключ <code>environment</code> позволяет задать переменные среды, которые будут заданы внутри контейнера. Мы не задаем значение паарметра <code>WORDPRESS_DB_PASSWORD</code> и тем самым предписываем Docker Compose использовать значение из нашей оболочки и передавать его при создании контейнера. Мы определим эту переменную в нашей оболочке перед запуском контейнеров. Так нам не придется напрямую программировать пароли в файле конфигурации.</p>
+
+<p>Раздел <code>labels</code> позволяет задать значения конфигурации для Traefik. Ярлыки Docker сами по себе ничего не делают, но Traefik их считывает, и поэтому ему известно, как следует обрабатывать контейнеры. Вот что делает каждый из этих ярлыков:</p>
+
+<ul>
+<li><code>traefik.backend</code> задает имя серверной службы в Traefik (которая указывает на фактический контейнер <code>blog</code>).</li>
+<li><code>traefik.frontend.rule=Host:blog.<span class="highlight">your_domain</span></code> предписывает Traefik проверить запрошенный хост, и если он соответствует шаблону <code>blog.<span class="highlight">your_domain</span></code>, перенаправить трафик в контейнер <code>blog</code>.</li>
+<li><code>traefik.docker.network=web</code> указывает, в какой сети Traefik следует искать внутренний IP-адрес для этого контейнера. Поскольку у нашего контейнера Traefik есть доступ ко всей информации Docker, он может взять IP-адрес сети <code>internal</code>, если мы не указали этого.</li>
+<li><code>traefik.port</code> задает открытый порт, который Traefik следует использовать для перенаправления трафика в этот контейнер.</li>
+</ul>
+
+<p>При такой конфигурации весь трафик, отправляемый на порт <code>80</code> нашего хоста Docker, будет перенаправляться в контейнер <code>blog</code>.</p>
+
+<p>Мы назначим для этого контейнера две отдельных сети, чтобы Traefik мог находить его через сеть <code>web</code> и чтобы он мог связываться с контейнером базы данных через сеть <code>internal</code>.</p>
+
+<p>Наконец, ключ <code>depends_on</code> сообщает Docker Compose, что этот контейнер должен запускаться <em>после</em> того, как будут запущены его зависимости. Поскольку для запуска WordPress требуется база данных, мы должны запустить наш контейнер <code>mysql</code> до того, как запустим контейнер <code>blog</code>.</p>
+
+<p>Теперь настройте службу MySQL, добавив в файл следующую конфигурацию:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yaml"><code langs="">services:
+...
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD:
+    networks:
+      - internal
+    labels:
+      - traefik.enable=false
+</code></pre>
+<p>Для этого контейнера мы используем официальный образ MySQL 5.7. Возможно вы заметили, что мы снова используем элемент <code>environment</code> без значения. Для переменных <code>MYSQL_ROOT_PASSWORD</code> и <code>WORDPRESS_DB_PASSWORD</code> нужно задать одинаковое значение, чтобы наш контейнер WordPress мог связываться с MySQL. Мы не хотим открывать контейнер <code>mysql</code> для Traefik или внешнего мира, и поэтому мы назначим его только в сеть <code>internal</code>. Поскольку у Traefik имеется доступ к сокету Docker, данный процесс по умолчанию открывает  клиентскую часть для контейнера <code>mysql</code>. Поэтому мы добавим ярлык <code>traefik.enable=false</code>, указывая, что Traefik не следует открывать доступ к этому контейнеру.</p>
+
+<p>В заключение добавим следующую конфигурацию для определения контейнера Adminer:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yaml"><code langs="">services:
+...
+  adminer:
+    image: adminer:4.6.3-standalone
+    labels:
+      - traefik.backend=adminer
+      - traefik.frontend.rule=Host:db-admin.<span class="highlight">your_domain</span>
+      - traefik.docker.network=web
+      - traefik.port=8080
+    networks:
+      - internal
+      - web
+    depends_on:
+      - mysql
+</code></pre>
+<p>Этот контейнер основан на официальном образе Adminer. Конфигурации <code>network</code> и <code>depends_on</code> для этого контейнера точно совпадают с использованными нами для контейнера <code>blog</code>.</p>
+
+<p>Однако поскольку мы направляем весь трафик порта <code>80</code> нашего хоста Docker непосредственно в контейнер <code>blog</code>, нам нужно настроить этот контейнер по другому, чтобы трафик отправлялся в контейнер <code>adminer</code>. Строка <code>traefik.frontend.rule=Host:db-admin.<span class="highlight">your_domain</span></code> предписывает Traefik изучить запрошенный хост. Если он совпадает с шаблоном <code>db-admin.<span class="highlight">your_domain</span></code>, Traefik будет перенаправлять трафик в контейнер <code>adminer</code>.</p>
+
+<p>На данный момент файл <code>docker-compose.yml</code> должен иметь следующее содержание:</p>
+<div class="code-label " title="docker-compose.yml">docker-compose.yml</div><pre class="code-pre yaml"><code langs="">version: "3"
+
+networks:
+  web:
+    external: true
+  internal:
+    external: false
+
+services:
+  blog:
+    image: wordpress:4.9.8-apache
+    environment:
+      WORDPRESS_DB_PASSWORD:
+    labels:
+      - traefik.backend=blog
+      - traefik.frontend.rule=Host:blog.<span class="highlight">your_domain</span>
+      - traefik.docker.network=web
+      - traefik.port=80
+    networks:
+      - internal
+      - web
+    depends_on:
+      - mysql
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD:
+    networks:
+      - internal
+    labels:
+      - traefik.enable=false
+  adminer:
+    image: adminer:4.6.3-standalone
+    labels:
+      - traefik.backend=adminer
+      - traefik.frontend.rule=Host:db-admin.<span class="highlight">your_domain</span>
+      - traefik.docker.network=web
+      - traefik.port=8080
+    networks:
+      - internal
+      - web
+    depends_on:
+      - mysql
+</code></pre>
+<p>Сохраните файл и выйдите из текстового редактора.</p>
+
+<p>Теперь задайте в оболочке значения переменных <code>WORDPRESS_DB_PASSWORD</code> и <code>MYSQL_ROOT_PASSWORD</code>, прежде чем запускать контейнеры:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">export WORDPRESS_DB_PASSWORD=<span class="highlight">secure_database_password</span>
+</li><li class="line" prefix="$">export MYSQL_ROOT_PASSWORD=<span class="highlight">secure_database_password</span>
+</li></ul></code></pre>
+<p>Замените <code><span class="highlight">secure_database_password</span></code> желаемым паролем для базы данных. Не забудьте использовать один и тот же пароль для <code>WORDPRESS_DB_PASSWORD</code> и <code>MYSQL_ROOT_PASSWORD</code>.</p>
+
+<p>Установив эти переменные, запустите контейнеры с помощью <code>docker-compose</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Еще раз посмотрите на информационную панель администратора Traefik. Вы увидите, что теперь для двух открытых серверов отображаются <code>серверная часть</code> и <code>клиентская часть</code>:</p>
+
+<p><img src="http://assets.digitalocean.com/articles/63957_Traefik/Populated_Traefik_dashboard.png" alt="Заполненная информационная панель Traefik"></p>
+
+<p>Перейдите на адрес <code>blog.<span class="highlight">your_domain</span></code>, заменив <code>your_domain</code> на имя вашего домена. Вы будете перенаправлены на соединение TLS и сможете завершить настройку Wordpress:</p>
+
+<p><img src="http://assets.digitalocean.com/articles/63957_Traefik/WordPress_setup_screen.png" alt="Экран настройки WordPress"></p>
+
+<p>Откройте Adminer. Для этого введите адрес <code>db-admin.<span class="highlight">your_domain</span></code> в адресную строку браузера, заменив <code>your_domain</code> на имя вашего домена. Контейнер <code>mysql</code> не открыт для окружающего мира, но контейнер <code>adminer</code> имеет доступ к нему через внутреннюю сеть <code>internal</code> в Docker, которую они совместно используют, используя имя контейнера <code>mysql</code> как имя хоста.</p>
+
+<p>На экране входа в систему Adminer используйте имя пользователя <strong>root</strong>, <code>mysql</code> в качестве <strong>сервера</strong> и заданное значение пароля <code>MYSQL_ROOT_PASSWORD</code>. После входа в систему вы увидите пользовательский интерфейс Adminer:</p>
+
+<p><img src="http://assets.digitalocean.com/articles/63957_Traefik/adminer-mysql-database/Adminer_MySQL_database.png" alt="Adminer подключен к базе данных MySQL"></p>
+
+<p>Оба сайта уже работают, и вы можете использовать информационную панель <code>monitor.<span class="highlight">your_domain</span></code> для наблюдения за приложениями.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем руководстве вы настроили Traefik для перенаправления запросов в другие приложения в контейнерах Docker.</p>
+
+<p>Декларативная конфигурация Traefik на уровне контейнера приложения позволяет легко настраивать дополнительные услуги. При этом контейнер <code>traefik</code> не требуется перезапускать при добавлении новых приложений для переадресации трафика, поскольку Traefik моментально определяет изменения через отслеживаемый файл сокета Docker.</p>
+
+<p>Чтобы узнать больше о том, что можно сделать с помощью Traefik, ознакомьтесь с <a href="https://docs.traefik.io/basics/">официальной документацией по Traefik</a>.</p>

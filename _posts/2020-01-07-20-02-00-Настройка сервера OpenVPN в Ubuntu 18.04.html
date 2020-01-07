@@ -1,0 +1,733 @@
+---
+layout: post
+title: Настройка сервера OpenVPN в Ubuntu 18.04
+network: digitalocean
+date: January 07, 2020 at 08:02PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-an-openvpn-server-on-ubuntu-18-04-ru
+image: https://assets.digitalocean.com/articles/openvpn_ubunutu/1.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Предыдущая версия данного обучающего руководства была написана <a href="https://www.digitalocean.com/community/users/jellingwood">Джастином Эллингвудом</a></em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p>Хотите организовать безопасный и защищенный доступ к интернету на смартфоне или ноутбуке при подключении к ненадежной сети, например к сети WiFi в гостинице или кафе? <a href="https://en.wikipedia.org/wiki/Virtual_private_network">Виртуальная частная сеть</a> (VPN) позволит вам конфиденциально и безопасно работать в незащищенных сетях, как если бы вы находились в частной сети. Трафик поступает с сервера VPN и продолжает движение в пункт назначения.</p>
+
+<p>В сочетании с <a href="https://en.wikipedia.org/wiki/HTTP_Secure">соединениями HTTPS</a> данная схема позволяет защитить учетные данные и транзакции в беспроводной сети. Вы можете обойти географические ограничения и цензуру и скрыть свое местоположение и любой нешифруемый трафик HTTP от незащищенной сети.</p>
+
+<p><a href="https://openvpn.net">OpenVPN</a> — полнофункциональное решение SSL VPN с открытым исходным кодом, поддерживающее широкий ассортимент конфигураций. В этом обучающем модуле вы настроите сервер OpenVPN на сервере Ubuntu 18.04, а затем настроите доступ к нему из Windows, macOS, iOS и/или Android. Приведенные в этом обучающем модуле шаги по установке и настройке  максимально упрощены для каждого из вариантов.</p>
+
+<span class='note'><p>
+<strong>Примечание.</strong> Если вы планируете настроить сервер OpenVPN на DigitalOcean Droplet, то мы, как и многие поставщики хостинга, будем взимать плату за превышение лимита пропускной способности. По этой причине необходимо следить за объемом трафика, который обрабатывает ваш сервер.</p>
+
+<p>Дополнительную информацию можно найти на <a href="https://www.digitalocean.com/docs/accounts/billing/bandwidth/">этой странице</a>.<br></p></span>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Чтобы пройти этот обучающий модуль вам потребуется доступ к серверу Ubuntu 18.04, где будет размещаться служба OpenVPN. Перед началом прохождения обучающего модуля вам нужно будет настроить пользователя без привилегий <strong>root</strong> с привилегиями <code>sudo</code>. Вы можете воспользоваться нашим руководством <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Начальная настройка сервера Ubuntu 18.04</a>, чтобы создать пользователя с соответствующими разрешениями. Настоящий обучающий модуль предусматривает использование <strong>брандмауэра</strong>, описание настройки которого приведено в доступном по ссылке обучающем модуле.</p>
+
+<p>Также вам потребуется отдельный компьютер для выполнения функций центра сертификации (CA). Хоте в качестве центра сертификации технически возможно использовать сервер OpenVPN на локальном компьютере, это делать не рекомендуется, поскольку при этом в вашей сети VPN могут возникнуть некоторые уязвимости системы безопасности. Согласно <a href="https://openvpn.net/index.php/open-source/documentation/">официальной документации OpenVPN</a>, вы должны разместить CA на отдельном компьютер, который будет отвечать за импорт и подписание запросов сертификатов. По этой причине в данном обучающем модуле предполагается, что ваш CA располагается на отдельном сервере Ubuntu 18.04, где также имеются пользователь без привилегий <strong>root</strong> с привилегиями <code>sudo</code> и базовый брандмауэр.</p>
+
+<p>Обратите внимание, что если вы отключите аутентификацию с помощью пароля при настройке этих серверов, вы можете столкнуться с трудностями при передаче файлов между ними, как предусматривается последующими разделами этого обучающего модуля. Чтобы устранить эту проблему, вам нужно будет заново включить аутентификацию с помощью пароля на каждом сервере. Также вы можете сгенерировать пару ключей SSH для каждого сервера и добавить публичный ключ SSH сервера OpenVPN в файл <code>authorized_keys</code> на компьютере CA, и наоборот. Дополнительные инструкции по этим решениям можно найти в обучающем модуле <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-1804">Настройка ключей SSH в Ubuntu 18.04</a>.</p>
+
+<p>Убедившись в выполнении предварительных требований, вы можете перейти к шагу 1 настоящего обучающего модуля.</p>
+
+<h2 id="Шаг-1-—-Установка-openvpn-и-easyrsa">Шаг 1 — Установка OpenVPN и EasyRSA</h2>
+
+<p>Для начала выполните обновление индекса пакетов вашего <strong>сервера VPN</strong> и установите OpenVPN. OpenVPN имеется в хранилищах Ubuntu по умолчанию, и поэтому вы можете использовать для установки <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install openvpn
+</li></ul></code></pre>
+<p>OpenVPN — это VPN с TLS/SSL. Это означает, что она использует сертификаты для шифрования трафика между сервером и клиентами. Для выпуска доверенных сертификатов необходимо создать собственный простой центр сертификации (CA). Для этого нужно загрузить последнюю версию EasyRSA, которую мы используем для создания инфраструктуры открытых ключей CA (PKI) из официального репозитория проекта на GitHub.</p>
+
+<p>Как указывалось в предварительных требованиях, мы создадим CA на отдельном сервере. Мы выбрали такой подход, потому что если злоумышленник сможет взломать ваш сервер, он получит доступ к закрытому ключу CA и сможет использовать его для подписания новых сертификатов, предоставляя им доступ к вашей VPN. Соответственно с этим, для управления CA с отдельного компьютера нужно не допустить доступ несанкционированных пользователей к вашей VPN. В качестве дополнительной меры предосторожности рекомендуется выключать сервер CA, когда он не используется для подписания ключей.</p>
+
+<p>Чтобы начать построение CA и инфраструктуры PKI, используйте <code>wget</code> для загрузки последней версии EasyRSA на <strong>систему CA и на сервер OpenVPN</strong>. Чтобы получить последнюю версию, откройте <a href="https://github.com/OpenVPN/easy-rsa/releases">страницу <strong>Релизы</strong> на официальном сервере EasyRSA на проекте GitHub,</a> скопируйте ссылку для загрузки файла с расширением <code>.tgz</code> и вставьте ее в следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget -P ~/ <span class="highlight">https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.4/EasyRSA-3.0.4.tgz</span>
+</li></ul></code></pre>
+<p>Затем извлеките tarball:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">tar xvf EasyRSA-<span class="highlight">3.0.4</span>.tgz
+</li></ul></code></pre>
+<p>Вы успешно установили все требуемое программное обеспечение на свой сервер и на систему CA. Далее необходимо настроить переменные для EasyRSA и каталог CA, откуда будут генерироваться ключи и сертификаты, необходимые вашему серверу и клиентам для доступа к VPN.</p>
+
+<h2 id="Шаг-2-—-Настройка-переменных-easyrsa-и-построение-ca">Шаг 2 — Настройка переменных EasyRSA и построение CA</h2>
+
+<p>В комплект установки EasyRSA входит файл конфигурации, в котором можно изменять или задавать определенные переменные CA.</p>
+
+<p>Откройте на компьютере <strong>CA</strong> каталог EasyRSA:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/EasyRSA-<span class="highlight">3.0.4</span>/
+</li></ul></code></pre>
+<p>В этом каталоге есть файл с именем <code>vars.example</code>. Создайте копию этого файла и присвойте ей имя <code>vars</code> без расширения:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp vars.example vars
+</li></ul></code></pre>
+<p>Откройте новый файл в предпочитаемом текстовом редакторе:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano vars
+</li></ul></code></pre>
+<p>Найдите настройки параметров по умолчанию для новых сертификатов. Он будет выглядеть примерно так:</p>
+<div class="code-label " title="~/EasyRSA-3.0.4/vars">~/EasyRSA-3.0.4/vars</div><pre class="code-pre  second-environment"><code langs="">. . .
+
+#set_var EASYRSA_REQ_COUNTRY    "US"
+#set_var EASYRSA_REQ_PROVINCE   "California"
+#set_var EASYRSA_REQ_CITY       "San Francisco"
+#set_var EASYRSA_REQ_ORG        "Copyleft Certificate Co"
+#set_var EASYRSA_REQ_EMAIL      "me@example.net"
+#set_var EASYRSA_REQ_OU         "My Organizational Unit"
+
+. . .
+</code></pre>
+<p>Уберите значки комментария из этих строк и замените выделенные значения предпочитаемыми, но не оставляйте их пустыми:</p>
+<div class="code-label " title="~/EasyRSA-3.0.4/vars">~/EasyRSA-3.0.4/vars</div><pre class="code-pre  second-environment"><code langs="">. . .
+
+set_var EASYRSA_REQ_COUNTRY    "<span class="highlight">US</span>"
+set_var EASYRSA_REQ_PROVINCE   "<span class="highlight">NewYork</span>"
+set_var EASYRSA_REQ_CITY       "<span class="highlight">New York City</span>"
+set_var EASYRSA_REQ_ORG        "<span class="highlight">DigitalOcean</span>"
+set_var EASYRSA_REQ_EMAIL      "<span class="highlight">admin@example.com</span>"
+set_var EASYRSA_REQ_OU         "<span class="highlight">Community</span>"
+
+. . .
+</code></pre>
+<p>После завершения редактирования сохраните и закройте файл.</p>
+
+<p>В каталоге EasyRSA имеется скрипт <code>easyrsa</code>, который вызывается для выполнения разнообразных задач, связанных с построением и управлением CA. Запустите этот скрипт с опцией <code>init-pki</code>, чтобы запустить инфраструктуру открытых ключей на сервере CA:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa init-pki
+</li></ul></code></pre><pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+init-pki complete; you may now create a CA or requests.
+Your newly created PKI dir is: /home/<span class="highlight">sammy</span>/EasyRSA-<span class="highlight">3.0.4</span>/pki
+</code></pre>
+<p>Затем снова запустите скрипт <code>easyrsa</code> с опцией <code>build-ca</code>. В результате будет создан центр сертификации и два важных файла, <code>ca.crt</code> и <code>ca.key</code>, представляющие открытую и закрытую части сертификата SSL.</p>
+
+<ul>
+<li><code>ca.crt</code> — файл открытой части сертификата CA, который используется сервером и клиентом OpenVPN, чтобы информировать друг друга о том, что они входят в единую сеть доверия и что между ними отсутствует потенциальный злоумышленник в качестве посредника. В связи с этим, копия файла <code>ca.crt</code> потребуется для вашего сервера и для всех ваших клиентов.</li>
+<li><code>ca.key</code> — закрытый ключ CA, используемый для подписания ключей и сертификатов серверов и клиентов. Если злоумышленник получит доступ к CA и файлу <code>ca.key</code>, он сможет подписывать запросы сертификатов и получать доступ к вашей VPN, что нарушит ее безопасность. Поэтому файл <code>ca.key</code> должен храниться <strong>только</strong> на компьютере CA, и для дополнительной безопасности компьютер CA следует выключать, когда он не используется для подписывания запросов сертификатов.</li>
+</ul>
+
+<p>Если вы не хотите вводить пароль при каждом взаимодействии с CA, вы можете запустить команду <code>build-ca</code> с опцией <code>nopass</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa build-ca nopass
+</li></ul></code></pre>
+<p>После выполнения команды вам будет предложено подтвердить <em>обычное имя</em> CA:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+Common Name (eg: your user, host, or server name) [Easy-RSA CA]:
+</code></pre>
+<p>Обычное имя — это имя, которое будет использоваться для этой системы в контексте центра сертификации. Вы можете выбрать любое имя CA, но в данном случае проще всего нажать <code>ENTER</code>, чтобы принять имя по умолчанию.</p>
+
+<p>Теперь ваш центр сертификации установлен и готов подписывать запросы сертификатов.</p>
+
+<h2 id="Шаг-3-—-Создание-сертификата-сервера-ключа-и-файлов-шифрования">Шаг 3 — Создание сертификата сервера, ключа и файлов шифрования</h2>
+
+<p>Теперь ваш центр сертификации готов к работе, и вы можете сгенерировать закрытый ключ и запрос сертификата с сервера, а затем передать запрос в CA для подписания и создания требуемого сертификата. Также вы можете создать дополнительные файлы для использования в процессе шифрования.</p>
+
+<p>Для начала откройте каталог EasyRSA на <strong>сервере OpenVPN</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd EasyRSA-<span class="highlight">3.0.4</span>/
+</li></ul></code></pre>
+<p>Запустите на сервере скрипт <code>easyrsa</code> с опцией <code>init-pki</code>. Хотя вы уже запускали эту команду в системе с CA, ее необходимо запустить здесь, потому что ваш сервер и центр сертификации используют разные каталоги PKI:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa init-pki
+</li></ul></code></pre>
+<p>Вызовите скрипт <code>easyrsa</code> еще раз и используйте опцию <code>gen-req</code> с обычным именем этого компьютера. Вы можете использовать любое имя, но лучше всего выбрать запоминающийся вариант. В этом обучающем модуле для сервера OpenVPN мы будем использовать обычное имя «сервер». Обязательно добавьте опцию <code>nopass</code>. Без этого файл запроса будет защищен паролем, что впоследствии может привести к проблемам с разрешениями:</p>
+
+<p><span class='note'><strong>Примечание.</strong> Если вы выберете любое другое имя, кроме «server», вы должны будете следовать некоторым из приведенных ниже инструкций с изменениями. Например, при копировании сгенерированных файлов в каталог <code>/etc/openvpn</code> вам нужно будет указать правильные имена. Позднее вам нужно будет изменить файл <code>etc/openvpn/server.conf</code>, чтобы он указывал на соответствующие файлы <code>.crt</code> и <code>.key</code>.<br></span></p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa gen-req server nopass
+</li></ul></code></pre>
+<p>В результате будет создан закрытый ключ для сервера и файл запроса сертификата с именем <code>server.req</code>. Скопируйте ключ сервера в каталог <code>/etc/openvpn/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp ~/EasyRSA-<span class="highlight">3.0.4</span>/pki/private/server.key /etc/openvpn/
+</li></ul></code></pre>
+<p>Используя безопасный метод (например, SCP как в примере ниже), переместите файл <code>server.req</code> на компьютер CA:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp ~/EasyRSA-3.0.4/pki/reqs/server.req <span class="highlight">sammy</span>@<span class="highlight">your_CA_ip</span>:/tmp
+</li></ul></code></pre>
+<p>Откройте на компьютере <strong>CA</strong> каталог EasyRSA:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd EasyRSA-<span class="highlight">3.0.4</span>/
+</li></ul></code></pre>
+<p>Снова запустите скрипт <code>easyrsa</code> и импортируйте файл <code>server.req</code>, добавив в путь к файлу обычное имя:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa import-req /tmp/server.req server
+</li></ul></code></pre>
+<p>Затем подпишите запрос, запустив скрипт <code>easyrsa</code> с опцией <code>sign-req</code> и указанием <em>типа запроса</em> и обычного имени. Запрос может относиться к <code>типу клиента</code> или <code>сервера</code>, и для запроса сертификата сервера OpenVPN следует использовать запрос типа <code>сервера</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa sign-req server server
+</li></ul></code></pre>
+<p>В результатах вам будет предложено убедиться, что запрос поступил из надежного источника. Для подтверждения введите <code>yes</code> и нажмите <code>ENTER</code>:</p>
+<pre class="code-pre  second-environment"><code langs="">You are about to sign the following certificate.
+Please check over the details shown below for accuracy. Note that this request
+has not been cryptographically verified. Please be sure it came from a trusted
+source or that you have verified the request checksum with the sender.
+
+Request subject, to be signed as a server certificate for 3650 days:
+
+subject=
+    commonName                = server
+
+
+Type the word 'yes' to continue, or any other input to abort.
+  Confirm request details: <span class="highlight">yes</span>
+</code></pre>
+<p>Если вы зашифровали ключ CA, вам будет предложено ввести пароль.</p>
+
+<p>Затем переместите подписанный сертификат на сервер VPN, используя защищенный метод:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp pki/issued/server.crt <span class="highlight">sammy</span>@<span class="highlight">your_server_ip</span>:/tmp
+</li></ul></code></pre>
+<p>Прежде чем выполнять выход из системы на компьютере CA, переместите файл <code>ca.crt</code> на ваш сервер:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp pki/ca.crt <span class="highlight">sammy</span>@<span class="highlight">your_server_ip</span>:/tmp
+</li></ul></code></pre>
+<p>Затем снова выполните вход в систему на сервере OpenVPN и скопируйте файлы <code>server.crt</code> и <code>ca.crt</code> в каталог <code>/etc/openvpn/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /tmp/{server.crt,ca.crt} /etc/openvpn/
+</li></ul></code></pre>
+<p>После этого перейдите в каталог EasyRSA:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd EasyRSA-<span class="highlight">3.0.4</span>/
+</li></ul></code></pre>
+<p>Создайте надежный ключ Диффи-Хеллмана, который будет использоваться при обмене ключами:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa gen-dh
+</li></ul></code></pre>
+<p>Для этого может потребоваться несколько минут. После завершения сгенерируйте подпись HMAC для укрепления возможностей сервера по проверке целостности TLS:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">openvpn --genkey --secret ta.key
+</li></ul></code></pre>
+<p>Когда команда будет выполнена, скопируйте два новых файла в каталог <code>/etc/openvpn/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp ~/EasyRSA-<span class="highlight">3.0.4</span>/ta.key /etc/openvpn/
+</li><li class="line" prefix="$">sudo cp ~/EasyRSA-<span class="highlight">3.0.4</span>/pki/dh.pem /etc/openvpn/
+</li></ul></code></pre>
+<p>Теперь все необходимые вашему серверу сертификаты и файлы ключей сгенерированы. Вы готовы создать соответствующие сертификаты и ключи, которые клиентский компьютер будет использовать для доступа к серверу OpenVPN.</p>
+
+<h2 id="Шаг-4-—-Создание-сертификата-клиента-и-пары-ключей">Шаг 4 — Создание сертификата клиента и пары ключей</h2>
+
+<p>Хотя вы можете сгенерировать закрытый ключ и запрос сертификата на клиентской системе и отправить их в CA для подписания, в этом обучающем модуле мы рассмотрим процесс генерирования запроса сертификата на сервере. Преимущество этого способа заключается в том, что мы можем создать скрипт, который будет автоматически генерировать файлы конфигурации клиентов, содержащие все необходимые ключи и сертификаты. Благодаря этому вам не нужно будет передавать ключи, сертификаты и файлы конфигурации на клиентские системы, и процесс подключения к VPN ускорится.</p>
+
+<p>В этом обучающем модуле мы создадим одну пару из ключа и сертификата для клиентской системы. Если у вас несколько клиентских систем, вы можете повторить этот процесс для каждой такой системы. Обратите внимание, что для каждого клиента в скрипте нужно указать уникальное имя. В этом обучающем модуле мы будем использовать первую пару сертификат/ключ под именем <code>client1</code>.</p>
+
+<p>Вначале создайте в домашнем каталоге структуру каталогов, где будут храниться файлы сертификатов и ключей клиентской системы:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/client-configs/keys
+</li></ul></code></pre>
+<p>Поскольку в этом каталоге будут храниться пары сертификат/ключ ваших клиентов и файлы конфигурации, для него следует закрыть все разрешения:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod -R 700 ~/client-configs
+</li></ul></code></pre>
+<p>Вернитесь в каталог EasyRSA и запустите скрипт <code>easyrsa</code> с опциями <code>gen-req</code> и <code>nopass</code>, указав обычное имя клиента:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/EasyRSA-<span class="highlight">3.0.4</span>/
+</li><li class="line" prefix="$">./easyrsa gen-req client1 nopass
+</li></ul></code></pre>
+<p>Нажмите <code>ENTER</code>, чтобы подтвердить обычное имя. Скопируйте файл <code>client1.key</code> в ранее созданный каталог <code>/client-configs/keys/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp pki/private/client1.key ~/client-configs/keys/
+</li></ul></code></pre>
+<p>Затем переместите файл <code>client1.req</code> на компьютер CA, используя безопасный метод:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp pki/reqs/client1.req <span class="highlight">sammy</span>@<span class="highlight">your_CA_ip</span>:/tmp
+</li></ul></code></pre>
+<p>Войдите в систему на компьютере CA, откройте каталог EasyRSA и импортируйте запрос сертификата:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">sammy</span>@<span class="highlight">your_CA_ip</span>
+</li><li class="line" prefix="$">cd EasyRSA-<span class="highlight">3.0.4</span>/
+</li><li class="line" prefix="$">./easyrsa import-req /tmp/client1.req client1
+</li></ul></code></pre>
+<p>Затем подпишите запрос, как сделали это для сервера на предыдущем шаге. Однако в этот раз обязательно укажите тип запроса <code>client</code>:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa sign-req client client1
+</li></ul></code></pre>
+<p>В диалоге введите <code>yes</code>, чтобы подтвердить, что вы планируете подписать запрос сертификата, и что он поступил из доверенного источника:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Type the word 'yes' to continue, or any other input to abort.
+  Confirm request details: <span class="highlight">yes</span>
+</code></pre>
+<p>Если вы зашифровали свой ключ CA вам будет предложено ввести пароль.</p>
+
+<p>В результате будет создан файл клиентского сертификата с именем <code>client1.crt</code>. Переместите этот файл обратно на сервер.</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp pki/issued/client1.crt <span class="highlight">sammy</span>@<span class="highlight">your_server_ip</span>:/tmp
+</li></ul></code></pre>
+<p>Подключитесь к серверу OpenVPN через SSH и скопируйте клиентский сертификат в каталог <code>/client-configs/keys/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp /tmp/client1.crt ~/client-configs/keys/
+</li></ul></code></pre>
+<p>Затем скопируйте файлы <code>ca.crt</code> и <code>ta.key</code> в каталог <code>/client-configs/keys/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp ~/EasyRSA-<span class="highlight">3.0.4</span>/ta.key ~/client-configs/keys/
+</li><li class="line" prefix="$">sudo cp /etc/openvpn/ca.crt ~/client-configs/keys/
+</li></ul></code></pre>
+<p>Теперь вы сгенерировали ключи и сертификаты для сервера и клиента и сохранили их в соответствующих каталогах на вашем сервере. С этими файлами еще предстоит выполнить несколько действий, но к ним мы вернемся позднее. Сейчас же вы можете начать настройку OpenVPN на своем сервере.</p>
+
+<h2 id="Шаг-5-—-Настройка-службы-openvpn">Шаг 5 — Настройка службы OpenVPN</h2>
+
+<p>Вы сгенерировали сертификаты и ключи для клиента и для сервера, и теперь можете начать настройку службы OpenVPN для использования этих учетных данных.</p>
+
+<p>Прежде всего скопируйте файл с образцом конфигурации OpenVPN в каталог configuration и извлеките его, чтобы использовать в качестве основы:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /usr/share/doc/openvpn/examples/sample-config-files/server.conf.gz /etc/openvpn/
+</li><li class="line" prefix="$">sudo gzip -d /etc/openvpn/server.conf.gz
+</li></ul></code></pre>
+<p>Откройте файл конфигурации сервера в предпочитаемом текстовом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/openvpn/server.conf
+</li></ul></code></pre>
+<p>Найдите раздел HMAC, выполнив поиск директивы <code>tls-auth</code>. Комментарии из этой строки должны быть уже удалены, но если строка еще закомментирована, уберите символ «<strong>;</strong>» в начале строки:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">tls-auth ta.key 0 # This file is secret
+</code></pre>
+<p>Затем найдите раздел криптографических шифров, выполнив поиск строк комментариев с текстом <code>cipher</code>. Шифр <code>AES-256-CBC</code> обеспечивает хороший уровень шифрования и хорошо поддерживается. Комментарии из этой строки должны быть уже удалены, но если строка еще закомментирована, уберите символ «<strong>;</strong>» в начале строки:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">cipher AES-256-CBC
+</code></pre>
+<p>Добавьте под этой строкой директиву <code>auth</code>, чтобы выбрать алгоритм обработки сообщений HMAC. Для этого хорошо подойдет <code>SHA256</code>:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs=""><span class="highlight">auth SHA256</span>
+</code></pre>
+<p>Затем найдите строку с директивой <code>dh</code>, которая определяет параметры алгоритма Диффи-Хеллмана. В связи с недавними изменениями EasyRSA имя файла ключа Диффи-Хеллмана может отличаться от указанного в файле образца конфигурации сервера. Если потребуется, измените указанное здесь имя файла, удалив цифры <code>2048</code> для соответствия ключу, сгенерированному на предыдущем шаге:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">dh dh.pem
+</code></pre>
+<p>Наконец, найдите настройки <code>user</code> и <code>group</code> и удалите «<strong>;</strong>» из начала каждой строки:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">user nobody
+group nogroup
+</code></pre>
+<p>Внесенные в файл образца <code>server.conf</code> изменения необходимы для работы OpenVPN. Описанные ниже изменения не обязательны, однако они также необходимы для многих распространенных вариантов использования.</p>
+
+<h3 id="Необязательно-Изменение-dns-для-перенаправления-всего-трафика-через-сеть-vpn">(Необязательно) Изменение DNS для перенаправления всего трафика через сеть VPN</h3>
+
+<p>Вышеуказанные настройки создадут соединение VPN между двумя компьютерными системами, но не заставят никакие соединения использовать туннель. Если вы хотите использовать VPN для перенаправления всего вашего трафика, вам нужно будет передать настройки DNS на клиентские компьютеры.</p>
+
+<p>В файле <code>server.conf</code> имеется несколько директив, которые нужно изменить для активации этой функции. Найдите раздел <code>redirect-gateway</code> и удалите точку с запятой «<strong>;</strong>» в начале строки <code>redirect-gateway</code>, чтобы убрать режим комментария:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">push "redirect-gateway def1 bypass-dhcp"
+</code></pre>
+<p>Под этой строкой найдите раздел <code>dhcp-option</code>. Снова удалите символ «<strong>;</strong>» в начале каждой из строк, чтобы убрать режим комментария:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">push "dhcp-option DNS 208.67.222.222"
+push "dhcp-option DNS 208.67.220.220"
+</code></pre>
+<p>Это поможет клиентам изменить настройки DNS, чтобы туннель VPN использовался как шлюз по умолчанию.</p>
+
+<h3 id="Необязательно-Изменение-порта-и-протокола">(Необязательно) Изменение порта и протокола</h3>
+
+<p>По умолчанию сервер OpenVPN использует для подключения клиентов порт <code>1194</code> и протокол UDP. Если вам потребуется использовать другой порт из-за ограничений сети клиента, вы можете изменить номер <code>порта</code>. Если вы не храните веб-контент на сервере OpenVPN, вам подойдет порт <code>443</code>, поскольку его обычно не запрещают правила брандмауэра.</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs=""># Optional!
+port <span class="highlight">443</span>
+</code></pre>
+<p>Довольно часто этот порт также ограничивает протокол. Если это так, измените значение <code>proto</code> с UDP на TCP:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs=""># Optional!
+proto <span class="highlight">tcp</span>
+</code></pre>
+<p>Если вы <strong>действительно</strong> смените протокол на TCP, вам нужно будет изменить значение директивы <code>explicit-exit-notify</code> с <code>1</code> на <code>0</code>, поскольку эта директива используется только протоколом UDP. В противном случае при запуске службы OpenVPN возможны ошибки протокола TCP :</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs=""># Optional!
+explicit-exit-notify <span class="highlight">0</span>
+</code></pre>
+<p>Если вам не нужно использовать другие порт и протокол, лучше всего оставить настройки по умолчанию.</p>
+
+<h3 id="Необязательно-Указание-на-учетные-данные-отличающиеся-от-используемых-по-умолчанию">(Необязательно) Указание на учетные данные, отличающиеся от используемых по умолчанию</h3>
+
+<p>Если вы выбрали другое имя при использовании команды <code>./build-key-server</code>, измените строки <code>cert</code> и <code>key</code> так, чтобы они указывали на соответствующие файлы <code>.crt</code> и <code>.key</code>. Если вы использовали имя по умолчанию «server», ничего изменять не нужно:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">cert <span class="highlight">server</span>.crt
+key <span class="highlight">server</span>.key
+</code></pre>
+<p>После завершения редактирования сохраните и закройте файл.</p>
+
+<p>После внесения необходимых изменений в конфигурацию OpenVPN вашего сервера, вы можете начать вносить изменения в настройки сети сервера.</p>
+
+<h2 id="Шаг-6-—-Настройка-конфигурации-сети-сервера">Шаг 6 — Настройка конфигурации сети сервера</h2>
+
+<p>Чтобы OpenVPN мог правильно перенаправлять трафик через сеть VPN, необходимо изменить некоторые параметры конфигурации сети сервера. Прежде всего нужно изменить параметр <em>IP forwarding,</em> который определяет необходимость перенаправления IP-трафика. Это необходимо для реализации функций VPN, обеспечиваемых вашим сервером.</p>
+
+<p>Для изменения настройки переадресации IP по умолчанию на вашем сервере следует отредактировать файл <code>/etc/sysctl.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysctl.conf
+</li></ul></code></pre>
+<p>Найдите в файле строку комментария с параметром <code>net.ipv4.ip_forward</code>. Удалите символ «<strong>#</strong>» из начала строки, чтобы убрать режим комментария для этой настройки:</p>
+<div class="code-label " title="/etc/sysctl.conf">/etc/sysctl.conf</div><pre class="code-pre "><code langs="">net.ipv4.ip_forward=1
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Чтобы прочитать файл и изменить значения для текущей сессии, введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl -p
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>net.ipv4.ip_forward = 1
+</code></pre>
+<p>Если вы следовали указаниям обучающего модуля «Начальная настройка сервера Ubuntu 18.04», указанного в предварительных требованиях, у вас должен быть установлен брандмауэр UFW. Вне зависимости от того, используете ли вы брандмауэр для блокировки нежелательного трафика (что нужно делать почти всегда), в этом обучающем модуле брандмауэр вам потребуется для определенных манипуляций с трафиком, поступающим на сервер. Некоторые правила брандмауэра нужно изменить, чтобы включить маскарадинг (это концепция iptables, обеспечивающая динамическую трансляцию сетевых адресов (NAT) для правильной маршрутизации клиентских соединений.</p>
+
+<p>Прежде чем открыть файл конфигурации брандмауэра для добавления правил маскарадинга, нужно предварительно найти публичный сетевой интерфейс компьютера. Для этого введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip route | grep default
+</li></ul></code></pre>
+<p>Публичный интерфейс компьютера показан в результатах выполнения этой команды после слова «dev». Например, в этом результате показан интерфейс с именем <code>wlp11s0</code>, который выделен ниже:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>default via 203.0.113.1 dev <span class="highlight">wlp11s0</span> proto static
+</code></pre>
+<p>Когда у вас будет интерфейс, связанный с маршрутом по умолчанию, откройте файл <code>/etc/ufw/before.rules</code>, чтобы добавить соответствующую конфигурацию:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/ufw/before.rules
+</li></ul></code></pre>
+<p>Правила UFW обычно добавляются с помощью команды <code>ufw</code>. Правила, перечисленные в файле <code>before.rules</code>, считываются и активируются до загрузки обычных правил UFW. Добавьте в верхнюю часть файла выделенные ниже строки. После этого будет задана политика по умолчанию для цепочки <code>POSTROUTING</code> в таблице <code>nat</code>, и любой трафик из VPN будет маскироваться. Обязательно замените <code><span class="highlight">wlp11s0</span></code> в строке <code>-A POSTROUTING</code> на интерфейс, определенный с помощью следующей команды:</p>
+<div class="code-label " title="/etc/ufw/before.rules">/etc/ufw/before.rules</div><pre class="code-pre "><code langs="">#
+# rules.before
+#
+# Rules that should be run before the ufw command line added rules. Custom
+# rules should be added to one of these chains:
+#   ufw-before-input
+#   ufw-before-output
+#   ufw-before-forward
+#
+
+<span class="highlight"># START OPENVPN RULES</span>
+<span class="highlight"># NAT table rules</span>
+<span class="highlight">*nat</span>
+<span class="highlight">:POSTROUTING ACCEPT [0:0]</span>
+<span class="highlight"># Allow traffic from OpenVPN client to </span>wlp11s0<span class="highlight"> (change to the interface you discovered!)</span>
+<span class="highlight">-A POSTROUTING -s 10.8.0.0/8 -o </span>wlp11s0<span class="highlight"> -j MASQUERADE</span>
+<span class="highlight">COMMIT</span>
+<span class="highlight"># END OPENVPN RULES</span>
+
+# Don't delete these required lines, otherwise there will be errors
+*filter
+. . .
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Затем вам нужно будет указать UFW разрешать перенаправление пакетов по умолчанию. Для этого откройте файл <code>/etc/default/ufw</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/default/ufw
+</li></ul></code></pre>
+<p>Найдите в файле директиву <code>DEFAULT_FORWARD_POLICY</code> и измените значение с <code>DROP</code> на <code>ACCEPT</code>:</p>
+<div class="code-label " title="/etc/default/ufw">/etc/default/ufw</div><pre class="code-pre "><code langs="">DEFAULT_FORWARD_POLICY="<span class="highlight">ACCEPT</span>"
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Затем измените настройки брандмауэра, чтобы разрешить трафик OpenVPN. Если вы не изменили порт и протокол в файле <code>/etc/openvpn/server.conf</code>, вам нужно будет открыть трафик UDP на порту <code>1194</code>. Если вы изменили порт или протокол, замените выбранные здесь значения.</p>
+
+<p>Если вы забыли добавить порт SSH при выполнении обязательного обучающего модуля, добавьте его сейчас:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow <span class="highlight">1194</span>/<span class="highlight">udp</span>
+</li><li class="line" prefix="$">sudo ufw allow OpenSSH
+</li></ul></code></pre>
+<p>После добавления этих правил отключите и заново включите UFW, чтобы загрузить изменения из всех измененных файлов:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw disable
+</li><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>Теперь ваш сервер настроен для правильной обработки трафика OpenVPN.</p>
+
+<h2 id="Шаг-7-—-Запуск-и-активация-службы-openvpn">Шаг 7 — Запуск и активация службы OpenVPN</h2>
+
+<p>Теперь вы готовы запустить службу OpenVPN на своем сервере. Для этого нужно использовать утилиту systemd <code>systemctl</code>.</p>
+
+<p>Запустите сервер OpenVPN, указав имя файла конфигурации в качестве переменной экземпляра после имени файла systemd. Файл конфигурации вашего сервера имеет имя <code>/etc/openvpn/<span class="highlight">server</span>.conf</code>, поэтому при его вызове в конец файла нужно добавить <code><span class="highlight">@server</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start openvpn@<span class="highlight">server</span>
+</li></ul></code></pre>
+<p>Еще раз убедитесь, что служба успешно запущена, введя следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status openvpn@server
+</li></ul></code></pre>
+<p>Если все прошло хорошо, результат будет выглядеть примерно следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● openvpn@server.service - OpenVPN connection to server
+   Loaded: loaded (/lib/systemd/system/openvpn@.service; disabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Tue 2016-05-03 15:30:05 EDT; 47s ago
+     Docs: man:openvpn(8)
+           https://community.openvpn.net/openvpn/wiki/Openvpn23ManPage
+           https://community.openvpn.net/openvpn/wiki/HOWTO
+  Process: 5852 ExecStart=/usr/sbin/openvpn --daemon ovpn-%i --status /run/openvpn/%i.status 10 --cd /etc/openvpn --script-security 2 --config /etc/openvpn/%i.conf --writepid /run/openvpn/%i.pid (code=exited, sta
+ Main PID: 5856 (openvpn)
+    Tasks: 1 (limit: 512)
+   CGroup: /system.slice/system-openvpn.slice/openvpn@server.service
+           └─5856 /usr/sbin/openvpn --daemon ovpn-server --status /run/openvpn/server.status 10 --cd /etc/openvpn --script-security 2 --config /etc/openvpn/server.conf --writepid /run/openvpn/server.pid
+
+</code></pre>
+<p>Также вы можете проверить доступность интерфейса OpenVPN <code>tun0</code> с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip addr show tun0
+</li></ul></code></pre>
+<p>Будет выведен настроенный интерфейс:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>4: tun0: &lt;POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UNKNOWN group default qlen 100
+    link/none
+    inet 10.8.0.1 peer 10.8.0.2/32 scope global tun0
+       valid_lft forever preferred_lft forever
+</code></pre>
+<p>После запуска службы активируйте ее, чтобы она автоматически запускалась при загрузке:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable openvpn@server
+</li></ul></code></pre>
+<p>Теперь служба OpenVPN запущена и работает. Прежде чем начать использовать ее, необходимо создать файл конфигурации для клиентской системы. В этом обучающем модуле мы уже говорили о создании пар сертификат/ключ для клиентских систем, и на следующем шаге мы продемонстрируем создание инфраструктуры, которая будет легко генерировать файлы конфигурации клиентских систем.</p>
+
+<h2 id="Шаг-8-—-Создание-инфраструктуры-конфигурации-клиентских-систем">Шаг 8 — Создание инфраструктуры конфигурации клиентских систем</h2>
+
+<p>Создание файлов конфигурации для клиентов OpenVPN может быть связано с этой задачей, поскольку каждый клиент должен иметь собственную конфигурацию, и каждая из этих конфигураций должна соответствовать параметрам, заданным в файле конфигурации сервера. Вместо создания единого файла конфигурации, который можно использовать только для одного клиента, на этом шаге мы определим процесс создания инфраструктуры клиентской конфигурации, который вы сможете использовать для быстрого генерирования файлов конфигурации. Вначале вы создадите «базовый» файл конфигурации, а затем сценарий, который позволит по мере необходимости генерировать уникальные файлы конфигурации клиентов, сертификаты и ключи.</p>
+
+<p>Для начала создайте новый каталог для хранения файлов конфигурации клиентов в ранее созданном каталоге <code>client-configs</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir -p ~/client-configs/files
+</li></ul></code></pre>
+<p>Затем скопируйте файл с образцом конфигурации клиента в каталог <code>client-configs</code>, чтобы использовать его как базовую конфигурацию:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp /usr/share/doc/openvpn/examples/sample-config-files/client.conf ~/client-configs/base.conf
+</li></ul></code></pre>
+<p>Откройте новый файл в текстовом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/client-configs/base.conf
+</li></ul></code></pre>
+<p>Найдите в файле директиву <code>remote</code>. Она указывает клиенту адрес сервера OpenVPN, т. е. публичный IP-адрес вашего сервера OpenVPN. Если вы решили изменить порт, который будет прослушивать сервер OpenVPN, вам нужно будет заменить <code>1194</code> на выбранный порт:</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs="">. . .
+# The hostname/IP and port of the server.
+# You can have multiple remote entries
+# to load balance between the servers.
+remote <span class="highlight">your_server_ip</span> <span class="highlight">1194</span>
+. . .
+</code></pre>
+<p>Протокол должен соответствовать значениям, используемым в конфигурации сервера:</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs="">proto <span class="highlight">udp</span>
+</code></pre>
+<p>Уберите режим комментариев для директив <code>user</code> и <code>group</code>, удалив символ «<strong>;</strong>» из начала каждой строки:</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs=""># Downgrade privileges after initialization (non-Windows only)
+user nobody
+group nogroup
+</code></pre>
+<p>Найдите директивы, задающие <code>ca</code>, <code>cert</code> и <code>key</code>. Поставьте знак комментария перед строками этих директив, поскольку вы вскоре добавите сертификаты и ключи в сам файл:</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs=""># SSL/TLS parms.
+# See the server config file for more
+# description.  It's best to use
+# a separate .crt/.key file pair
+# for each client.  A single ca
+# file can be used for all clients.
+<span class="highlight">#</span>ca ca.crt
+<span class="highlight">#</span>cert client.crt
+<span class="highlight">#</span>key client.key
+</code></pre>
+<p>Также добавьте знак комментария в начале строки директивы <code>tls-auth</code>, поскольку вы добавите ключ <code>ta.key</code> непосредственно из файла конфигурации клиента:</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs=""># If a tls-auth key is used on the server
+# then every client must also have the key.
+<span class="highlight">#</span>tls-auth ta.key 1
+</code></pre>
+<p>Создайте зеркальное отражение настроек <code>cipher</code> и <code>auth</code>, заданных в файле <code>/etc/openvpn/server.conf</code>:</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs=""><span class="highlight">cipher AES-256-CBC</span>
+<span class="highlight">auth SHA256</span>
+</code></pre>
+<p>Затем добавьте в файл директиву <code>key-direction</code>. Вы <strong>должны</strong> задать значение «1», чтобы VPN правильно работала на клиентском компьютере:</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs=""><span class="highlight">key-direction 1</span>
+</code></pre>
+<p>В заключение, добавьте несколько <strong>строк комментариев</strong>. Хотя вы можете включить эти директивы в каждый файл конфигурации клиента, их нужно включать только для клиентов Linux с файлом <code>/etc/openvpn/update-resolv-conf</code>. Этот скрипт использует утилиту <code>resolvconf</code> для обновления данных DNS клиентов Linux.</p>
+<div class="code-label " title="~/client-configs/base.conf">~/client-configs/base.conf</div><pre class="code-pre "><code langs=""><span class="highlight"># script-security 2</span>
+<span class="highlight"># up /etc/openvpn/update-resolv-conf</span>
+<span class="highlight"># down /etc/openvpn/update-resolv-conf</span>
+</code></pre>
+<p>Если ваш клиент работает под управлением Linux, и на нем есть файл <code>/etc/openvpn/update-resolv-conf</code>, удалите знак комментария в начале этих строк файла конфигурации клиента, когда он будет сгенерирован.</p>
+
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Затем создайте простой скрипт, который скомпилирует базовую конфигурацию с соответствующим сертификатом, ключом и файлами шифрования, и поместите сгенерированную конфигурацию в каталог <code>~/client-configs/files</code>. Откройте новый файл с именем <code>make_config.sh</code> в каталоге <code>~/client-configs</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/client-configs/make_config.sh
+</li></ul></code></pre>
+<p>Добавьте в файл следующее:</p>
+<div class="code-label " title="~/client-configs/make_config.sh">~/client-configs/make_config.sh</div><pre class="code-pre "><code class="code-highlight language-sh">#!/bin/bash
+
+# First argument: Client identifier
+
+KEY_DIR=~/client-configs/keys
+OUTPUT_DIR=~/client-configs/files
+BASE_CONFIG=~/client-configs/base.conf
+
+cat ${BASE_CONFIG} \
+    &lt;(echo -e '&lt;ca&gt;') \
+    ${KEY_DIR}/ca.crt \
+    &lt;(echo -e '&lt;/ca&gt;\n&lt;cert&gt;') \
+    ${KEY_DIR}/${1}.crt \
+    &lt;(echo -e '&lt;/cert&gt;\n&lt;key&gt;') \
+    ${KEY_DIR}/${1}.key \
+    &lt;(echo -e '&lt;/key&gt;\n&lt;tls-auth&gt;') \
+    ${KEY_DIR}/ta.key \
+    &lt;(echo -e '&lt;/tls-auth&gt;') \
+    &gt; ${OUTPUT_DIR}/${1}.ovpn
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>Прежде чем продолжить, отметьте этот файл как исполняемый, введя следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod 700 ~/client-configs/make_config.sh
+</li></ul></code></pre>
+<p>Этот скрипт создает копию созданного вами файла <code>base.conf</code>, собирает все созданные вами для клиента файлы сертификатов и ключей, извлекает их содержимое, добавляет их в копию базового файла конфигурации и экспортирует все это в новый файл конфигурации клиента. Это означает, что вся необходимая информация хранится в одном месте, и вам не нужно по отдельности управлять файлами конфигурации клиента, сертификатами и ключами. Если в будущем вам потребуется добавить клиент, вы можете просто запустить этот скрипт, чтобы быстро создать файл конфигурации. Вся важная информация хранится в одном удобном для доступа месте.</p>
+
+<p>Учтите, что при добавлении каждого нового клиента вам нужно будет сгенерировать для него новые ключи и сертификаты, прежде чем запускать этот скрипт и генерировать файл конфигурации. На следующем шаге вы сможете потренироваться в использовании этого скрипта.</p>
+
+<h2 id="Шаг-9-—-Создание-конфигураций-клиентов">Шаг 9 — Создание конфигураций клиентов</h2>
+
+<p>Если вы следовали указаниям руководства, на шаге 4 вы создали клиентский сертификат и ключ с именами <code>client1.crt</code> и <code>client1.key</code> соответственно. Вы можете сгенерировать файл конфигурации для этих учетных данных, перейдя в каталог <code>~/client-configs</code> и запустив скрипт, созданный в конце предыдущего шага:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/client-configs
+</li><li class="line" prefix="$">sudo ./make_config.sh <span class="highlight">client1</span>
+</li></ul></code></pre>
+<p>При этом файл <code>client1.ovpn</code> будет создан в каталоге <code>~/client-configs/files</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls ~/client-configs/files
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>client1.ovpn
+</code></pre>
+<p>Этот файл нужно будет переместить на устройство, которое вы планируете использовать в качестве клиента. Например, это может быть ваш локальный компьютер или мобильное устройство.</p>
+
+<p>Хотя конкретные приложения для передачи зависят от операционной системы устройства и ваших предпочтений, один из наиболее надежных и безопасных способов — использовать SFTP (протокол передачи файлов SSH) или SCP (защищенное копирование) на стороне сервера. При этом файлы аутентификации VPN вашего клиента будут передаваться через шифрованное соединение.</p>
+
+<p>Вот пример команды SFTP с использованием образца <code><span class="highlight">client1.ovpn</span></code>, который можно запустить с локального компьютера (macOS или Linux). Он помещает файл <code>.ovpn</code> в домашний каталог:</p>
+<pre class="code-pre custom_prefix local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="local$">sftp <span class="highlight">sammy</span>@<span class="highlight">your_server_ip</span>:client-configs/files/client1.ovpn ~/
+</li></ul></code></pre>
+<p>Вот несколько инструментов и обучающих модулей для безопасной передачи файлов с сервера на локальный компьютер:</p>
+
+<ul>
+<li><a href="http://winscp.net">WinSCP</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-use-sftp-to-securely-transfer-files-with-a-remote-server">Использование SFTP для безопасной передачи файлов с удаленного сервера</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-use-filezilla-to-transfer-and-manage-files-securely-on-your-vps">Использование Filezilla для безопасной передачи и управления файлами в VPS</a></li>
+</ul>
+
+<h2 id="Шаг-10-—-Установка-конфигурации-клиентов">Шаг 10 — Установка конфигурации клиентов</h2>
+
+<p>В этом разделе рассказывается о том, как установить клиентский профиль VPN в Windows, macOS, Linux, iOS и Android. Эти инструкции не зависят друг от друга, так что вы можете сразу перейти к той, которая относится к вашему устройству.</p>
+
+<p>Подключение OpenVPN будет иметь имя, совпадающее с именем файла <code>.ovpn</code>. В этом обучающем модуле это означает, что соединение будет иметь имя <code>client1.ovpn</code>, что соответствует первому сгенерированному клиентскому файлу.</p>
+
+<h3 id="windows">Windows</h3>
+
+<p><strong>Установка</strong></p>
+
+<p>Загрузите клиентское приложение OpenVPN для Windows со <a href="https://openvpn.net/index.php/open-source/downloads.html">страницы загрузки OpenVPN</a>. Выберите подходящую версию программы установки для вашей версии Windows.</p>
+
+<p><span class='note'><strong>Примечание.</strong> Для установки OpenVPN требуются привилегии администратора.<br></span></p>
+
+<p>После установки OpenVPN, скопируйте файл <code>.ovpn</code> в:</p>
+<pre class="code-pre "><code langs="">C:\Program Files\OpenVPN\config
+</code></pre>
+<p>При запуске OpenVPN профиль будет автоматически обнаружен и сделан доступным.</p>
+
+<p>Вы должны запускать OpenVPN от имени администратора каждый раз, даже если используете учетную запись администратора. Чтобы вам не нужно было при каждом запуске VPN нажимать правую кнопку мыши и выбриать <strong>Запуск от имени администратора</strong>, такой запуск следует настроить в учетной записи администратора. Это также означает, что обычным пользователям нужно будет ввести пароль администратора, чтобы использовать OpenVPN. Обычные пользователи не смогут правильно подключиться к серверу, если у приложения OpenVPN на клиентской системе нет прав администратора, поэтому необходим повышенный уровень привилегий.</p>
+
+<p>Чтобы настроить приложение OpenVPN для запуска от имени администратора при каждом запуске, нажмите правой кнопкой мыши на его ярлык и выберите пункт <strong>Свойства</strong>. Внизу вкладки <strong>Совместимость</strong> нажмите кнопку <strong>Изменить параметры для всех пользователей</strong>. В новом окне установите отметку <strong>Запускать эту программу от имени администратора</strong>.</p>
+
+<p><strong>Подключение</strong></p>
+
+<p>При каждом запуске графического интерфейса OpenVPN операционная система Windows будет спрашивать, разрешаете или вы этой программме внести изменения на вашем компьютере. Нажмите <strong>Да</strong>. При запуске клиентского приложения OpenVPN в области задач появляется значок приложения, с помощью которого вы сможете подключать и отключать соединение VPN; соединение VPN не устанавливается автоматически.</p>
+
+<p>После запуска OpenVPN нажмите правой кнопкой на значок OpenVPN в области задач, чтобы создать соединение. Откроется контекстное меню. Выберите <strong>client1</strong> в верхней части меню (это ваш профиль <code>client1.ovpn</code>) и нажмите <strong>Подключиться</strong>.</p>
+
+<p>Откроется окно состояния, где будут выведены данные журнала при установке соединения, и после подключения клиента будет выведено сообщение.</p>
+
+<p>Отключение от VPN выполняется аналогично: перейдите в область задач, нажмите на <strong>иконку приложения OpenVPN правой кнопкой мыши, выберите профиль клиента и нажмите Отключиться</strong>.</p>
+
+<h3 id="macos">macOS</h3>
+
+<p><strong>Установка</strong></p>
+
+<p><a href="https://tunnelblick.net/">Tunnelblick</a> — бесплатный клиент OpenVPN с открытым исходным кодом для macOS. Вы можете загрузить последний образ этого клиентского приложения со <a href="https://tunnelblick.net/downloads.html">страницы загрузки Tunnelblick</a>. Дважды щелкните загруженный файл <code>.dmg</code> и следуйте указаниям по установке.</p>
+
+<p>В конце процесса установки Tunnelblick спросит, есть ли у вас файлы конфигурации. Укажите ответ <strong>У меня есть файлы конфигурации</strong> и дайте Tunnelblick завершить работу. Откройте окно Finder и дважды нажмите <code>client1.ovpn</code>. Tunnelblick установит клиентский профиль. Для этого требуются привилегии администратора.</p>
+
+<p><strong>Подключение</strong></p>
+
+<p>Запустите Tunnelblick, дважды щелкнув значок Tunnelblick в папке <strong>Приложения.</strong> После запуска Tunnelblick в панели меню в правом верхнем углу экрана появится значок Tunnelblick для управления соединениями. Нажмите на значок, а затем нажмите на пункт меню <strong>Подключить client1,</strong> чтобы создать соединение VPN.</p>
+
+<h3 id="linux">Linux</h3>
+
+<h4 id="Установка">Установка</h4>
+
+<p>Если вы используете Linux, вы можете различные инструменты в зависимости от вашего дистрибутива. Диспетчер окон или среда рабочего стола также могут содержать утилиты для подключения.</p>
+
+<p>Однако проще всего будет использовать для этой цели программное обеспечение OpenVPN.</p>
+
+<p>В Ubuntu или Debian вы можете установить его так же, как и на сервере, введя следующую команду:</p>
+<pre class="code-pre custom_prefix local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="client$">sudo apt update
+</li><li class="line" prefix="client$">sudo apt install openvpn
+</li></ul></code></pre>
+<p>В CentOS вы можете активировать репозитории EPEL и выполнить установку, введя следующую команду:</p>
+<pre class="code-pre custom_prefix local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="client$">sudo yum install epel-release
+</li><li class="line" prefix="client$">sudo yum install openvpn
+</li></ul></code></pre>
+<h4 id="Настройка">Настройка</h4>
+
+<p>Проверьте, включен ли в ваш дистрибутив скрипт <code>/etc/openvpn/update-resolv-conf</code>:</p>
+<pre class="code-pre custom_prefix local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="client1$">ls /etc/openvpn
+</li></ul></code></pre><pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>update-resolv-conf
+</code></pre>
+<p>Затем отредактируйте перемещенный файл конфигурации клиента OpenVPN:</p>
+<pre class="code-pre custom_prefix local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="client$">nano <span class="highlight">client1</span>.ovpn
+</li></ul></code></pre>
+<p>Если вы нашли файл <code>update-resolv-conf,</code> уберите значок комментария из начала трех строк, добавленных для изменения настроек DNS:</p>
+<div class="code-label " title="client1.ovpn">client1.ovpn</div><pre class="code-pre  local-environment"><code langs="">script-security 2
+up /etc/openvpn/update-resolv-conf
+down /etc/openvpn/update-resolv-conf
+</code></pre>
+<p>Если вы используете CentOS, измените директиву <code>group</code> с <code>nogroup</code> на <code>nobody</code> для соответствия доступным группам дистрибутива:</p>
+<div class="code-label " title="client1.ovpn">client1.ovpn</div><pre class="code-pre  local-environment"><code langs="">group <span class="highlight">nobody</span>
+</code></pre>
+<p>Сохраните и закройте файл.</p>
+
+<p>Теперь для подключения к VPN вы можете просто указать команде <code>openvpn</code> файл конфигурации клиента:</p>
+<pre class="code-pre custom_prefix local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="client$">sudo openvpn --config <span class="highlight">client1</span>.ovpn
+</li></ul></code></pre>
+<p>Эта команда должна установить подключение к вашей VPN.</p>
+
+<h3 id="ios">iOS</h3>
+
+<p><strong>Установка</strong></p>
+
+<p>Найдите в магазине приложений iTunes App Store приложение <a href="https://itunes.apple.com/us/app/id590379981">OpenVPN Connect</a>, официальный клиент OpenVPN для iOS, и установите его. Чтобы переместить конфигурацию клиента iOS на устройство, подключите его к компьютеру напрямую.</p>
+
+<p>Здесь описан процесс завершения передачи с помощью iTunes. Откройте iTunes на компьютере и нажмите <strong>iPhone</strong> &gt; <strong>приложения</strong>. Прокрутите страницу до раздела <strong>Общий доступ к файлам</strong> и нажмите на приложение OpenVPN. Пустое окно справа <strong>OpenVPN Documents</strong> предназначено для общего доступа к файлам. Перетащите файл <code>.ovpn</code> в окно OpenVPN Documents.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/openvpn_ubunutu/1.png" alt="iTunes показывает, что профиль VPN готов к загрузке в iPhone"></p>
+
+<p>Запустите приложение OpenVPN на iPhone. Вы получите уведомление, что новый профиль готов к импортированию. Нажмите зеленый значок плюс, чтобы импортировать его.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/openvpn_ubunutu/2.png" alt="Приложение OpenVPN для iOS показывает, что новый профиль готов к импортированию."></p>
+
+<p><strong>Подключение</strong></p>
+
+<p>Приложение OpenVPN готово к использованию нового профиля. Установите соединение, передвинув кнопку <strong>Подключиться</strong> в положение <strong>Вкл.</strong> Для отключения передвиньте эту же кнопку в положение <strong>Выкл</strong>.</p>
+
+<p><span class='note'><strong>Примечание.</strong> Переключатель VPN в разделе <strong>Настройки</strong> нельзя использовать для подключения к VPN. Если вы попробуете сделать это, вы получите уведомление о том, что для подключения нужно использовать приложение OpenVPN.<br></span></p>
+
+<p><img src="https://assets.digitalocean.com/articles/openvpn_ubunutu/3.png" alt="Приложение OpenVPN для iOS, подключенное к VPN"></p>
+
+<h3 id="android">Android</h3>
+
+<p><strong>Установка</strong></p>
+
+<p>Откройте магазин приложений Google Play Store. Найдите приложение <a href="https://play.google.com/store/apps/details?id=net.openvpn.openvpn">Android OpenVPN Connect,</a> официальное клиентское приложение OpenVPN для Android, и установите его.</p>
+
+<p>Вы можете переместить профиль <code>.ovpn,</code> подключив устройство Android к вашему компьютеру через интерфейс USB и скопировав файл. Если у вас в компьютере есть разъем для SD-карт, мы можете извлечь SD-карту из устройства, скопировать на нее профиль и вставить карту обратно в устройство Android.</p>
+
+<p>Запустите приложение OpenVPN и нажмите на меню, чтобы импортировать профиль.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/openvpn_ubunutu/4.png" alt="Выбор меню импорта профиля в приложении OpenVPN для Android"></p>
+
+<p>Затем перейдите в местоположение сохраненного профиля (на снимке экрана используется расположение <code>/sdcard/Download/</code>) и выберите файл. Приложение покажет, что профиль импортирован.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/openvpn_ubunutu/5.png" alt="Приложение OpenVPN для Android выбирает профиль VPN для импорта"></p>
+
+<p><strong>Подключение</strong></p>
+
+<p>Чтобы подключиться, просто нажмите кнопку <strong>Подключиться</strong>. Вам нужно будет указать, что вы доверяете приложению OpenVPN. Нажмите <strong>OK</strong>, чтобы установить соединение. Чтобы отключиться от VPN, вернитесь в приложение OpenVPN и выберите пункт <strong>Отключиться</strong>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/openvpn_ubunutu/6.png" alt="Приложение OpenVPN готово подключиться к VPN"></p>
+
+<h2 id="Шаг-11-—-Тестирование-соединения-vpn-необязательно">Шаг 11 — Тестирование соединения VPN (необязательно)</h2>
+
+<p><span class='note'><strong>Примечание.</strong> Этот метод тестирования соединения VPN будет работать, только если вы настроите перенаправление всего трафика через VPN на шаге 5.<br></span></p>
+
+<p>После завершения установки нужно провести простую проверку, чтобы убедиться, что все работает нормально. Не активируйте соединение VPN, откройте браузер и перейдите в <a href="https://www.dnsleaktest.com">DNSLeakTest</a>.</p>
+
+<p>Сайт покажет IP-адрес, назначенный вашим интернет-провайдером и видный остальному миру. Чтобы проверить настройки DNS через этот же сайт, нажмите <strong>Расширенный тест</strong>, и вы увидите, какие серверы DNS вы используете.</p>
+
+<p>Теперь подключите клиент OpenVPN к VPN вашего дроплета и обновите браузер. Вы увидите совершенно другой IP-адрес (адрес вашего сервера VPN), и именно этот адрес будет виден остальному миру. Итак, в приложении <a href="https://www.dnsleaktest.com">DNSLeakTest</a> функция <strong>Расширенный тест</strong> проверит ваши настройки DNS и подтвердит, что вы используете параметры DNS, заданные вашей VPN.</p>
+
+<h2 id="Шаг-12-—-Отзыв-сертификатов-клиента">Шаг 12 — Отзыв сертификатов клиента</h2>
+
+<p>Иногда вам может понадобиться отозвать клиентский сертификат, чтобы предотвратить дальнейший доступ к серверу OpenVPN.</p>
+
+<p>Для этого перейдите в каталог EasyRSA на компьютере CA:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd EasyRSA-<span class="highlight">3.0.4</span>/
+</li></ul></code></pre>
+<p>Затем запустите скрипт <code>easyrsa</code> с опцией <code>revoke</code>, а затем укажите имя клиента, у которого хотите отозвать сертификат:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa revoke <span class="highlight">client2</span>
+</li></ul></code></pre>
+<p>Система предложит вам подтвердить отзыв сертификата. Введите <code>yes</code>:</p>
+<pre class="code-pre  second-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Please confirm you wish to revoke the certificate with the following subject:
+
+subject=
+    commonName                = client2
+
+
+Type the word 'yes' to continue, or any other input to abort.
+  Continue with revocation: <span class="highlight">yes</span>
+</code></pre>
+<p>После подтверждения действия CA полностью отзовет сертификат клиента. Однако в текущий момент ваш сервер OpenVPN не может проверить, отозваны ли сертификаты каких-либо клиентов, и все клиенты будут иметь доступ к сети VPN. Чтобы устранить эту проблему, нужно создать на компьютере CA список отзыва сертификатов (CRL):</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./easyrsa gen-crl
+</li></ul></code></pre>
+<p>Эта команда генерирует файл <code>crl.pem</code>. Выполните защищенное перемещение этого файла на ваш сервер OpenVPN:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">scp ~/EasyRSA-<span class="highlight">3.0.4</span>/pki/crl.pem <span class="highlight">sammy</span>@<span class="highlight">your_server_ip</span>:/tmp
+</li></ul></code></pre>
+<p>На сервере OpenVPN скопируйте этот файл в каталог <code>/etc/openvpn/</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /tmp/crl.pem /etc/openvpn
+</li></ul></code></pre>
+<p>Затем откройте файл конфигурации сервера OpenVPN:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/openvpn/server.conf
+</li></ul></code></pre>
+<p>Добавьте в конце файла опцию <code>crl-verify</code>, чтобы сервер OpenVPN проверял созданный нами список отзыва сертификатов при каждой попытке подключения:</p>
+<div class="code-label " title="/etc/openvpn/server.conf">/etc/openvpn/server.conf</div><pre class="code-pre "><code langs="">crl-verify crl.pem
+</code></pre>
+<p>Сохраните и закройте файл.</p>
+
+<p>Перезапустите OpenVPN, чтобы завершить отзыв сертификата:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart openvpn@server
+</li></ul></code></pre>
+<p>Клиент больше не сможет подключаться к серверу, используя старые учетные данные.</p>
+
+<p>Чтобы запретить доступ другим клиентам, повторите эту процедуру:</p>
+
+<ol>
+<li>Для отзыва сертификата используется команда <code>./easyrsa revoke <span class="highlight">client_name</span></code>.</li>
+<li>Создайте новый список CRL</li>
+<li>Переместите новый файл <code>crl.pem</code> на сервер OpenVPN и скопируйте его в каталог <code>/etc/openvpn</code>, чтобы перезаписать старый список.</li>
+<li>Перезапустите службу OpenVPN.</li>
+</ol>
+
+<p>С помощью этой процедуры вы можете отозвать любые сертификаты, которые ранее выпустили для вашего сервера.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Теперь вы можете безопасно использовать интернет, защитив данные о своей личности и расположении и свой трафик от снуперов и цензоров.</p>
+
+<p>Для настройки других клиентских систем вам нужно будет повторить шаги <strong>4</strong> и <strong>9-11</strong> для каждого дополнительного устройства. Чтобы запретить доступ клиентским системам, следуйте указаниям в шаге <strong>12</strong>.</p>

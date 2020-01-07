@@ -1,0 +1,428 @@
+---
+layout: post
+title: Создание и вывод изображений WebP для ускорения себ-сайта
+network: digitalocean
+date: January 07, 2020 at 07:24PM
+url: https://www.digitalocean.com/community/tutorials/how-to-create-and-serve-webp-images-to-speed-up-your-website-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>Автор выбрал <a href="https://www.brightfunds.org/organizations/apache-software-foundation">фонд Apache Software Foundation</a> для получения пожертвования в рамках программы <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="Введение">Введение</h3>
+
+<p><a href="https://developers.google.com/speed/webp">WebP</a> — открытый формат изображений, разработанный компанией Google в 2010 году на основе видеоформата VP8. С тех пор количество веб-сайтов и мобильных приложений с использованием формата WebP значительно выросло. Как Google Chrome, так и Opera поддерживают оригинальный формат WebP, и поскольку на эти браузеры приходится около 74% всего веб-трафика, пользователи могут получать доступ к веб-сайтам быстрее, если на них используются изображения WebP. Также имеются <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1294490">планы внедрения WebP в Firefox</a>.</p>
+
+<p>Формат WebP поддерживает сжатие изображений как с потерями, так и без потерь, включая анимацию. Его основное преимущество по сравнению с другими форматами изображений, используемыми в сети — гораздо меньший размер файла, что ускоряет загрузку веб-страниц и сокращает использование полосы пропускания. Использование изображений WebP может обеспечивать <a href="https://blog.chromium.org/2014/03/webp-improves-while-rolling-out-across.html">значительное</a> ускорение загрузки страниц. Если приложение или веб-сайт сталкиваются с проблемами производительности или возросшего трафика, то преобразование изображений в этот формат может оптимизировать производительность страниц.</p>
+
+<p>В этом обучающем руководстве вы будете использовать инструмент командной строки <code>cwebp</code> для преобразования изображений в формат WebP, создавая скрипты, которые будут наблюдать за изображениями и преобразовывать их в конкретной директории. Затем вы изучите два способа показывать изображения WebP своим посетителям.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Работа с изображениями WebP не требует конкретного дистрибутива, но мы продемонстрируем, как работать с соответствующим программным обеспечением на Ubuntu 16.04 и CentOS 7. Для прохождения данного обучающего руководства вам потребуется следующее:</p>
+
+<ul>
+<li><p>Сервер, созданный пользователем sudo без прав root. Для настройки сервера <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-16-04">Ubuntu 16.04 следуйте нашему руководству по начальной настройке сервера Ubuntu 16.04</a>. Если вы хотите использовать CentOS, то можете настроить сервер CentOS 7 при помощи нашего <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-centos-7">«Обучающего руководства по начальной настройке сервера CentOS 7»</a>.</p></li>
+<li><p>Apache, установленный на сервере. Если вы используете Ubuntu, то можете следовать первому <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-on-ubuntu-16-04">шагу руководства «Установка стека Linux, Apache, MySQL, PHP (LAMP) на Ubuntu 16.04»</a>. Если вы используете CentOS, следуйте первому шагу <a href="https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mysql-php-lamp-stack-on-centos-7">«Установка стека Linux, Apache, MySQL, PHP (LAMP) на CentOS 7»</a>. Обязательно измените настройки брандмауэра для разрешения трафика HTTP и HTTPS.</p></li>
+<li><p><code>mod_rewrite,</code> установленный на сервере. Если вы используете Ubuntu, то можете следовать нашему руководству <a href="https://www.digitalocean.com/community/tutorials/how-to-rewrite-urls-with-mod_rewrite-for-apache-on-ubuntu-16-04">«Как переписывать URL-адреса при помощи mod_rewrite для Apache на Ubuntu 16.04»</a>. По умолчанию <code>mod_rewrite</code> установлен и активирован на CentOS 7.</p></li>
+</ul>
+
+<h2 id="Шаг-1 —-Установка-cwebp-и-подготовка-директории-изображений">Шаг 1 — Установка cwebp и подготовка директории изображений</h2>
+
+<p>В этом разделе мы установим программное обеспечение для преобразования изображений и создания директории с изображениями в качестве средства тестирования.</p>
+
+<p>На Ubuntu 16.04 можно установить <code>cwebp (это утилита, которая позволяет сжимать изображения в формат .webp),</code>&ldquo; введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get update
+</li><li class="line" prefix="$">sudo apt-get install webp
+</li></ul></code></pre>
+<p>В CentOS 7 введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install libwebp-tools
+</li></ul></code></pre>
+<p>Для создания новой директории изображений, которая называется <code>webp</code>, в корневой директории Apache (находится по умолчанию в <code>/var/www/html)</code>, введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /var/www/html/webp
+</li></ul></code></pre>
+<p>Дайте права на данную директорию вашему пользователю <strong>sammy без прав root</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown <span class="highlight">sammy</span>: /var/www/html/webp
+</li></ul></code></pre>
+<p>Для тестирования команд можно скачать бесплатные изображения JPEG и PNG, используя <code>wget</code>. Этот инструмент установлен по умолчанию в Ubuntu 16.04; если вы используете CentOS 7, можно установить его, введя следующее:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install wget
+</li></ul></code></pre>
+<p>Затем загрузите тестовые изображения, используя следующие команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget -c "https://upload.wikimedia.org/wikipedia/commons/2/24/Junonia_orithya-Thekkady-2016-12-03-001.jpg?download" -O /var/www/html/webp/image1.jpg
+</li><li class="line" prefix="$">wget -c "https://upload.wikimedia.org/wikipedia/commons/5/54/Mycalesis_junonia-Thekkady.jpg" -O /var/www/html/webp/image2.jpg
+</li><li class="line" prefix="$">wget -c "https://cdn.pixabay.com/photo/2017/07/18/15/39/dental-care-2516133_640.png" -O /var/www/html/webp/logo.png
+</li></ul></code></pre>
+<p><span class='note'><strong>Примечание.</strong> Эти изображения доступны для использования и распространения по лицензиям Creative Commons <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.en">Attribution-ShareAlike</a> и <a href="https://creativecommons.org/publicdomain/zero/1.0/">Public Domain Dedication</a>.<br></span></p>
+
+<p>Основная часть вашей работы на следующем шаге будет находиться в директории <code>/var/www/html/webp</code>, в которую можно перейти, введя:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /var/www/html/webp
+</li></ul></code></pre>
+<p>С имеющимися тестовыми изображениями, при помощи веб-сервера Apache, модуля <code>mod_rewrite</code> и утилиты <code>cwebp</code> вы готовы начинать преобразование изображений.</p>
+
+<h2 id="Шаг-2 —-Сжатие-файлов-изображений-с-помощью-cwebp">Шаг 2 — Сжатие файлов изображений с помощью cwebp</h2>
+
+<p>Показ изображений <code>.webp</code> посетителям сайта требует версий <code>.webp</code> файлов изображений. На этом шаге вы преобразуете изображения JPEG и PNG в формат <code>.webp</code>, используя <code>cwebp</code>. <strong>Общий</strong> синтаксис команды выглядит следующим образом:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cwebp image.jpg -o image.webp
+</li></ul></code></pre>
+<p>Параметр <code>-o</code> указывает путь к файлу WebP.</p>
+
+<p>Поскольку вы все еще находитесь в директории <code>/var/www/html/webp</code>, можно запустить следующую команду для преобразования изображений <code>image1.jpg</code> в <code>image1.webp</code> и <code>image2.jpg​​​</code> в <code>​​​image2.webp​​​​</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cwebp -q 100 image1.jpg -o image1.webp
+</li><li class="line" prefix="$">cwebp -q 100 image2.jpg -o image2.webp
+</li></ul></code></pre>
+<p>Если установить параметр качества <code>-q</code> равным 100, сохраняется 100% качества изображения; если он не указан, значение по умолчанию составляет 75.</p>
+
+<p>Затем проверьте размер изображений JPEG и WebP, используя команду <code>ls</code>. Параметр <code>-l</code> показывает длинный формат списка, который включает размер файла, а параметр <code>-h</code> обеспечивает, что <code>ls</code> выводит на печать изображения читаемых размеров:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -lh image1.jpg image1.webp image2.jpg image2.webp
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>-rw-r--r-- 1 sammy sammy 7.4M Oct 28 23:36 image1.jpg
+-rw-r--r-- 1 sammy sammy 3.9M Feb 18 16:46 <span class="highlight">image1.webp</span>
+-rw-r--r-- 1 sammy sammy  16M Dec 18  2016 image2.jpg
+-rw-r--r-- 1 sammy sammy 7.0M Feb 18 16:59 <span class="highlight">image2.webp</span>
+</code></pre>
+<p>Данные, выводимые командой <code>ls</code>, показывают, что размер <code>image1.jpg</code> составляет 7,4 Mбайт, а размер <code>image1.webp</code> — 3,9 Mбайт. То же самое относится к изображениям <code>image2.jpg​​​​​​</code> (16 Mбайт) и <code>image2.webp</code> (7 Mбайт). Эти файлы почти в два раза меньше первоначального размера!</p>
+
+<p>Для сохранения полных исходных данных этих изображений при сжатии можно использовать параметр <code>-lossless</code> вместо параметра <code>-q</code>. Это наилучший вариант сохранения качества изображений PNG. Для преобразования загруженного изображения PNG из шага 1 введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cwebp -lossless logo.png -o logo.webp
+</li></ul></code></pre>
+<p>Следующая команда показывает, что размер изображения WebP без потерь (60 Кбайт) примерно в два раза меньше размера первоначального изображения PNG (116 Кбайт):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -lh logo.png logo.webp
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>-rw-r--r-- 1 sammy sammy 116K Jul 18  2017 logo.png
+-rw-r--r-- 1 sammy sammy  60K Feb 18 16:42 <span class="highlight">logo.webp</span>
+</code></pre>
+<p>Преобразованные изображения WebP в директории <code>/var/www/html/webp</code> на 50% меньше исходных JPEG и PNG. На практике степени сжатия могут отличаться в зависимости от определенных факторов: уровень сжатия исходного изображения, формат файла, тип преобразования (с потерями или без потерь), процент качества и операционная система. При преобразовании большего числа изображений можно видеть изменения коэффициентов преобразования, связанные с этими факторами.</p>
+
+<h2 id="Шаг-3 —-Преобразование-изображений-jpeg-и-png-в-директории">Шаг 3 — Преобразование изображений JPEG и PNG в директории</h2>
+
+<p>Написание скрипта упрощает процесс преобразования, т.к. устраняет ручное преобразование. Теперь напишем скрипт преобразования, который находит файлы JPEG и преобразовывает их в формат WebP с 90% качеством, а также преобразовывает файлы PNG в изображения WebP без потерь.</p>
+
+<p>Используя <code>nano</code> или предпочитаемый вами редактор, создайте скрипт <code>webp-convert.sh</code> в домашней директории вашего пользователя:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/webp-convert.sh
+</li></ul></code></pre>
+<p>Первая строка скрипта будет выглядеть следующим образом:</p>
+<div class="code-label " title="~/webp-convert.sh">~/webp-convert.sh</div><pre class="code-pre "><code class="code-highlight language-bash">find $1 -type f -and \( -iname "*.jpg" -o -iname "*.jpeg" \)
+</code></pre>
+<p>Эта строка включает следующие компоненты:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-use-find-and-locate-to-search-for-files-on-a-linux-vps"><code>find</code></a>: Эта команда будет искать файлы в конкретной директории.</li>
+<li><code>$1</code>: этот позиционный параметр указывает путь к директории изображений, взятый из командной строки. В конечном счете, он делает местоположение директории менее зависимым от местоположения скрипта.</li>
+<li><code>-type f</code>: данный параметр указывает команде <code>find</code> искать только обычные файлы.</li>
+<li><code>-iname</code>: данный тест соспоставляет имена файлов по заданной схеме. Нечувствительный к регистру тест <code>-iname</code> указывает команде <code>find</code> искать любое имя файла, заканчивающееся на <code>.jpg</code> (<code>*.jpg</code>) или <code>.jpeg</code> (<code>*.jpeg</code>).</li>
+<li><code>-o:</code> этот логический оператор указывает команде <code>find</code> вывести файлы, соответствующие первому тесту <code>-iname</code> (<code>-iname "*.jpg"</code>) *<em>или *</em>второму (<code>iname "*.jpeg"</code>).</li>
+<li><code>():</code> скобки вокруг этих тестов, вместе с оператором <code>-and,</code> обеспечивают, что первый тест (т.е. <code>-type f</code>) всегда выполняется.</li>
+</ul>
+
+<p>Вторая строка скрипта будет преобразовывать изображения в формат WebP, используя параметр <code>-exec.</code> Общий синтаксис этого параметра — <code>-exec command {} \;​​</code>. Строка <code>{}</code> заменяется каждым файлом, который обрабатывает команда, а символ <code>;</code> указывает команде <code>find</code>, где заканчивается команда:</p>
+<div class="code-label " title="~/webp-convert.sh">~/webp-convert.sh</div><pre class="code-pre "><code class="code-highlight language-bash">find $1 -type f -and \( -iname "*.jpg" -o -iname "*.jpeg" \) \
+-exec bash -c 'commands' {} \;
+</code></pre>
+<p>В данном случае для параметра <code>-exec</code> потребуется несколько команд для поиска и преобразования изображений:</p>
+
+<ul>
+<li><code>bash</code>: эта команда будет выполнять небольшой скрипт, создающий версию <code>.webp</code> файла, если она отсутствует. Этот скрипт будет передаваться в <code>bash</code> как строка благодаря опции <code>-c</code>.</li>
+<li><code>'commands'</code>: этот заполнитель — скрипт, который будет создавать версии <code>.webp</code> ваших файлов.</li>
+</ul>
+
+<p>Скрипт в <code>'commands'</code> будет выполнять следующие функции:</p>
+
+<ul>
+<li>Создавать переменную <code>webp_path</code>.</li>
+<li>Проверять наличие версии <code>.webp</code> файла.</li>
+<li>Создавать файл, если он отсутствует.</li>
+</ul>
+
+<p>Малый скрипт выглядит следующим образом:</p>
+<div class="code-label " title="~/webp-convert.sh">~/webp-convert.sh</div><pre class="code-pre "><code langs="">...
+webp_path=$(sed 's/\.[^.]*$/.webp/' &lt;&lt;&lt; "$0");
+if [ ! -f "$webp_path" ]; then
+  cwebp -quiet -q 90 "$0" -o "$webp_path";
+fi;
+</code></pre>
+<p>Элементы этого малого скрипта включают в себя следующее:</p>
+
+<ul>
+<li><code>webp_path</code>: эта переменная будет создана с помощью <a href="https://www.digitalocean.com/community/tutorials/the-basics-of-using-the-sed-stream-editor-to-manipulate-text-in-linux"><code>sed</code></a> и соответствующего имени файла из команды <code>bash,</code> обозначенного по позиционному параметру <code>$0</code>. here <em>string</em> (<code>&lt;&lt;&lt;</code>) будет передавать это имя в <code>sed</code>.</li>
+<li><code>if [ ! -f "$webp_path" ]</code>: данный тест будет определять наличие файла под названием <code>"$webp_path"</code>, используя логический оператор <code>not</code> (<code>!).</code></li>
+<li><code>cwebp</code>: эта команда будет создавать файл, если он отсутствует, используя параметр <code>-q</code>, чтобы не выводить результат.</li>
+</ul>
+
+<p>С этим малым скриптом вместо заполнителя <code>'commands'</code>, полный скрипт преобразования изображений JPEG теперь будет выглядеть следующим образом:</p>
+<div class="code-label " title="~/webp-convert.sh">~/webp-convert.sh</div><pre class="code-pre "><code class="code-highlight language-bash"># converting JPEG images
+find $1 -type f -and \( -iname "*.jpg" -o -iname "*.jpeg" \) \
+-exec bash -c '
+webp_path=$(sed 's/\.[^.]*$/.webp/' &lt;&lt;&lt; "$0");
+if [ ! -f "$webp_path" ]; then
+  cwebp -quiet -q 90 "$0" -o "$webp_path";
+fi;' {} \;
+</code></pre>
+<p>Для преобразования изображений PNG в WebP мы будем использовать тот же подход, с двумя отличиями: Во-первых, шаблон <code>-iname</code> в команде <code>find</code> будет <code>"*.png"</code>. Во-вторых, команда преобразования будет использовать параметр <code>-lossless</code> вместо параметра качества <code>-q</code>.</p>
+
+<p>Завершенный скрипт выглядит следующим образом:</p>
+<div class="code-label " title="~/webp-convert.sh">~/webp-convert.sh</div><pre class="code-pre "><code class="code-highlight language-bash">#!/bin/bash
+
+# converting JPEG images
+find $1 -type f -and \( -iname "*.jpg" -o -iname "*.jpeg" \) \
+-exec bash -c '
+webp_path=$(sed 's/\.[^.]*$/.webp/' &lt;&lt;&lt; "$0");
+if [ ! -f "$webp_path" ]; then
+  cwebp -quiet -q 90 "$0" -o "$webp_path";
+fi;' {} \;
+
+# converting PNG images
+find $1 -type f -and -iname "*.png" \
+-exec bash -c '
+webp_path=$(sed 's/\.[^.]*$/.webp/' &lt;&lt;&lt; "$0");
+if [ ! -f "$webp_path" ]; then
+  cwebp -quiet -lossless "$0" -o "$webp_path";
+fi;' {} \;
+</code></pre>
+<p>Сохраните файл и выйдите из редактора.</p>
+
+<p>Затем проверим скрипт <code>webp-convert.sh</code> на практике, используя файлы в директории <code>/var/www/html/webp</code>. Убедитесь, что файл скрипта является исполняемым, запустив следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod a+x ~/webp-convert.sh
+</li></ul></code></pre>
+<p>Запустите скрипт в директории изображений:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./webp-convert.sh /var/www/html/webp
+</li></ul></code></pre>
+<p>Ничего не произошло! Это потому, что мы уже преобразовали эти изображения на шаге 2. Далее скрипт <code>webp-convert</code> будет преобразовывать изображения при добавлении нами новых файлов или удалении версий <code>.webp</code>. Чтобы увидеть, как это работает, удалите файлы <code>.webp</code>, созданные нами на шаге 2:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rm /var/www/html/webp/*.webp
+</li></ul></code></pre>
+<p>Удалив все изображения <code>.webp</code>, снова выполните скрипт, чтобы убедиться, что он работает:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./webp-convert.sh /var/www/html/webp
+</li></ul></code></pre>
+<p>Команда <code>ls</code> подтвердит, что скрипт успешно преобразовал изображения:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ls -lh /var/www/html/webp
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>-rw-r--r-- 1 sammy sammy 7.4M Oct 28 23:36 image1.jpg
+-rw-r--r-- 1 sammy sammy 3.9M Feb 18 16:46 <span class="highlight">image1.webp</span>
+-rw-r--r-- 1 sammy sammy  16M Dec 18  2016 image2.jpg
+-rw-r--r-- 1 sammy sammy 7.0M Feb 18 16:59 <span class="highlight">image2.webp</span>
+-rw-r--r-- 1 sammy sammy 116K Jul 18  2017 logo.png
+-rw-r--r-- 1 sammy sammy  60K Feb 18 16:42 <span class="highlight">logo.webp</span>
+</code></pre>
+<p>Скрипт на этом шаге — основа использования изображений WebP на вашем сайте, поскольку вам потребуется рабочая версия всех изображений в формате WebP для показа посетителям. На следующем шаге рассмотрим автоматизацию преобразования новых изображений.</p>
+
+<h2 id="Шаг-4 —-Просмотр-файлов-изображений-в-директории">Шаг 4 — Просмотр файлов изображений в директории</h2>
+
+<p>На этом шаге мы создадим новый скрипт для просмотра изменений в директории изображений и автоматического преобразования вновь созданных изображений.</p>
+
+<p>Создание скрипта, который следит за нашей директорией изображений, может решить некоторые проблемы со скриптом <code>webp-convert.sh</code> в ходе его написания. Например, данный скрипт не будет идентифицировать, переименовали ли мы изображение. Предположим, у нас есть изображение <code>foo.jpg</code>, мы выполняем <code>webp-convert.sh</code>, переименовываем этот файл в <code>bar.jpg</code>, а затем снова выполняем <code>webp-convert.sh</code> — теперь у нас есть идентичные файлы <code>.webp</code> (<code>foo.webp</code> и <code>bar.webp</code>). Для решения этой проблемы, и чтобы не выполнять скрипт вручную, добавим <em>watchers</em> в другой скрипт. Наблюдатели (watchers) наблюдают за конкретными файлами или директориями и запускают команды в ответ на эти изменения.</p>
+
+<p>Команда <code>inotifywait</code> будет настраивать наблюдатели (watchers) в нашем скрипте. Эта команда является частью <code>inotify-tools</code> — пакета инструментов командной строки, который обеспечивает простой интерфейс подсистемы ядра inotify. Чтобы установить его на Ubuntu 16.04, введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install inotify-tools
+</li></ul></code></pre>
+<p>В CentOS 7 пакет <code>​​​inotify-tools</code> доступен в хранилище EPEL. Установите хранилище EPEL и пакет <code>​​​inotify-tools</code>, используя следующие команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install epel-release
+</li><li class="line" prefix="$">sudo yum install inotify-tools
+</li></ul></code></pre>
+<p>Далее создайте скрипт <code>webp-watchers.sh</code> в домашней директории вашего пользователя с помощью <code>nano</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/webp-watchers.sh
+</li></ul></code></pre>
+<p>Первая строка скрипта будет выглядеть следующим образом:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code class="code-highlight language-bash">inotifywait -q -m -r --format '%e %w%f' -e close_write -e moved_from -e moved_to -e delete $1
+</code></pre>
+<p>Эта строка включает следующие элементы:</p>
+
+<ul>
+<li><code>inotifywait</code>: эта команда следит за изменениями в определенной директории.</li>
+<li><code>-q</code>: данный параметр будет указывать команде <code>inotifywait</code> ограничивать свою активность и не генерировать много результатов.</li>
+<li><code>-m</code>: данный параметр будет указывать команде <code>inotifywait</code> работать без ограничения времени и не совершать выход после получения одного события.</li>
+<li><code>-r</code>: данный параметр будет настраивать наблюдатели рекурсивно, наблюдая за заданной директорией и всеми ее поддиректориями.</li>
+<li><code>--format</code>: данный параметр указывает команде <code>inotifywait</code> следить за изменениями с помощью имени события и следующего за ним пути файла. События, за которыми мы хотим наблюдать: <code>close_write</code> (инициируется, когда файл создается и полностью записывается на диск), <code>moved_from</code> и <code>moved_to</code> (инициируется, когда файл перемещается) и <code>delete</code> (инициируется, когда файл удаляется).</li>
+<li><code>$1</code>: этот параметр позиционирования хранит путь измененных файлов.</li>
+</ul>
+
+<p>Далее добавим команду <code>grep</code>, чтобы установить, являются ли наши файлы изображениями JPEG или PNG. Параметр <code>-i</code> будет указывать команде <code>grep</code> игнорировать регистр, <code>-E</code> будет указывать, что <code>grep</code> должна использовать расширенные регулярные выражения, а <code>--line-buffered</code> будет указывать <code>grep</code> передавать совпавшие строки в цикл <code>while</code>:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code class="code-highlight language-bash">inotifywait -q -m -r --format '%e %w%f' -e close_write -e moved_from -e moved_to -e delete $1 | grep -i -E '\.(jpe?g|png)$' --line-buffered
+</code></pre>
+<p>Далее создадим цикл <code>while</code> с командой <code>read</code>. <code>read</code> будет обрабатывать событие, которое обнаружила команда <code>inotifywait</code>, и присваивать его переменной <code>$operation</code>, а путь обработанного файла — переменной <code>$path</code>:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code class="code-highlight language-bash">...
+| while read operation path; do
+  # commands
+done;
+</code></pre>
+<p>Объединим этот цикл с остальным скриптом:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code class="code-highlight language-bash">inotifywait -q -m -r --format '%e %w%f' -e close_write -e moved_from -e moved_to -e delete $1 \
+| grep -i -E '\.(jpe?g|png)$' --line-buffered \
+| while read operation path; do
+  # commands
+done;
+</code></pre>
+<p>После того, как цикл <code>while</code> проверил событие, команды внутри цикла будут совершать следующие действия, в зависимости от результата:</p>
+
+<ul>
+<li>Создайте новый файл WebP, если новый файл ​​изображения был создан или перенесен в целевую директорию.</li>
+<li>Удалите файл WebP, если соответствующий файл изображения был удален или перенесен из целевой директории.​​</li>
+</ul>
+
+<p>Внутри цикла есть три основных раздела. Переменная <code>webp_path</code> будет хранить путь к версии <code>.webp</code> рассматриваемого изображения:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code class="code-highlight language-bash">...
+webp_path="$(sed 's/\.[^.]*$/.webp/' &lt;&lt;&lt; "$path")";
+</code></pre>
+<p>Далее скрипт проверит, какое событие произошло:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code langs="">...
+if [ $operation = "MOVED_FROM" ] || [ $operation = "DELETE" ]; then
+  # commands to be executed if the file is moved or deleted
+elif [ $operation = "CLOSE_WRITE,CLOSE" ] || [ $operation = "MOVED_TO" ]; then
+  # commands to be executed if a new file is created
+fi;
+</code></pre>
+<p>Если файл был перенесен или удален, скрипт будет проверять наличие версии <code>.webp</code>. Если она существует, скрипт будет удалять ее с помощью <code>rm</code>:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code langs="">...
+if [ -f "$webp_path" ]; then
+  $(rm -f "$webp_path");
+fi;
+</code></pre>
+<p>Для вновь созданных файлов сжатие будет осуществляться следующим образом:</p>
+
+<ul>
+<li>Если соответствующий файл будет изображением PNG, скрипт будет использовать сжатие без потерь.</li>
+<li>В противном случае скрипт будет использовать сжатие с потерями с помощью параметра <code>-quality</code>.</li>
+</ul>
+
+<p>Добавим команды <code>cwebp</code>, которые будут выполнять эти действия, в скрипт:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code class="code-highlight language-bash">...
+if [ $(grep -i '\.png$' &lt;&lt;&lt; "$path") ]; then
+  $(cwebp -quiet -lossless "$path" -o "$webp_path");
+else
+  $(cwebp -quiet -q 90 "$path" -o "$webp_path");
+fi;
+</code></pre>
+<p>Целиком файл <code>webp-watchers.sh</code> будет выглядеть следующим образом:</p>
+<div class="code-label " title="~/webp-watchers.sh">~/webp-watchers.sh</div><pre class="code-pre "><code class="code-highlight language-bash">#!/bin/bash
+echo "Setting up watches.";
+
+# watch for any created, moved, or deleted image files
+inotifywait -q -m -r --format '%e %w%f' -e close_write -e moved_from -e moved_to -e delete $1 \
+| grep -i -E '\.(jpe?g|png)$' --line-buffered \
+| while read operation path; do
+  webp_path="$(sed 's/\.[^.]*$/.webp/' &lt;&lt;&lt; "$path")";
+  if [ $operation = "MOVED_FROM" ] || [ $operation = "DELETE" ]; then # if the file is moved or deleted
+    if [ -f "$webp_path" ]; then
+      $(rm -f "$webp_path");
+    fi;
+  elif [ $operation = "CLOSE_WRITE,CLOSE" ] || [ $operation = "MOVED_TO" ]; then  # if new file is created
+     if [ $(grep -i '\.png$' &lt;&lt;&lt; "$path") ]; then
+       $(cwebp -quiet -lossless "$path" -o "$webp_path");
+     else
+       $(cwebp -quiet -q 90 "$path" -o "$webp_path");
+     fi;
+  fi;
+done;
+</code></pre>
+<p>Сохраните и закройте файл. Не забудьте сделать его исполняемым:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod a+x ~/webp-watchers.sh
+</li></ul></code></pre>
+<p>Выполним этот скрипт в директории <code>/var/www/html/webp</code> в фоновом режиме, используя <code>&amp;</code>. Также перенаправим стандартный результат и стандартную ошибку в <code>~/output.log</code>, чтобы хранить результат в легкодоступном месте:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./webp-watchers.sh /var/www/html/webp &gt; output.log 2&gt;&amp;1 &amp;
+</li></ul></code></pre>
+<p>На данный момент вы преобразовали файлы JPEG и PNG в директории <code>/var/www/html/webp</code> в формат WebP, а также настроили наблюдатели для выполнения этих действий с помощью скрипта <code>webp-watchers.sh</code>. Теперь пора изучить варианты показа изображений WebP посетителям вашего веб-сайта.</p>
+
+<h2 id="Шаг-5 —-Показ-изображений-webp-посетителям-сайта-с-помощью-элементов-html">Шаг 5 — Показ изображений WebP посетителям сайта с помощью элементов HTML</h2>
+
+<p>На этом шаге мы расскажем, как показывать изображения WebP с элементами HTML. На данный момент в директории <code>/var/www/html/webp</code> должны быть версии <code>.webp</code> каждого тестового изображения JPEG и PNG . Теперь мы можем показывать их в поддерживаемых браузерах с помощью элементов HTML5 (<code>&lt;picture&gt;</code>) или модуля <code>mod_rewrite</code> Apache. На этом шаге мы используем элементы HTML.</p>
+
+<p>Элемент <code>&lt;picture&gt;</code> позволяет включить изображения напрямую в веб-страницы и задать несколько источников изображений. Если браузер поддерживает формат WebP, он будет загружать версию файла <code>.webp</code> вместо оригинального, что приведет к более быстрой загрузке веб-страниц. Следует отметить, что элемент <code>&lt;picture&gt;</code> широко поддерживается в современных браузерах, поддерживающих формат WebP.</p>
+
+<p>Элемент <code>&lt;picture&gt;</code> представляет собой контейнер с элементами <code>&lt;source&gt;</code> и <code>&lt;img&gt;</code>, указывающими на конкретные файлы. Если мы используем элемент <code>&lt;source&gt;</code> для указания на изображение <code>.webp</code>, браузер сможет его обработать. В противном случае браузер будет использовать файл изображения, заданный с помощью атрибута <code>src</code> в элементе <code>&lt;img&gt;</code>.</p>
+
+<p>Мы будем использовать файл <code>logo.png</code> из директории <code>/var/www/html/webp</code>, который мы преобразовали в <code>logo.webp</code>, например с помощью элемента <code>&lt;source&gt;</code>. Мы можем использовать следующий код HTML для показа <code>logo.webp</code> в любом браузере, поддерживающем формат WebP, и <code>logo.png</code> в любом браузере, не поддерживающем WebP или элемент <code>&lt;picture&gt;</code>.</p>
+
+<p><code>Создайте файл HTML в /var/www/html/webp/picture.html</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/html/webp/picture.html
+</li></ul></code></pre>
+<p>Добавьте в веб-страницу следующий код для показа <code>logo.webp</code> в поддерживающих браузерах с помощью элемента <code>&lt;picture&gt;</code>:</p>
+<div class="code-label " title="/var/www/html/webp/picture.html">/var/www/html/webp/picture.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;picture&gt;
+  &lt;source srcset="logo.webp" type="image/webp"&gt;
+  &lt;img src="logo.png" alt="Site Logo"&gt;
+&lt;/picture&gt;
+</code></pre>
+<p>Сохраните и закройте файл.</p>
+
+<p>Чтобы убедиться, что все работает, перейдите в каталог <code>http://<span class="highlight">your_server_ip</span>/webp/picture.html</code>. Вы должны увидеть тестовое изображение PNG.</p>
+
+<p>Теперь, когда вы знаете, как показывать изображения <code>.webp</code> напрямую из кода HTML, давайте посмотрим, как автоматизировать этот процесс с помощью модуля <code>mod_rewrite</code> Apache.</p>
+
+<h2 id="Шаг-6 —-Показ-изображений-webp-с-помощью-mod_rewrite">Шаг 6 — Показ изображений WebP с помощью mod_rewrite</h2>
+
+<p>Если мы хотим оптимизировать скорость нашего сайта, но у нас очень много страниц или слишком мало времени для редактирования HTML, то модуль <code>mod_rewrite</code> Apache поможет нам автоматизировать процесс показа изображений <code>.webp</code> в поддерживаемых браузерах.</p>
+
+<p>Во-первых, создайте файл <code>.htaccess</code> в директории <code>/var/www/html/webp</code> с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/html/webp/.htaccess
+</li></ul></code></pre>
+<p>Директива <code>ifModule</code> проверит, доступен ли if <code>mod_rewrite</code>; если доступен, то он может быть активирован при помощи <code>RewriteEngine On</code>. Добавьте эти директивы в <code>.htaccess:</code></p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">&lt;ifModule mod_rewrite.c&gt;
+  RewriteEngine On
+  # further directives
+&lt;/IfModule&gt;
+</code></pre>
+<p>Веб-сервер сделает несколько проверок, чтобы установить, когда показывать изображения <code>.webp</code> пользователю. Когда браузер делает запрос, он включает в запрос заголовок, чтобы указать серверу, что именно браузер способен обрабатывать. В случае с WebP браузер будет направлять заголовок <code>Accept</code>, содержащий <code>image/webp</code>. Мы проверим, отправляет ли браузер этот заголовок с помощью <code>RewriteCond,</code> указывающего критерии, которые должны быть сопоставлены для выполнения правила <code>RewriteRule</code>:</p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">...
+RewriteCond %{HTTP_ACCEPT} image/webp
+</code></pre>
+<p>Необходимо отфильтровать все, кроме изображений JPEG и PNG. Снова используя <code>RewriteCond</code>, добавьте регулярное выражение (аналогично тому, что мы использовали в предыдущих разделах), чтобы сравнить запрошенную версию URI:</p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">...
+RewriteCond %{REQUEST_URI}  (?i)(.*)(\.jpe?g|\.png)$
+</code></pre>
+<p>Модификатор <code>(?i)</code> сделает сравнение нечувствительным к регистру.</p>
+
+<p>Чтобы проверить наличие версии <code>.webp</code> файла, используйте <code>RewriteCond</code> еще раз следующим образом:</p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">...
+RewriteCond %{DOCUMENT_ROOT}%1.webp -f
+</code></pre>
+<p>Наконец, если все предыдущие условия выполнены, <code>RewriteRule</code> перенаправляет запрошенный файл JPEG или PNG в соответствующий файл WebP. Обратите внимание, что это перенаправление <em>redirect</em> происходит при помощи флага <code>-R</code>, а не перезаписи <em>rewrite</em> URI-адреса. Разница между перезаписью и перенаправлением — в том, что сервер будет направлять перезаписанный URI-адрес, не сообщая об этом браузеру. Например, URI-адрес покажет, что расширение файла — <code>.png,</code> но на самом деле это будет файл <code>.webp</code>. Добавьте <code>RewriteRule</code> в файл:</p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">...
+RewriteRule (?i)(.*)(\.jpe?g|\.png)$ %1\.webp [L,T=image/webp,R]
+</code></pre>
+<p>На данный момент раздел <code>mod_rewrite</code> в файле <code>.htaccess</code> завершен. Но что произойдет, если между вашим сервером и клиентом будет промежуточный сервер кэширования? Он может показать неправильную версию конечному пользователю. Именно поэтому стоит проверить, активирован ли модуль <code>mod_headers</code>, чтобы отправить заголовок <code>Vary:Accept</code>. Заголовок <code>Vary</code> указывает серверам кэширования (например, прокси-серверам), что тип содержания документа варьируется в зависимости от возможностей браузера, запрашивающего документ. Кроме того, ответ будет сгенерирован на основе заголовка <code>Accept</code> в запросе. Запрос с другим заголовком <code>Accept</code> может получить другой ответ. Данный заголовок важен, поскольку не позволяет показывать кэшированные изображения WebP в неподдерживаемых браузерах:</p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">...
+&lt;IfModule mod_headers.c&gt;
+  Header append Vary Accept env=REDIRECT_accept
+&lt;/IfModule&gt;
+</code></pre>
+<p>Наконец, задайте тип MIME изображений <code>.webp</code> как <code>image/webp</code> в конце файла <code>.htaccess</code>, используя директиву <code>AddType</code>. Благодаря этому, изображения будут показаны с правильным типом MIME:</p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">...
+AddType image/webp .webp
+</code></pre>
+<p>Это последняя версия нашего файла <code>.htaccess</code>:</p>
+<div class="code-label " title="/var/www/html/webp/.htaccess">/var/www/html/webp/.htaccess</div><pre class="code-pre "><code class="code-highlight language-apache">&lt;ifModule mod_rewrite.c&gt;
+  RewriteEngine On
+  RewriteCond %{HTTP_ACCEPT} image/webp
+  RewriteCond %{REQUEST_URI}  (?i)(.*)(\.jpe?g|\.png)$
+  RewriteCond %{DOCUMENT_ROOT}%1.webp -f
+  RewriteRule (?i)(.*)(\.jpe?g|\.png)$ %1\.webp [L,T=image/webp,R]
+&lt;/IfModule&gt;
+
+&lt;IfModule mod_headers.c&gt;
+  Header append Vary Accept env=REDIRECT_accept
+&lt;/IfModule&gt;
+
+AddType image/webp .webp
+</code></pre>
+<p><span class='note'><strong>Примечание.</strong> Можно объединить этот файл <code>.htaccess</code> с другим файлом <code>.htaccess</code> (при наличии). Если вы используете, например, WordPress, то следует скопировать этот файл <code>.htaccess</code> и вставить его в <strong>верхней</strong> части существующего файла.<br></span></p>
+
+<p>Давайте на практике сделаем то, что мы изучили на этом шаге. Если вы следовали указаниям в предыдущих шагах, то у вас должны быть изображения <code>logo.png</code> и <code>logo.webp</code> в <code>/var/www/html/webp</code>. Мы используем простой элемент <code>&lt;img&gt;</code>, чтобы добавить изображение <code>logo.png</code> на нашу веб-страницу. Создайте новый файл HTML для проверки конфигурации:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/html/webp/img.html
+</li></ul></code></pre>
+<p>Введите следующий код HTML в файл:</p>
+<div class="code-label " title="/var/www/html/webp/img.html">/var/www/html/webp/img.html</div><pre class="code-pre "><code class="code-highlight language-html">&lt;img src="logo.png" alt="Site Logo"&gt;
+</code></pre>
+<p>Сохраните и закройте файл.</p>
+
+<p>При посещении веб-страницы <code>http://<span class="highlight">your_server_ip</span>/webp/img.html</code> в браузере Chrome вы увидите, что показанное изображение — это версия <code>.webp</code> (попробуйте открыть изображение в новой вкладке). Если вы используете Firefox, то автоматически получите изображение <code>.png</code>.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем руководстве мы изучили основные методы работы с изображениями WebP. Мы рассказали, как использовать <code>cwebp</code> для преобразования файлов, а также два варианта показа этих изображений пользователям: элемент HTML5 <code>&lt;picture&gt;</code> и модуль Apache <code>mod_rewrite</code>.</p>
+
+<p>Чтобы настроить скрипты из данного обучающего руководства, можно обратиться к следующим ресурсам:</p>
+
+<ul>
+<li>Характеристики формата WebP и использование инструментов преобразования описаны подробнее в <a href="https://developers.google.com/speed/webp/">документации WebP</a>.</li>
+<li>Дополнительные сведения об использовании <code>элемента</code> см. в <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Element/picture">документации по MDN</a>.</li>
+<li>Чтобы полностью понять, как использовать <code>mod_rewrite</code>, <a href="https://httpd.apache.org/docs/current/mod/mod_rewrite.html">см. документацию</a>.</li>
+</ul>
+
+<p>Использование формата WebP для изображений значительно сокращает размеры файлов. Это позволяет снизить использование полосы пропускания и быстрее загружать страницы, особенно если на вашем веб-сайте много изображений.</p>

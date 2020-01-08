@@ -1,0 +1,93 @@
+---
+layout: post
+title: Introducción a prácticas recomendadas de CI/CD
+network: digitalocean
+date: January 08, 2020 at 09:54PM
+url: https://www.digitalocean.com/community/tutorials/an-introduction-to-ci-cd-best-practices-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p><a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-continuous-integration-delivery-and-deployment">La integración, entrega e implementación continuas</a>, conocidas en conjunto como CI/CD, son una parte integral del desarrollo moderno que pretende reducir los errores durante la integración y la implementación mientras se aumenta la velocidad del proyecto. CI/CD es una filosofía y un conjunto de prácticas a menudo aumentadas por herramientas sólidas que enfatizan las pruebas automatizadas en cada etapa del proceso de software. Al incorporar estas ideas en su práctica, puede reducir el tiempo necesario para integrar los cambios para una versión y probar en profundidad cada cambio antes de pasar a la producción.</p>
+
+<p>La CI/CD tiene muchos beneficios potenciales, pero para una implementación exitosa a menudo se requiere mucho análisis. Sin un método de ensayo y error exhaustivo, definir exactamente la forma de usar las herramientas y los cambios que puede necesitar en sus entornos o procesos puede ser un desafío. Sin embargo, aunque todas las implementaciones son diferentes, ceñirse a las mejores prácticas puede servirle para evitar problemas comunes y lograr mejoras de manera más rápida.</p>
+
+<p>En esta guía, presentaremos algunas pautas básicas sobre cómo implementar y mantener un sistema de CI/CD para satisfacer mejor las necesidades de su organización. Abarcaremos varias prácticas que le servirán para mejorar la efectividad de su servicio de CI/CD. No dude en leer el documento completo o ir directamente a las áreas que le interesen.</p>
+
+<h2 id="procure-que-sus-procesos-sean-rápidos">Procure que sus procesos sean rápidos</h2>
+
+<p>Los procesos de CI/CD ayudan a guiar los cambios a través de ciclos de prueba automatizados, hacia entornos de ensayo y, finalmente, hacia la producción. Cuanto más completos sean sus procesos de prueba, mayor será la garantía de que los cambios no introducirán efectos secundarios imprevistos en su implementación de producción. Sin embargo, dado que cada cambio debe pasar por este proceso, preservar la velocidad y confiabilidad de sus procesos es increíblemente importante para no inhibir la velocidad de desarrollo.</p>
+
+<p>Equilibrar la tensión entre estos dos requisitos puede ser difícil. Hay algunos pasos sencillos que puede seguir para mejorar la velocidad; por ejemplo, ampliar su infraestructura de CI/CD y optimizar las pruebas. Sin embargo, con el paso del tiempo, puede verse obligado a tomar decisiones críticas sobre el valor relativo de las diferentes pruebas y la etapa o el orden en que se ejecutan. A veces, reducir el conjunto de pruebas eliminando las pruebas de bajo valor o con conclusiones indeterminadas es la forma más inteligente de mantener la velocidad requerida por procesos muy utilizados.</p>
+
+<p>Al tomar estas decisiones significativas, asegúrese de entender y documentar las compensaciones que realice. Consulte a miembros del equipo y a partes interesadas para alinear las suposiciones del equipo respecto de lo que se espera del conjunto de pruebas y de cuáles deben ser las áreas de enfoque principales.</p>
+
+<h2 id="aísle-y-proteja-su-entorno-de-ci-cd">Aísle y proteja su entorno de CI/CD</h2>
+
+<p>Desde el punto de vista de la seguridad operativa, su sistema de CI/CD representa una de las infraestructuras que con mayor empeño se deben proteger. Dado que el sistema de CI/CD tiene acceso completo a su base de códigos y credenciales para la implementación en varios entornos, es esencial protegerlo para cuidar los datos internos y garantizar la integridad de su sitio o producto. Debido a su alto valor como objetivo, es importante aislar y bloquear su CI/CD todo lo posible.</p>
+
+<p>Los sistemas de CI/CD deben implementarse en redes internas protegidas, sin exposición a terceros. Se recomienda configurar de VPN u otra tecnología de control de acceso a la red para garantizar que solo los operadores autenticados puedan acceder a su sistema. Según la complejidad de la topología de su red, su sistema de CI/CD puede necesitar acceder a varias redes diferentes para implementar código en diferentes entornos. Si no cuenta con la protección o el aislamiento correspondiente, los atacantes que obtengan acceso a un entorno pueden ser capaces de <em>practicar saltos de un punto a otro</em>, una técnica utilizada para ampliar el acceso aprovechando las reglas de red internas más indulgentes, a fin de obtener acceso a otros entornos a través de los puntos débiles de sus servidores CI/CD.</p>
+
+<p>Las estrategias de aislamiento y seguridad requeridas dependerán en gran medida de la topología e infraestructura de su red y de sus requisitos de administración y desarrollo. El punto importante que se debe tener en cuenta es que sus sistemas de CI/CD son objetivos muy valiosos y, en muchos casos, tienen un amplio grado de acceso a sus otros sistemas esenciales. Blindar todos los accesos externos a los servidores y controlar de forma estricta los tipos de acceso interno permitidos ayudarán a reducir el riesgo de que su sistema de CI/CD se vea comprometido.</p>
+
+<h2 id="haga-que-el-proceso-de-ci-cd-sea-la-única-forma-de-realizar-implementaciones-en-la-producción">Haga que el proceso de CI/CD sea la única forma de realizar implementaciones en la producción</h2>
+
+<p>Parte de lo que hace posible que CI/CD mejore sus prácticas de desarrollo y la calidad de su código es que las herramientas a menudo permiten aplicar las prácticas recomendadas para la prueba y la implementación. La promoción del código a través de sus procesos de CI/CD requiere que cada cambio demuestre que cumple con los estándares y procedimientos codificados de su organización. Las fallas en un proceso de CI/CD se pueden ver de inmediato y detienen el avance de la versión afectada hasta etapas posteriores del ciclo. Este es un mecanismo de control de acceso que protege los entornos más importantes contra códigos no confiables.</p>
+
+<p>Sin embargo, para obtener estas ventajas es necesario ser disciplinado a fin de garantizar que cada cambio en su entorno de producción pase por su proceso. El proceso de CI/CD debería ser el único mecanismo por el cual el código ingresa en el entorno de producción. Esto puede suceder automáticamente al final de las pruebas exitosas con prácticas de implementación continua o mediante una promoción manual de cambios probados aprobados y puestos a disposición por su sistema de CI/CD.</p>
+
+<p>Con frecuencia, los equipos comienzan a utilizar sus procesos para la implementación, pero empiezan a hacer excepciones cuando se producen problemas y hay presión para resolverlos rápidamente. Si bien es necesario resolver problemas como el tiempo de inactividad y otros lo más pronto posible, es importante entender que el sistema de CI/CD es una buena herramienta para garantizar que sus cambios no introduzcan otros errores ni generen aún más daños en el sistema. Poner su solución mediante el proceso (o simplemente usar el sistema de CI/CD para retroceder) también evitará que en la próxima implementación se borre una corrección ad hoc aplicada directamente a la producción. El proceso protege la validez de sus implementaciones, independientemente de si se trata de una versión regular y planificada o una solución rápida para resolver un problema en curso. Este uso del sistema de CI/CD es otra razón más para <a href="#procure-que-sus-procesos-sean-r%C3%A1pidos">procurar que su proceso sea rápido</a>.</p>
+
+<h2 id="mantenga-la-paridad-con-la-producción-siempre-que-sea-posible">Mantenga la paridad con la producción siempre que sea posible</h2>
+
+<p>Los procesos de CI/CD promueven cambios mediante una serie de conjuntos de pruebas y entornos de implementación. Los cambios que superan los requisitos de una etapa se implementan automáticamente o se ponen en cola para su implementación manual en entornos más restrictivos. Las primeras etapas tienen por objeto demostrar que vale la pena seguir probando e impulsando los cambios más cerca de la producción.</p>
+
+<p>En particular para las etapas posteriores, reproducir el entorno de producción de la manera más fidedigna posible en los entornos de pruebas ayuda a garantizar que estas últimas reflejen con precisión el comportamiento que tendría el cambio en la producción. Las diferencias significativas entre la puesta en escena y la producción pueden permitir que se liberen cambios problemáticos que nunca se observaron en las pruebas. Cuantas más diferencias haya entre su entorno activo y el entorno de pruebas, menos medirán sus pruebas el comportamiento que tendrá el código cuando se libere.</p>
+
+<p>Se esperan algunas diferencias entre la puesta en escena y la producción, pero es esencial procurar que sean manejables y asegurarse de que se comprendan bien. Algunas organizaciones utilizan implementaciones <a href="https://www.digitalocean.com/community/tutorials/how-to-use-blue-green-deployments-to-release-software-safely">“blue-green”</a> para intercambiar el tráfico de producción entre dos entornos casi idénticos cuyas designaciones se alternan entre la producción y la puesta en escena. Estrategias menos extremas implican la implementación de la misma configuración e infraestructura desde la producción hasta su entorno de puesta en escena, pero a una escala reducida. Los elementos como los extremos de la red pueden diferir entre sus entornos, pero la parametrización de este tipo de datos variables puede ayudar a garantizar que el código sea coherente y que las diferencias de entorno estén bien definidas.</p>
+
+<h2 id="haga-el-trabajo-de-compilación-solo-una-vez-y-transmita-el-resultado-a-través-del-proceso">Haga el trabajo de compilación solo una vez y transmita el resultado a través del proceso</h2>
+
+<p>Un objetivo principal de un proceso de CI/CD es crear confianza en sus cambios y minimizar la posibilidad de un impacto inesperado. Analizamos la importancia de mantener la paridad entre los ambientes, pero un componente de esto es suficientemente importante como para ameritar atención adicional. Si su software requiere un paso de construcción, empaquetado o agrupación, ese paso se debe ejecutar solo una vez y el resultado obtenido se debe reutilizar a lo largo de todo el proceso.</p>
+
+<p>Esta guía permite prevenir problemas que surgen cuando el software se compila o empaqueta varias veces, lo cual permite que se inyecten ligeras inconsistencias en los artefactos obtenidos. Construir el software por separado en cada nueva etapa puede significar que las pruebas en entornos anteriores no se dirigían al mismo software que se implementará más tarde, lo que invalida los resultados.</p>
+
+<p>Para evitar este problema, los sistemas de CI deberían incluir un proceso de construcción como primer paso en el proceso que crea y empaqueta el software en un entorno limpio. El artefacto obtenido debería someterse a un control de versiones y cargarse en un sistema de almacenamiento de artefactos para retirarse en etapas posteriores del proceso, lo cual garantizará que la construcción no cambie a medida que avance en el sistema.</p>
+
+<h2 id="realice-sus-pruebas-más-rápidas-con-antelación">Realice sus pruebas más rápidas con antelación</h2>
+
+<p>Si bien sostener la velocidad del proceso es un gran objetivo general, algunas partes del conjunto de pruebas serán inevitablemente más rápidas que otras. Debido a que el sistema de CI/CD sirve como un conducto para todos los cambios que ingresan a su sistema, descubrir las fallas lo más pronto posible es importante para minimizar los recursos dedicados a las versiones problemáticas. Para lograr esto, priorice y ejecute sus pruebas más rápidas primero. Guarde las pruebas complejas y de larga duración para después de que validar la construcción con pruebas más pequeñas y de ejecución rápida.</p>
+
+<p>Esta estrategia tiene una serie de beneficios que pueden servir para que en su proceso de IC/CD no haya problemas. Lo alienta a comprender el impacto en el rendimiento de las pruebas individuales, le permite completar la mayoría de sus pruebas de forma anticipada y aumenta la probabilidad de fallas rápidas, lo cual significa que los cambios problemáticos pueden revertirse o arreglarse antes de bloquear el trabajo de otros miembros.</p>
+
+<p>Priorizar pruebas normalmente implica ejecutar primero las pruebas unitarias de su proyecto, ya que estas tienden a ser rápidas, aisladas y centradas en los componentes. Después, las pruebas de integración representan normalmente el siguiente nivel de complejidad y velocidad; a estas les siguen pruebas a nivel de todo el sistema y, finalmente, las pruebas de aceptación, que a menudo requieren algún nivel de interacción humana.</p>
+
+<h2 id="minimice-las-ramificaciones-en-su-sistema-de-control-de-versiones">Minimice las ramificaciones en su sistema de control de versiones</h2>
+
+<p>Uno de los principios fundamentales de CI/CD es integrar los cambios en el repositorio primario compartido de forma temprana y frecuente. Esto ayuda a evitar costosos problemas de integración en el futuro cuando varios desarrolladores intentan fusionar cambios grandes, divergentes y conflictivos en la rama principal del repositorio en preparación para su lanzamiento. Normalmente, los sistemas de CI/CD se configuran para monitorear y probar los cambios enviados a solo una o a unas pocas ramas.</p>
+
+<p>Para aprovechar los beneficios que proporciona la CI, es mejor limitar el número y el alcance de las ramas en su repositorio. La mayoría de las implementaciones sugieren que los desarrolladores realicen la implementación directamente en la rama principal o fusionen los cambios de sus ramas locales al menos una vez al día.</p>
+
+<p>Básicamente, las ramas de las cuales su sistema de CI/CD no realiza un seguimiento contienen código no probado que debería considerarse como una responsabilidad para el éxito y el impulso de su proyecto. Minimizar las ramificaciones para fomentar la integración temprana del código de diferentes desarrolladores permite aprovechar las fortalezas del sistema y evita que los desarrolladores nieguen las ventajas que proporciona.</p>
+
+<h2 id="realice-pruebas-localmente-antes-realizar-la-implementación-en-el-proceso-de-ci-cd">Realice pruebas localmente antes realizar la implementación en el proceso de CI/CD</h2>
+
+<p>En relación con el punto anterior sobre la detección temprana de fallas, se debería animar a los desarrolladores a que ejecuten localmente todas las pruebas posibles antes de la implementación en el repositorio compartido. Esto permite detectar ciertos cambios problemáticos antes de que bloqueen a otros miembros del equipo. Si bien el entorno de desarrollo local probablemente no pueda ejecutar el conjunto de pruebas completo en un entorno de producción, este paso adicional da a los individuos más confianza en que los cambios que realizan superan las pruebas básicas y vale la pena intentar integrarlos con la base de código más grande.</p>
+
+<p>Para garantizar de que los desarrolladores puedan realizar las pruebas de forma efectiva por sí mismos, su paquete de pruebas debería poder ejecutarse con un único comando que se pueda ejecutar desde cualquier entorno. El sistema CI/CD debería usar el mismo comando que emplean los desarrolladores en sus máquinas locales para iniciar pruebas en código fusionado con el repositorio. A menudo, esto se coordina proporcionando una secuencia de comandos de shell o makefile para automatizar la ejecución de las herramientas de pruebas de una manera repetible y predecible.</p>
+
+<h2 id="ejecute-pruebas-en-entornos-efímeros-cuando-sea-posible">Ejecute pruebas en entornos efímeros cuando sea posible</h2>
+
+<p>Para garantizar que sus pruebas se ejecuten de la misma manera en varias etapas, a menudo se recomienda utilizar entornos de prueba limpios y efímeros cuando sea posible. Normalmente, esto significa ejecutar las pruebas en contenedores para abstraer las diferencias entre los sistemas host y proporcionar una API estándar para acoplar los componentes a varias escalas. Debido a que los contenedores se ejecutan con un estado mínimo, los efectos secundarios residuales de las pruebas no se heredan en las ejecuciones siguientes del conjunto de pruebas, lo que podría contaminar los resultados.</p>
+
+<p>Otro beneficio de los entornos de pruebas en contenedores es la portabilidad de su infraestructura de pruebas. Con los contenedores, los desarrolladores tienen más facilidad para replicar la configuración que se utilizará más adelante en el proceso sin necesidad de configurar y mantener manualmente la infraestructura, ni de sacrificar la fidelidad de entorno. Dado que los contenedores pueden girarse fácilmente cuando es necesario y luego destruirse, los usuarios pueden hacer menos sacrificios en términos de la precisión de su entorno de pruebas cuando se ejecutan pruebas locales. En general, el uso de contenedores se bloquea en algunos aspectos del entorno de ejecución para ayudar a minimizar las diferencias entre las etapas del proceso.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Si bien cada implementación de CI/CD será diferente, aplicar algunos de estos principios básicos le permitirá evitar algunos errores comunes y fortalecer sus prácticas de prueba y desarrollo. Como en la mayoría de los aspectos de la integración continua, una combinación de procesos, herramientas y hábitos permitirá que los cambios vinculados al desarrollo tengan más éxito e impacto.</p>
+
+<p>Para obtener más información sobre las prácticas generales de CI/CD y la configuración de varios servicios de CI/CD, <a href="https://www.digitalocean.com/community/tags/ci-cd?type=tutorials">consulte otros artículos con la</a> etiqueta CI/CD.</p>

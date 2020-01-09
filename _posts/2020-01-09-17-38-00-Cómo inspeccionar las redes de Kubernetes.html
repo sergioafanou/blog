@@ -1,0 +1,216 @@
+---
+layout: post
+title: Cómo inspeccionar las redes de Kubernetes
+network: digitalocean
+date: January 09, 2020 at 05:38PM
+url: https://www.digitalocean.com/community/tutorials/how-to-inspect-kubernetes-networking-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Kubernetes es un sistema de orquestación de contenedores que puede gestionar aplicaciones en contenedores a través de un clúster de nodos de servidor. Para el mantenimiento de la conectividad de red entre todos los contenedores de un clúster se requieren técnicas avanzadas de red. En este artículo, abordaremos brevemente algunas herramientas y técnicas para inspeccionar esta configuración de red.</p>
+
+<p>Estas herramientas pueden ser útiles si depura errores de conectividad, investiga problemas de rendimiento de la red o explora Kubernetes para aprender cómo funciona.</p>
+
+<p>Si desea conocer más sobre Kubernetes en general, en nuestra guía <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes"><em>Introducción a Kubernetes</em></a> se abarcan los aspectos básicos. Para acceder a una descripción general específica de Kubernetes, lea <a href="https://www.digitalocean.com/community/tutorials/kubernetes-networking-under-the-hood"><em>Análisis exhaustivo de las redes de Kubernetes</em></a>.</p>
+
+<h2 id="primeros-pasos">Primeros pasos</h2>
+
+<p>Para este tutorial se espera que tenga un clúster de Kubernetes, con <code>kubectl</code> instalado localmente y configurado para conectarse al clúster.</p>
+
+<p>Las siguientes secciones contienen muchos comandos pensados para ejecutarse en un nodo de Kubernetes. Tendrán el siguiente aspecto:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">echo 'this is a node command'
+</li></ul></code></pre>
+<p>Los comandos que deben ejecutarse en su máquina local tendrán el siguiente aspecto:</p>
+<pre class="code-pre super_user local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">echo 'this is a local command'
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> La mayoría de los comandos de este tutorial deberán ejecutarse a través del usuario <strong>root</strong>. Si en su lugar utiliza un usuario habilitado para sudo en sus nodos de Kubernetes, añada <code>sudo</code> para ejecutar los comandos cuando sea necesario.<br></span></p>
+
+<h2 id="encontrar-el-ip-del-clúster-de-un-pod">Encontrar el IP del clúster de un pod</h2>
+
+<p>Para encontrar la dirección IP del clúster de un pod de Kubernetes, utilice el comando <code>kubectl get pod</code> en su máquina local, con la opción <code>-o wide</code>. Esta opción mostrará más información, incluido el nodo en el que reside el pod y ek IP del clúster del pod.</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pod -o wide
+</li></ul></code></pre><pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                           READY     STATUS    RESTARTS   AGE       IP            NODE
+hello-world-5b446dd74b-7c7pk   1/1       Running   0          22m       10.244.18.4   node-one
+hello-world-5b446dd74b-pxtzt   1/1       Running   0          22m       10.244.3.4    node-two
+</code></pre>
+<p>La columna <strong>IP</strong> contendrá la dirección IP del clúster interno de cada pod.</p>
+
+<p>Si no ve el pod que busca, asegúrese de estar posicionado en el espacio de nombres correcto. Puede listar todos los pods en todos los espacios de nombres añadiendo el indicador <code>--all-namespaces</code>.</p>
+
+<h2 id="encontrar-el-ip-de-un-servicio">Encontrar el IP de un servicio</h2>
+
+<p>También se puede encontrar un IP de servicio con <code>kubectl.</code> En este caso listaremos todos los servicios en todos los espacios de nombres:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get service --all-namespaces
+</li></ul></code></pre><pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAMESPACE     NAME                       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE
+default       kubernetes                 ClusterIP   10.32.0.1       &lt;none&gt;        443/TCP         6d
+kube-system   csi-attacher-doplugin      ClusterIP   10.32.159.128   &lt;none&gt;        12345/TCP       6d
+kube-system   csi-provisioner-doplugin   ClusterIP   10.32.61.61     &lt;none&gt;        12345/TCP       6d
+kube-system   kube-dns                   ClusterIP   10.32.0.10      &lt;none&gt;        53/UDP,53/TCP   6d
+kube-system   kubernetes-dashboard       ClusterIP   10.32.226.209   &lt;none&gt;        443/TCP         6d
+</code></pre>
+<p>El IP del servicio se encuentra en la columna <strong>CLUSTER-IP</strong>.</p>
+
+<h2 id="buscar-e-ingresar-espacios-de-nombres-de-red-de-pods">Buscar e ingresar espacios de nombres de red de pods</h2>
+
+<p>A cada pod de Kubernetes se le asigna su propio espacio de nombres de red. Los espacios de nombres de red (o netns) son una primitiva red de Linux que proporciona aislamiento entre dispositivos de red.</p>
+
+<p>Puede ser útil ejecutar comandos desde dentro de los netns de un pod, para comprobar la resolución de DNS o la conectividad general de la red. Para ello, primero tenemos que buscar el ID de proceso de uno de los contenedores de un pod. En el caso de Docker, podemos hacerlo con una serie de dos comandos. Primero, listar los contenedores que se ejecutan en un nodo:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">docker ps
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE                                   COMMAND                  CREATED             STATUS              PORTS               NAMES
+<span class="highlight">173ee46a3926</span>        gcr.io/google-samples/node-hello        "/bin/sh -c 'node se&hellip;"   9 days ago          Up 9 days                               <span class="highlight">k8s_hello-world_hello-world-5b446dd74b-pxtzt_default_386a9073-7e35-11e8-8a3d-bae97d2c1afd_0</span>
+11ad51cb72df        k8s.gcr.io/pause-amd64:3.1              "/pause"                 9 days ago          Up 9 days                               k8s_POD_hello-world-5b446dd74b-pxtzt_default_386a9073-7e35-11e8-8a3d-bae97d2c1afd_0
+. . .
+</code></pre>
+<p>Encuentre el <strong>ID de contenedor *<em>o *</em>nombre</strong> de cualquier contenedor en el pod que le interese. En la imagen anterior, mostramos dos contenedores:</p>
+
+<ul>
+<li>El primer contenedor es la aplicación <code>hello-world</code> que se ejecuta en el pod <code>hello-world</code>.</li>
+<li>El segundo es un contenedor de <em>pausa</em> que funciona en el pod <code>hello-world</code>. Este contenedor existe únicamente para preservar el espacio de nombres de red del pod.</li>
+</ul>
+
+<p>Para obtener el ID de proceso de cualquiera de los contenedores, tome nota del ID o nombre del contenedor y utilícelo en el siguiente comando <code>docker</code>.</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">docker inspect --format '{{ .State.Pid }}' <span class="highlight">container-id-or-name</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div><span class="highlight">14552</span>
+</code></pre>
+<p>Se emitirá un ID de proceso (o PID). Ahora podemos utilizar el programa <code>nsenter</code> para ejecutar un comando en el espacio de nombres de red de ese proceso:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">nsenter -t <span class="highlight">your-container-pid</span> -n <span class="highlight">ip addr</span>
+</li></ul></code></pre>
+<p>Asegúrese de utilizar su propio PID, y reemplace <code>ip addr</code> por el comando que le gustaría ejecutar dentro del espacio de nombres de red del pod.</p>
+
+<p><span class='note'><strong>Nota:</strong> Una ventaja de utilizar <code>nsenter</code> para ejecutar comandos en el espacio de nombres de un pod (frente al uso de una opción como <code>docker exec</code>) es que se puede acceder a todos los comandos disponibles en el nodo, en lugar del conjunto normalmente limitado de comandos instalados en contenedores.<br></span></p>
+
+<h2 id="encontrar-la-interfaz-ethernet-virtual-de-un-pod">Encontrar la interfaz Ethernet virtual de un pod</h2>
+
+<p>El espacio de nombres de red de cada pod se comunica con netns root del nodo a través de un conducto Ethernet virtual. Del lado del nodo, este conducto aparece como un dispositivo que normalmente comienza con <code>veth</code> y termina en un identificador único, como <code>veth77f2275</code> o <code>veth01</code>. Dentro del pod, este conducto aparece como <code>eth0</code>.</p>
+
+<p>Puede ser útil para correlacionar el dispositivo <code>veth</code> que se empareja con un pod determinado. Para ello, listaremos todos los dispositivos de red del nodo y luego los dispositivos del espacio de nombres de red del pod. A continuación, podremos correlacionar los números de dispositivo entre los dos listados para realizar la conexión.</p>
+
+<p>Primero, ejecute <code>ip addr</code> en el espacio de nombres de red del pod con <code>nsenter</code>. Consulte la sección anterior <a href="#finding-and-entering-pod-network-namespaces"><em>Buscar e ingresar espacios de nombres de red de pods</em></a> para obtener información sobre cómo hacer esto:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">nsenter -t <span class="highlight">your-container-pid</span> -n ip addr
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+10: eth0@<span class="highlight">if11</span>: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue state UP group default
+    link/ether 02:42:0a:f4:03:04 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.244.3.4/24 brd 10.244.3.255 scope global eth0
+       valid_lft forever preferred_lft forever
+</code></pre>
+<p>El comando emitirá una lista de las interfaces del pod. Observe el número <code>if11</code> después de <code>eth0@</code> en la imagen de ejemplo. Esto significa que el <code>eth0</code> de este pod está vinculado a la interfaz 11 del nodo. Ahora ejecute <code>ip addr</code> en el espacio de nombres predeterminado del nodo para listar sus interfaces:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">ip addr
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+
+. . .
+
+7: veth77f2275@if6: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue master docker0 state UP group default
+    link/ether 26:05:99:58:0d:b9 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet6 fe80::2405:99ff:fe58:db9/64 scope link
+       valid_lft forever preferred_lft forever
+9: vethd36cef3@if8: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue master docker0 state UP group default
+    link/ether ae:05:21:a2:9a:2b brd ff:ff:ff:ff:ff:ff link-netnsid 1
+    inet6 fe80::ac05:21ff:fea2:9a2b/64 scope link
+       valid_lft forever preferred_lft forever
+<span class="highlight">11</span>: <span class="highlight">veth4f7342d</span>@if10: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue master docker0 state UP group default
+    link/ether e6:4d:7b:6f:56:4c brd ff:ff:ff:ff:ff:ff link-netnsid 2
+    inet6 fe80::e44d:7bff:fe6f:564c/64 scope link
+       valid_lft forever preferred_lft forever
+</code></pre>
+<p>La interfaz 11 es <code>veth4f7342d</code> en esta imagen de ejemplo. Este es el conducto Ethernet virtual al pod que investigaremos.</p>
+
+<h2 id="inspeccionar-el-seguimiento-de-la-conexión-del-conntrack">Inspeccionar el seguimiento de la conexión del conntrack</h2>
+
+<p>Antes de la versión 1.11, en Kubernetes se utilizaban iptables NAT y el módulo kernel del conntrack para controlar las conexiones. Para listar todas las conexiones actualmente controladas, utilice el comando <code>conntrack</code>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">conntrack -L
+</li></ul></code></pre>
+<p>Para buscar continuamente nuevas conexiones, utilice el indicador <code>-E</code>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">conntrack -E
+</li></ul></code></pre>
+<p>Para listar las conexiones controladas por conntrack a una dirección de destino concreta, utilice el indicador <code>-d</code>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">conntrack -L -d <span class="highlight">10.32.0.1</span>
+</li></ul></code></pre>
+<p>Si sus nodos tienen problemas para establecer conexiones fiables con los servicios, es posible que la tabla de seguimiento de conexiones esté llena y que se inhabiliten las nuevas conexiones. En este caso, es posible que vea mensajes como los siguientes en sus registros de sistema:</p>
+<div class="code-label " title="/var/log/syslog">/var/log/syslog</div><pre class="code-pre "><code langs="">Jul 12 15:32:11 worker-528 kernel: <span class="highlight">nf_conntrack: table full, dropping packet.</span>
+</code></pre>
+<p>Existe una configuración de sysctl para el número máximo de conexiones que se controlarán. Puede hacer una lista de su valor actual con el siguiente comando:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">sysctl net.netfilter.nf_conntrack_max
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>net.netfilter.nf_conntrack_max = 131072
+</code></pre>
+<p>Para establecer un nuevo valor, utilice el indicador <code>-w</code>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">sysctl -w net.netfilter.nf_conntrack_max=<span class="highlight">198000</span>
+</li></ul></code></pre>
+<p>Para que este ajuste sea permanente, agréguelo al archivo <code>sysctl.conf</code>:</p>
+<div class="code-label " title="/etc/sysctl.conf">/etc/sysctl.conf</div><pre class="code-pre "><code langs="">. . .
+<span class="highlight">net.ipv4.netfilter.ip_conntrack_max = 198000</span>
+</code></pre>
+<h2 id="inspeccionar-reglas-de-iptables">Inspeccionar reglas de iptables</h2>
+
+<p>Antes de la versión 1.11, Kubernetes utilizaba iptables NAT para implementar la conversión de IP virtuales y el balanceo de carga para los IP de servicios.</p>
+
+<p>Para volcar todas las reglas de iptables en un nodo, utilice el comando <code>iptables-save</code>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">iptables-save
+</li></ul></code></pre>
+<p>Dado que el resultado puede ser muy extenso, es posible que desee realizar una transferencia a un archivo  (<code>iptables-save &gt; output.txt</code>) o a un localizador (<code>iptables-save | less</code>) para revisar más fácilmente las reglas.</p>
+
+<p>Para listar solo las reglas de NAT del servicio de Kubernetes, utilice el comando <code>iptables</code> y el indicador <code>-L</code> a fin de especificar la cadena correcta:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">iptables -t nat -L KUBE-SERVICES
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Chain KUBE-SERVICES (2 references)
+target     prot opt source               destination
+KUBE-SVC-TCOU7JCQXEZGVUNU  udp  --  anywhere             10.32.0.10           /* kube-system/kube-dns:dns cluster IP */ udp dpt:domain
+KUBE-SVC-ERIFXISQEP7F7OF4  tcp  --  anywhere             10.32.0.10           /* kube-system/kube-dns:dns-tcp cluster IP */ tcp dpt:domain
+KUBE-SVC-XGLOHA7QRQ3V22RZ  tcp  --  anywhere             10.32.226.209        /* kube-system/kubernetes-dashboard: cluster IP */ tcp dpt:https
+. . .
+</code></pre>
+<h2 id="consultas-al-dns-del-clúster">Consultas al DNS del clúster</h2>
+
+<p>Una forma de depurar la resolución del DNS de su clúster es implementar un contenedor de depuración con todas las herramientas que necesite y utilizar <code>kubectl</code> para ejecutar <code>nslookup</code> en él. Esto se describe en <a href="https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/">la documentación oficial de Kubernetes</a>.</p>
+
+<p>Otra forma de consultar el clúster DNS es utilizar <code>dig</code> y <code>nsenter</code> de un nodo. Si <code>dig</code> no está instalado, puede instalarse con <code>apt</code> en las distribuciones de Linux basadas en Debian:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">apt install dnsutils
+</li></ul></code></pre>
+<p>Primero, busque el IP del clúster del servicio <strong>kube-dns:</strong></p>
+<pre class="code-pre super_user local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="#">kubectl get service -n kube-system kube-dns
+</li></ul></code></pre><pre class="code-pre  local-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME       TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)         AGE
+kube-dns   ClusterIP   <span class="highlight">10.32.0.10</span>   &lt;none&gt;        53/UDP,53/TCP   15d
+</code></pre>
+<p>El IP del clúster se resalta arriba. A continuación, utilizaremos <code>nsenter</code> para ejecutar <code>dig</code> en el espacio de nombres de un contenedor. Consulte la sección <a href="#finding-and-entering-pod-network-namespaces"><em>Encontrar e ingresar espacios de nombres de red de pod</em></a> para obtener más información al respecto:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">nsenter -t <span class="highlight">14346</span> -n dig <span class="highlight">kubernetes.default.svc.cluster.local</span> @<span class="highlight">10.32.0.10</span>
+</li></ul></code></pre>
+<p>Este comando <code>dig</code> busca el nombre de dominio completo del servicio de <strong><span class="highlight">service-name</span>.<span class="highlight">namespace</span>.svc.cluster.local</strong> y especifica el IP de servicio del DNS del clúster (<code>@<span class="highlight">10.32.0.10</span></code>) .</p>
+
+<h2 id="revisión-de-la-información-de-ipvs">Revisión de la información de IPVS</h2>
+
+<p>A partir de la versión 1.11, <code>kube-proxy</code> puede configurar IPVS para gestionar la conversión de los IP de servicios virtuales a IP de pod. Puede listar la tabla de conversión de IP con <code>ipvsadm</code>:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">ipvsadm -Ln
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>IP Virtual Server version 1.2.1 (size=4096)
+Prot LocalAddress:Port Scheduler Flags
+  -&gt; RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  100.64.0.1:443 rr
+  -&gt; 178.128.226.86:443           Masq    1      0          0
+TCP  100.64.0.10:53 rr
+  -&gt; 100.96.1.3:53                Masq    1      0          0
+  -&gt; 100.96.1.4:53                Masq    1      0          0
+UDP  100.64.0.10:53 rr
+  -&gt; 100.96.1.3:53                Masq    1      0          0
+  -&gt; 100.96.1.4:53                Masq    1      0          0
+</code></pre>
+<p>Para mostrar un solo IP de servicio, utilice la opción <code>-t</code> y especifique el IP deseado:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">ipvsadm -Ln -t <span class="highlight">100.64.0.10:53</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Prot LocalAddress:Port Scheduler Flags
+  -&gt; RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  100.64.0.10:53 rr
+  -&gt; 100.96.1.3:53                Masq    1      0          0
+  -&gt; 100.96.1.4:53                Masq    1      0          0
+</code></pre>
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A lo largo de este artículo, revisamos comandos y técnicas para explorar e inspeccionar los detalles de la red de su clúster de Kubernetes. Para obtener más información sobre Kubernetes, consulte <a href="https://www.digitalocean.com/community/tags/kubernetes?type=tutorials">el tema de nuestros tutoriales de Kubernetes</a> y <a href="https://kubernetes.io/docs/home/">la documentación oficial de Kubernetes</a>.</p>

@@ -1,0 +1,126 @@
+---
+layout: post
+title: How To Install Git on Debian 9
+network: digitalocean
+date: January 09, 2020 at 05:39PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-git-on-debian-9-pt
+image: https://assets.digitalocean.com/articles/git_install_1604/branch-tags.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Os sistemas de controle de versão de software permitem que você mantenha o controle do seu software no nível de código. Com ferramentas de versão, é possível rastrear as alterações, retornar para etapas anteriores e ramificar para criar versões alternativas de arquivos e diretórios.</p>
+
+<p>O Git é um dos sistemas de controle de versão mais populares disponíveis atualmente. Muitos arquivos de projetos são mantidos em um repositório Git, e sites como o GitHub, o GitLab, e o Bitbucket ajudam a facilitar o compartilhamento e colaboração de projetos de desenvolvimento de software.</p>
+
+<p>Neste tutorial, vamos instalar e configurar o Git em um servidor Debian 9. Iremos cobrir como instalar o software em duas maneiras diferentes, cada uma delas tem seus próprios benefícios dependendo das suas necessidades específicas.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para completar este tutorial, é necessário ter um usuário não raiz com privilégios <code>sudo</code> em um servidor Debian 9. Para aprender a como chegar a essa configuração, siga nosso <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">guia de configuração inicial do servidor Debian 9</a>.</p>
+
+<p>Com seu servidor e usuário configurados, você está pronto para começar.</p>
+
+<h2 id="como-instalar-o-git-com-os-pacotes-padrão">Como instalar o Git com os pacotes padrão</h2>
+
+<p>Os repositórios padrão do Debian fornecem a você um método rápido para instalar o Git. Note que a versão que você instala por esses repositórios pode ser mais antiga que a versão mais nova atualmente disponível. Se for necessário a última versão, considere se mudar para a <a href="https://www.digitalocean.com/community/tutorials/how-to-install-git-on-debian-9#installing-git-from-source">próxima seção</a> deste tutorial para aprender como instalar e compilar o Git da fonte.</p>
+
+<p>Primeiramente, utilize as ferramentas de gerenciamento de pacotes apt para atualizar seu índice de pacotes local. Com a atualização completa, é possível baixar e instalar o Git:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install git
+</li></ul></code></pre>
+<p>É possível confirmar que você instalou o Git corretamente executando o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git --version
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>git version <span class="highlight">2.11.0</span>
+</code></pre>
+<p>Com o Git instalado com sucesso, agora é possível seguir em frente para a seção <a href="https://www.digitalocean.com/community/tutorials/how-to-install-git-on-debian-9#setting-up-git">Como configurar</a> o Git deste tutorial para completar sua configuração.</p>
+
+<h2 id="como-instalar-o-git-do-código">Como instalar o Git do código</h2>
+
+<p>Um método mais flexível de instalar o Git é compilar o software do código. Isso leva mais tempo e não será mantido através do seu gerenciador de pacotes, mas ele irá permitir que você baixe a versão mais recente e dará a você controle sobre as opções que desejar personalizar.</p>
+
+<p>Antes de começar, é necessário instalar o software que o Git depende. Tudo isso está disponível nos repositórios padrão, para que possamos atualizar nosso índice de pacotes e em seguida instalar os pacotes.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install make libssl-dev libghc-zlib-dev libcurl4-gnutls-dev libexpat1-dev gettext unzip
+</li></ul></code></pre>
+<p>Após instalar as dependências necessárias, é possível prosseguir e obter a versão do Git que quiser ao visitar o <a href="https://github.com/git/git">Mirror do projeto Git no GitHub</a>, disponível pelo seguinte URL:</p>
+<pre class="code-pre "><code langs="">https://github.com/git/git
+</code></pre>
+<p>A partir daqui, certifique-se de que está no ramo <code>principal</code>. Clique no link <strong>Tag</strong> e selecione sua versão Git desejada. A menos que tenha um motivo para baixar uma versão <em>do release candidate</em> (marcado como <strong>rc</strong>), procure evitá-lo, uma vez que eles podem ser instáveis.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/git_install_1604/branch-tags.png" alt="git change branch select tags​​​"></p>
+
+<p>Em seguida, no lado direito da página, clique no botão <strong>Clonar ou download,</strong> e então clique no botão <strong>Download ZIP</strong> e copie o endereço de link que termina em <code>.zip</code>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/git_install_1604/download-zip.png" alt="clique com o botão direito do mouse sobre o arquivo Zip para download para copiar o url​​​"></p>
+
+<p>Volte ao seu servidor Debian 9, vá para o diretório <code>tmp</code> e baixe os arquivos temporários.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li></ul></code></pre>
+<p>A partir daí, é possível usar o comando <code>wget</code> para instalar o link do arquivo zip copiado. Vamos dar um novo nome para o arquivo: <code>git.zip</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://github.com/git/git/archive/<span class="highlight">v2.18.0</span>.zip -O git.zip
+</li></ul></code></pre>
+<p>Descompacte o arquivo que baixou e mova ele para o diretório resultante digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">unzip git.zip
+</li><li class="line" prefix="$">cd git-*
+</li></ul></code></pre>
+<p>Agora, é possível fazer o pacote e instalá-lo digitando esses dois comandos:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">make prefix=/usr/local all
+</li><li class="line" prefix="$">sudo make prefix=/usr/local install
+</li></ul></code></pre>
+<p>Para garantir que a instalação foi bem sucedida, digite <code>git --version</code> e receba a saída relevante que especifica a versão atual do Git.</p>
+
+<p>Agora que tem o Git instalado, se quiser atualizar para uma versão mais recente, será possível clonar o repositório, e então compilar e instalar. Para encontrar o URL para usar para a operação de clone, navegue até o ramo ou tag que quiser na <a href="https://github.com/git/git">página GitHub do projeto</a> e, em seguida, copie o URL clone no lado direito:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/git_install_1604/copy-url.png" alt="git copy URL"></p>
+
+<p>No momento em que este artigo está sendo escrito, o URL relevante é:</p>
+<pre class="code-pre "><code langs="">https://github.com/git/git.git
+</code></pre>
+<p>Altere seu diretório inicial e utilize o <code>git clone</code> no URL que acabou de copiar:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~
+</li><li class="line" prefix="$">git clone <span class="highlight">https://github.com/git/git.git</span>
+</li></ul></code></pre>
+<p>Isso irá criar um novo diretório dentro do seu diretório atual, onde pode reconstruir o pacote e instalar a versão mais recente, do jeito que fez acima. Isso irá sobrepor sua versão mais antiga com a nova versão:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd git
+</li><li class="line" prefix="$">make prefix=/usr/local all
+</li><li class="line" prefix="$">sudo make prefix=/usr/local install
+</li></ul></code></pre>
+<p>Terminado isso, certifique-se de que sua versão do está atualizada.</p>
+
+<h2 id="como-configurar-o-git">Como configurar o Git</h2>
+
+<p>Agora que tem o Git instalado, será necessário configurá-lo para que as mensagens de entrega geradas contenham as suas informações corretas.</p>
+
+<p>Isso pode ser alcançado utilizando o comando <code>git config</code>. Especificamente, precisamos dar nosso e endereço de e-mail porque o Git incorpora esta informação em cada entrega que fazemos. Podemos seguir em frente e adicionar esta informação digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git config --global user.name "<span class="highlight">Sammy</span>"
+</li><li class="line" prefix="$">git config --global user.email "<span class="highlight">sammy@domain.com</span>"
+</li></ul></code></pre>
+<p>Podemos ver todos os itens de configuração que foram configurados digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git config --list
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>user.name=<span class="highlight">Sammy</span>
+user.email=<span class="highlight">sammy@domain.com</span>
+...
+</code></pre>
+<p>A informação que digitou está armazenada no seu arquivo de configuração Git, que você pode editar opcionalmente com um editor de texto como este:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/.gitconfig
+</li></ul></code></pre><div class="code-label " title="~/.gitconfig contents">~/.gitconfig contents</div><pre class="code-pre "><code langs="">[user]
+  name = <span class="highlight">Sammy</span>
+  email = <span class="highlight">sammy@domain.com</span>
+</code></pre>
+<p>Há muitas outras opções que é possível definir, mas essas duas são necessárias. Se pular este passo, provavelmente verá avisos quando colocar o Git em funcionamento. Isso dará mais trabalho para você pois será necessário revisar as entregas que tiver feito com as informações corretas.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora, você deve ter o Git instalado e pronto para usar no seu sistema.</p>
+
+<p>Para aprender mais sobre como usar o Git, verifique esses artigos e séries:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/articles/how-to-use-git-effectively">Como usar o Git de maneira eficaz</a></li>
+<li><a href="https://www.digitalocean.com/community/articles/how-to-use-git-branches">Como usar o Git Branches</a></li>
+<li><a href="https://www.digitalocean.com/community/tutorial_series/an-introduction-to-open-source">série Uma introdução ao Software Livre</a></li>
+</ul>

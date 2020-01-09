@@ -1,0 +1,860 @@
+---
+layout: post
+title: Cómo configurar una pila de registro de Elasticsearch, Fluentd y Kibana (EFK) en Kubernetes
+network: digitalocean
+date: January 09, 2020 at 05:47PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-an-elasticsearch-fluentd-and-kibana-efk-logging-stack-on-kubernetes-es
+image: https://assets.digitalocean.com/articles/kubernetes_efk/kibana_welcome.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Cuando se ejecutan múltiples servicios y aplicaciones en un clúster de Kubernetes, una pila de registro centralizada de nivel de clúster puede servirle para clasificar y analizar rápidamente el gran volumen de datos de registro producidos por sus Pods. Una solución de registro centralizada popular es la pila de <strong>E</strong>lasticsearch, <strong>F</strong>luentd y <strong>K</strong>ibana (EFK).</p>
+
+<p><strong>Elasticsearch</strong> es un motor de búsqueda en tiempo real, distribuido y escalable que permite una búsqueda completa de texto y estructurada, además de análisis. Se suele usar para indexaciones y búsquedas en grandes volúmenes de datos de registro, pero también se puede emplear para buscar muchos tipos diferentes de documentos.</p>
+
+<p>Elasticsearch se suele implementar con <strong>Kibana</strong>, un poderoso frontend de visualización de datos y un panel de control para Elasticsearch. Kibana le permite explorar sus datos de registro de Elasticsearch a través de una interfaz web y crear paneles de control y consultas para responder rápidamente a preguntas y obtener información sobre sus aplicaciones de Kubernetes.</p>
+
+<p>En este tutorial, usaremos <strong>Fluentd</strong> para recopilar, transformar y enviar datos de registro al backend de Elasticsearch. Fluentd es un recopilador de datos de código abierto popular que configuraremos en nuestros nodos de Kubernetes para seguir archivos de registro de contenedores, filtrar y transformar los datos de registro y entregarlos al clúster de Elasticsearch, donde se indexarán y almacenarán.</p>
+
+<p>Comenzaremos configurando e iniciando un clúster escalable de Elasticsearch y luego crearemos el servicio y la implementación de Kubernetes de Kibana. Para finalizar, configuraremos Fluentd como DaemonSet para que se ejecute en todos los nodos de trabajo de Kubernetes.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de comenzar con esta guía, asegúrese de contar con lo siguiente:</p>
+
+<ul>
+<li><p>Un clúster de Kubernetes 1.10, o una versión posterior, con control de acceso basado en roles (RBCA) activado</p>
+
+<ul>
+<li>Compruebe que su clúster cuente con suficientes recursos para implementar la pila EFK y, si no es así, escale su clúster agregando nodos de trabajo. Implementaremos un clúster de 3 Pods de Elasticsearch  (puede reducir el número a 1 si es necesario) y un único Pod de Kibana. En cada nodo de trabajo también se ejecutará un Pod de Fluentd. El clúster de esta guía consta de 3 nodos de trabajo y un panel de control administrado.</li>
+</ul></li>
+<li><p>La herramienta de línea de comandos <code>kubectl</code> instalada en su máquina local, configurada para establecer conexión con su clúster. Puede obtener más información sobre la instalación de <code>kubectl</code> <a href="https://kubernetes.io/docs/tasks/tools/install-kubectl/">en la documentación oficial</a>.</p></li>
+</ul>
+
+<p>Cuando tenga estos componentes configurados, estará listo para comenzar con esta guía.</p>
+
+<h2 id="paso-1-crear-un-espacio-de-nombres">Paso 1: Crear un espacio de nombres</h2>
+
+<p>Antes de implementar un clúster de Elasticsearch, primero crearemos un espacio de nombres en el que instalaremos toda nuestra instrumentación de registro. Kubernetes le permite separar objetos que se ejecutan en su clúster usando una abstracción “clúster virtual” llamada “Namespaces” (espacios de nombres). En esta guía, crearemos un espacio de nombres <code>kube-logging</code> en el cual instalaremos los componentes de la pila EFK. Este espacio de nombres también nos permitirá limpiar y eliminar la pila de registros sin pérdida de funciones en el clúster de Kubernetes.</p>
+
+<p>Para comenzar, primero investigue los espacios de nombres de su clúster usando <code>kubectl</code>:</p>
+<pre class="code-pre "><code langs="">kubectl get namespaces
+</code></pre>
+<p>Debería ver los siguientes tres espacios de nombres iniciales, que vienen ya instalados con su clúster Kubernetes:</p>
+<pre class="code-pre command"><code langs=""><div class="secondary-code-label " title="Output">Output</div><ul class="prefixed"><li class="line" prefix="$">NAME          STATUS    AGE
+</li><li class="line" prefix="$">default       Active    5m
+</li><li class="line" prefix="$">kube-system   Active    5m
+</li><li class="line" prefix="$">kube-public   Active    5m
+</li></ul></code></pre>
+<p>El espacio de nombres <code>default</code> aloja los objetos que se crean sin especificar un espacio de nombres. El espacio de nombres <code>kube-system</code> contiene objetos creados y usados por el sistema Kubernetes, como ​​​​​​<code>kube-dns​​​​​​</code>, ​​​​​​<code>kube-proxy​​​​</code> y ​​​<code>kubernetes-dashboard​​​​​​</code>. Se recomienda guardar este espacio de nombres limpio sin contaminarlo con las cargas de trabajo de aplicaciones e instrumentos.</p>
+
+<p>El espacio de nombres <code>kube-public</code> es otro de los que se crean automáticamente y se puede usar para almacenar objetos para los cuales desee habilitar la lectura y el acceso en todo el clúster, incluso para usuarios sin autenticar.</p>
+
+<p>Para crear el espacio de nombres <code>kube-logging</code>, abra primero y edite un archivo llamado <code>kube-logging.yaml</code> usando su editor favorito. Por ejemplo, nano:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano kube-logging.yaml
+</li></ul></code></pre>
+<p>Dentro de su editor, pegue el siguiente YAML de objeto de espacio de nombres:</p>
+<div class="code-label " title="kube-logging.yaml">kube-logging.yaml</div><pre class="code-pre "><code langs="">kind: Namespace
+apiVersion: v1
+metadata:
+  name: kube-logging
+</code></pre>
+<p>A continuación, guarde y cierre el archivo.</p>
+
+<p>Aquí especificamos el <code>kind</code> del objeto de Kubernetes como objeto <code>Namespace</code>. Para obtener más información los objetos <code>Namespace</code>, consulte el <a href="https://kubernetes.io/docs/tasks/administer-cluster/namespaces-walkthrough/">Tutorial de espacios de nombres</a> en la documentación oficial de Kubernetes. También especificamos la versión API de Kubernetes utilizada para crear el objeto (<code>v1</code>) y le damos un <code>name</code>: <code>kube-logging</code>.</p>
+
+<p>Cuando haya creado el archivo objeto de espacio de nombres <code>kube-logging.yaml</code>, cree el espacio de nombres usando <code>kubectl create</code> con el indicador de nombre de archivo <code>-f</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f kube-logging.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>namespace/kube-logging created
+</code></pre>
+<p>A continuación, puede confirmar que el espacio de nombres se creó correctamente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get namespaces
+</li></ul></code></pre>
+<p>En este punto, debería ver el nuevo espacio de nombres <code>kube-logging</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME           STATUS    AGE
+default        Active    23m
+kube-logging   Active    1m
+kube-public    Active    23m
+kube-system    Active    23m
+</code></pre>
+<p>Ahora podemos implementar un clúster de Elasticsearch en este espacio de nombres de registro aislado.</p>
+
+<h2 id="paso-2-crear-el-statefulset-de-elasticsearch">Paso 2: Crear el StatefulSet de Elasticsearch</h2>
+
+<p>Ahora que creamos un espacio de nombres para alojar nuestra pila de registro, podemos comenzar a implementar sus diferentes componentes. Primero, empezaremos implementando un clúster de Elasticsearch de 3 nodos.</p>
+
+<p>En esta guía, usamos 3 Pods de Elasticsearch para evitar el problema de “cerebro dividido” que se produce en clústeres altamente disponibles y con muchos nodos. A un nivel superior, “cerebro dividido” es lo que surge cuando uno o más nodos no pueden comunicarse con los demás, y se eligen varios maestros “divididos”. Al haber 3 nodos, si uno se desconecta del clúster temporalmente, los otros dos pueden elegir un nuevo maestro y el clúster puede seguir funcionando mientras el último nodo intenta volver a unirse. Para obtener más información, consulte <a href="https://www.elastic.co/blog/a-new-era-for-cluster-coordination-in-elasticsearch">Una nueva era para la coordinación de clústeres en Elasticsearch</a> y <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-discovery-voting.html">Configuraciones de voto</a>.</p>
+
+<h3 id="crear-el-servicio-sin-encabezado">Crear el servicio sin encabezado</h3>
+
+<p>Para comenzar, crearemos un servicio de Kubernetes sin encabezado llamado <code>elasticsearch</code> que definirá un dominio DNS para los 3 Pods. Un servicio sin encabezado no realiza un equilibrio de carga ni tiene un IP estático; para obtener más información sobre los servicios sin encabezado, consulte la <a href="https://kubernetes.io/docs/concepts/services-networking/service/#headless-services">documentación oficial de Kubernetes</a>.</p>
+
+<p>Abra un archivo llamado <code>elasticsearch_svc.yaml</code> usando su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano elasticsearch_svc.yaml
+</li></ul></code></pre>
+<p>Péguelo en el siguiente YAML de servicio de Kubernetes:</p>
+<div class="code-label " title="elasticsearch_svc.yaml">elasticsearch_svc.yaml</div><pre class="code-pre "><code langs="">kind: Service
+apiVersion: v1
+metadata:
+  name: elasticsearch
+  namespace: kube-logging
+  labels:
+    app: elasticsearch
+spec:
+  selector:
+    app: elasticsearch
+  clusterIP: None
+  ports:
+    - port: 9200
+      name: rest
+    - port: 9300
+      name: inter-node
+</code></pre>
+<p>A continuación, guarde y cierre el archivo.</p>
+
+<p>Definimos un <code>Service</code> llamado <code>elasticsearch</code> en el espacio de nombres <code>kube-logging</code> y le asignamos la etiqueta <code>app:elasticsearch</code>. A continuación, fijamos <code>.spec.selector</code> en <code>app:</code> elasticsearch para que el servicio seleccione Pods con la etiqueta <code>app:elasticsearch</code>. Cuando asociemos nuestro StatefulSet de Elasticsearch con este servicio, este último mostrará registros DNS A orientados a los Pods de Elasticsearch con la etiqueta <code>app: elasticsearch</code>.</p>
+
+<p>A continuación, configuraremos <code>clusterIP:None</code> que elimina el encabezado del servicio. Por último, definiremos los puertos <code>9200</code> y <code>9300</code> que se usan para interactuar con la API REST y para las comunicaciones entre nodos, respectivamente.</p>
+
+<p>Cree el servicio usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f elasticsearch_svc.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/elasticsearch created
+</code></pre>
+<p>Por último, verifique bien que el servicio se haya creado correctamente usando <code>kubectl get</code>:</p>
+<pre class="code-pre "><code langs="">kubectl get services --namespace=kube-logging
+</code></pre>
+<p>Debería ver lo siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME            TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)             AGE
+elasticsearch   ClusterIP   None         &lt;none&gt;        9200/TCP,9300/TCP   26s
+</code></pre>
+<p>Ahora que configuramos  nuestro servicio sin encabezado y un dominio estable <code>.elasticsearch.kube-logging.svc.cluster.local</code> para nuestros Pods, podemos crear el StatefulSet.</p>
+
+<h3 id="crear-el-statefulset">Crear el StatefulSet</h3>
+
+<p>Un StatefulSet de Kubernetes le permite asignar una identidad estable a los Pods y otorgar a estos un almacenamiento estable y persistente. Elasticsearch requiere un almacenamiento estable para persistir datos en reinicios y reprogramaciones de Pods. Para obtener más información sobre el volumen de trabajo de StatefulSet, consulte la página de <a href="https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/">StatefulSet</a> en los documentos de Kubernetes.</p>
+
+<p>Abra un archivo llamado <code>elasticsearch_statefulset.yaml</code> usando su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano elasticsearch_statefulset.yaml
+</li></ul></code></pre>
+<p>Veremos sección a sección la definición del objeto de StatefulSet y pegaremos bloques a este archivo.</p>
+
+<p>Comience pegando el siguiente bloque:</p>
+<div class="code-label " title="elasticsearch_statefulset.yaml">elasticsearch_statefulset.yaml</div><pre class="code-pre "><code langs="">apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: es-cluster
+  namespace: kube-logging
+spec:
+  serviceName: elasticsearch
+  replicas: 3
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+</code></pre>
+<p>En este bloque, definimos un StatefulSet llamado <code>es-cluster</code> en el espacio de nombres <code>kube-logging</code>. A continuación, lo asociamos con nuestro servicio <code>elasticsearch</code> ya creado usando el campo <code>serviceName</code>. Esto garantiza que se pueda acceder a cada Pod de StatefulSet usando la de dirección DNS <code>es-cluster-[1,2].elasticsearch.kube-logging.svc.cluster.local</code>, donde <code>[0,1,2]</code> corresponde al ordinal de número entero asignado.</p>
+
+<p>Especificamos 3 <code>replicas</code> (Pods) y fijamos el selector <code>matchLabels</code> en app: <code>elasticsearch</code>, que luego replicamos en la sección <code>.spec.template.metadata</code>. Los campos <code>.spec.selector.matchLabels</code> y <code>.spec.template.metadata.labels</code> deben coincidir.</p>
+
+<p>Ahora podemos pasar a la especificación del objeto. Péguelo en el siguiente bloque de YAML inmediatamente debajo del bloque anterior:</p>
+<div class="code-label " title="elasticsearch_statefulset.yaml">elasticsearch_statefulset.yaml</div><pre class="code-pre "><code langs="">. . .
+    spec:
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.2.0
+        resources:
+            limits:
+              cpu: 1000m
+            requests:
+              cpu: 100m
+        ports:
+        - containerPort: 9200
+          name: rest
+          protocol: TCP
+        - containerPort: 9300
+          name: inter-node
+          protocol: TCP
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/elasticsearch/data
+        env:
+          - name: cluster.name
+            value: k8s-logs
+          - name: node.name
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: discovery.seed_hosts
+            value: "es-cluster-0.elasticsearch,es-cluster-1.elasticsearch,es-cluster-2.elasticsearch"
+          - name: cluster.initial_master_nodes
+            value: "es-cluster-0,es-cluster-1,es-cluster-2"
+          - name: ES_JAVA_OPTS
+            value: "-Xms512m -Xmx512m"
+</code></pre>
+<p>Aquí definimos los Pods en StatefulSet. Llamamos a los contenedores <code>elasticsearch</code> y elegimos la imagen de Docker <code>docker.elastic.co/elasticsearch/elasticsearch:7.2.0</code>. En este momento, puede modificar esta etiqueta de imagen para que se corresponda con su propia imagen interna de Elasticsearch, o a una versión distinta. Tenga en cuenta que, a los efectos de esta guía, solo se ha probado Elasticsearch <code>7.2.0</code>.</p>
+
+<p>A continuación, usamos el campo <code>resources</code> para especificar que el contenedor necesita que se garantice al menos 0,1 vCPU y puede tener ráfagas de hasta 1 vCPU (lo que limita el uso de recursos de Pods cuando se realiza una ingestión inicial grande o se experimenta un pico de carga). Debería modificar estos valores según su carga prevista y los recursos disponibles. Para obtener más información sobre solicitudes y límites de recursos, consulte la <a href="https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/">documentación oficial de Kubernetes</a>.</p>
+
+<p>A continuación, abriremos los puertos <code>9200</code> y <code>9300</code> y les asignaremos nombres para la comunicación de la API REST y entre nodos, respectivamente. Especificaremos un <code>volumeMount</code> llamado <code>data</code> que montará el PersistentVolume llamado <code>data</code> en el contenedor en la ruta <code>/usr/share/elasticsearch/data</code>. Definiremos los VolumeClaims para este StatefulSet en un bloque YAML posterior.</p>
+
+<p>Por último, configuraremos algunas variables de entorno en el contenedor:</p>
+
+<ul>
+<li><code>cluster.name</code>: nombre del clúster de Elasticsearch, que en esta guía es <code>k8s-lologs</code>.</li>
+<li><code>node.name</code>: nombre del nodo, que configuramos en el campo <code>.metadata.name</code> usando <code>valueFrom</code>. Esto se resolverá en <code>es-cluster-[0,1,2]</code> según el ordinal asignado al nodo.</li>
+<li><code>discovery.seed_hosts</code>: este campo establece una lista de nodos que el maestro puede elegir en el clúster e iniciarán el proceso de descubrimiento del nodo. En esta guía, gracias al servicio sin encabezado que configuramos antes, nuestros Pods tienen dominios del tipo <code>es-cluster-[0,2].elasticsearch.kube-logging.svc.cluster.local,</code> por lo que configuramos esta variable como corresponde. Usando la resolución DNS de Kubernetes de espacio de nombres locales, podemos acortar esto a <code>es-cluster-[0,1,2].elasticsearch</code>. Para obtener más información sobre el descubrimiento de Elasticsearch, consulte la <a href="https://www.elastic.co/guide/en/elasticsearch/reference/7.x/discovery-settings.html">documentación oficial de Elasticsearch</a>.</li>
+<li><code>cluster.initial_master_nodes</code>: este campo también especifica una lista de nodos que el maestro puede elegir y que participarán en el proceso de elección de maestro. Tenga en cuenta que para este campo debería identificar nodos por sus <code>node.name,</code> no sus nombres de host.</li>
+<li><code>ES_JAVA_OPTS</code>: aquí lo fijamos en <code>-Xms512m -Xmxx512m</code>, que indica a la JVM que utilice un tamaño de pila mínimo y máximo de 512 MB. Debería ajustar estos parámetros según la disponibilidad y las necesidades de recursos de su clúster. Para obtener más información, consulte <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/heap-size.html">Configurar el tamaño de la pila</a>.</li>
+</ul>
+
+<p>El siguiente bloque que pegaremos tiene este aspecto:</p>
+<div class="code-label " title="elasticsearch_statefulset.yaml">elasticsearch_statefulset.yaml</div><pre class="code-pre "><code langs="">. . .
+      initContainers:
+      - name: fix-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/elasticsearch/data
+      - name: increase-vm-max-map
+        image: busybox
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+      - name: increase-fd-ulimit
+        image: busybox
+        command: ["sh", "-c", "ulimit -n 65536"]
+        securityContext:
+          privileged: true
+</code></pre>
+<p>En este bloque, definimos varios Contenedores Init que se ejecutan antes del contenedor principal de la aplicación <code>elasticsearch.</code> Estos contenedores Init se ejecutan para que se completen en el orden en que se definen. Para obtener más información sobre los Contenedores Init, consulte la <a href="https://kubernetes.io/docs/concepts/workloads/pods/init-containers/">documentación oficial de Kubernetes</a>.</p>
+
+<p>El primero, llamado <code>fix-permissions,</code> ejecuta un comando <code>chown</code> para cambiar el propietario y el grupo del directorio de datos de Elasticsearch a <code>1000:1000,</code> el UID de usuario de Elasticsearch. Por defecto, Kubernetes instala el directorio de datos como <code>root</code>, con lo cual Elasticsearch no puede acceder a él. Para obtener más información sobre este paso, consulte “<a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html#_notes_for_production_use_and_defaults">Notas vinculadas al uso de producción y a los valores predeterminados</a>”.</p>
+
+<p>El segundo, llamado <code>increase-vm-max-map,</code> ejecuta un comando para aumentar los límites del sistema operativo en los recuentos de mmap, lo que por defecto puede ser demasiado bajo. Esto puede provocar errores de memoria. Para obtener más información sobre este paso, consulte la <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/vm-max-map-count.html">documentación oficial de Elasticsearch</a>.</p>
+
+<p>El siguiente contenedor Init que se ejecutará es <code>increase-fd-ulimit</code>, que ejecuta el comando <code>ulimit</code> para aumentar el número máximo de descriptores de archivos abiertos. Para obtener más información sobre este paso, consulte “<a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html#_notes_for_production_use_and_defaults">Notas vinculadas al uso de producción y a los valores predeterminados</a>” en la documentación oficial de Elasticsearch.</p>
+
+<p><span class='note'><strong>Nota:</strong> en las <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html#_notes_for_production_use_and_defaults">Notas de Elasticsearch vinculadas al uso de producción</a> también se menciona la desactivación del intercambio por motivos de rendimiento. Según su instalación o proveedor de Kubernetes, es posible que el intercambio ya esté inhabilitado. Para comprobarlo, aplique <code>exec</code> en un contenedor ejecutándose y ejecute <code>cat /proc/swaps</code> para enumerar los dispositivos de intercambio activos. Si no ve nada, el intercambio estará inhabilitado.<br></span></p>
+
+<p>Ahora que definimos nuestro contenedor principal de la aplicación y los contenedores Init que se ejecutan antes para ajustar el SO del contenedor, podemos añadir la pieza final a nuestro archivo de definición de objeto StatefulSet: <code>volumeClaimTemplates</code>.</p>
+
+<p>Pegue el siguiente bloque de <code>volumeClaimTemplate</code>:</p>
+<div class="code-label " title="elasticsearch_statefulset.yaml">elasticsearch_statefulset.yaml</div><pre class="code-pre "><code langs="">. . .
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        app: elasticsearch
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: do-block-storage
+      resources:
+        requests:
+          storage: 100Gi
+</code></pre>
+<p>En este bloque, definimos el <code>volumeClaimTemplates</code> de StatefulSet. Kubernetes lo usará para crear PersistentVolumes para los Pods. En el bloque anterior, lo llamamos <code>data</code> (que es el <code>name</code> al que nos referimos en el <code>volumeMount</code> previamente definido) y le asignamos la misma <code>etiqueta app: elasticsearch</code> que a nuestro StatefulSet.</p>
+
+<p>A continuación, especificamos su modo de acceso como <code>ReadWriteOnce</code>, lo que significa que solo un nodo puede montarlo con atributos de lectura y escritura. En esta guía, definimos la clase de almacenamiento como <code>do-block-storage</code> debido a que usamos un clúster de Kubernetes DigitalOcean para fines demostrativos. Debería cambiar este valor según el punto en que ejecute su clúster de Kubernetes. Para obtener más información, consulte la documentación de <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/">Persistent Volume</a>.</p>
+
+<p>Por último, especificaremos que nos gustaría que cada PersistentVolume tuviese un tamaño de 100 GiB. Debería ajustar este valor según sus necesidades de producción.</p>
+
+<p>La especificación completa de StatefulSet debería tener un aspecto similar a este:</p>
+<div class="code-label " title="elasticsearch_statefulset.yaml">elasticsearch_statefulset.yaml</div><pre class="code-pre "><code langs="">apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: es-cluster
+  namespace: kube-logging
+spec:
+  serviceName: elasticsearch
+  replicas: 3
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.2.0
+        resources:
+            limits:
+              cpu: 1000m
+            requests:
+              cpu: 100m
+        ports:
+        - containerPort: 9200
+          name: rest
+          protocol: TCP
+        - containerPort: 9300
+          name: inter-node
+          protocol: TCP
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/elasticsearch/data
+        env:
+          - name: cluster.name
+            value: k8s-logs
+          - name: node.name
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: discovery.seed_hosts
+            value: "es-cluster-0.elasticsearch,es-cluster-1.elasticsearch,es-cluster-2.elasticsearch"
+          - name: cluster.initial_master_nodes
+            value: "es-cluster-0,es-cluster-1,es-cluster-2"
+          - name: ES_JAVA_OPTS
+            value: "-Xms512m -Xmx512m"
+      initContainers:
+      - name: fix-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/elasticsearch/data
+      - name: increase-vm-max-map
+        image: busybox
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+      - name: increase-fd-ulimit
+        image: busybox
+        command: ["sh", "-c", "ulimit -n 65536"]
+        securityContext:
+          privileged: true
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        app: elasticsearch
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: do-block-storage
+      resources:
+        requests:
+          storage: 100Gi
+</code></pre>
+<p>Cuando esté satisfecho con su configuración de Elasticsearch, guarde y cierre el archivo.</p>
+
+<p>Ahora, implemente StatefulSet usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f elasticsearch_statefulset.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>statefulset.apps/es-cluster created
+</code></pre>
+<p>Puede controlar la implementación de StatefulSet usando <code>kubectl rollout status</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl rollout status sts/es-cluster --namespace=kube-logging
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado a medida que se implemente el clúster:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Waiting for 3 pods to be ready...
+Waiting for 2 pods to be ready...
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 3 new pods have been updated...
+</code></pre>
+<p>Cuando se implemenen todos los Pods, podrá comprobar que su clúster de Elasticsearch funcione correctamente realizando una solicitud en la API REST.</p>
+
+<p>Para hacerlo, primero, reenvíe el puerto local <code>9200</code> al puerto <code>9200</code> en uno de los nodos de Elasticsearch (<code>es-cluster-0</code>) usando <code>kubectl port-forward</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl port-forward es-cluster-0 9200:9200 --namespace=kube-logging
+</li></ul></code></pre>
+<p>A continuación, en una ventana de terminal separada, realice una solicitud <code>curl</code> en la API REST:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl http://localhost:9200/_cluster/state?pretty
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "cluster_name" : "k8s-logs",
+  "compressed_size_in_bytes" : 348,
+  "cluster_uuid" : "QD06dK7CQgids-GQZooNVw",
+  "version" : 3,
+  "state_uuid" : "mjNIWXAzQVuxNNOQ7xR-qg",
+  "master_node" : "IdM5B7cUQWqFgIHXBp0JDg",
+  "blocks" : { },
+  "nodes" : {
+    "u7DoTpMmSCixOoictzHItA" : {
+      "name" : "es-cluster-1",
+      "ephemeral_id" : "ZlBflnXKRMC4RvEACHIVdg",
+      "transport_address" : "10.244.8.2:9300",
+      "attributes" : { }
+    },
+    "IdM5B7cUQWqFgIHXBp0JDg" : {
+      "name" : "es-cluster-0",
+      "ephemeral_id" : "JTk1FDdFQuWbSFAtBxdxAQ",
+      "transport_address" : "10.244.44.3:9300",
+      "attributes" : { }
+    },
+    "R8E7xcSUSbGbgrhAdyAKmQ" : {
+      "name" : "es-cluster-2",
+      "ephemeral_id" : "9wv6ke71Qqy9vk2LgJTqaA",
+      "transport_address" : "10.244.40.4:9300",
+      "attributes" : { }
+    }
+  },
+...
+</code></pre>
+<p>Esto indica que nuestro clúster de Elasticsearch <code>k8s-logs</code> se creó correctamente con 3 nodos: <code>es-cluster-0</code>, <code>es-cluster-1</code> y <code>es-cluster-2</code>. El nodo maestro actual es <code>es-cluster-0</code>.</p>
+
+<p>Ahora que su clúster de Elasticsearch está configurado y en ejecución, puede configurar un frontend de Kibana para él.</p>
+
+<h2 id="paso-3-crear-la-implementación-y-el-servicio-de-kibana">Paso 3: Crear la implementación y el servicio de Kibana</h2>
+
+<p>Para iniciar Kibana en Kubernetes, crearemos un servicio llamado <code>kibana</code> y una implementación que consta de una réplica de Pod. Puede escalar el número de replicas según sus necesidades de producción y, de forma opcional, especificar un tipo de <code>LoadBalancer</code> para el servicio a fin de cargar solicitudes de equilibrio en los pods de implementación.</p>
+
+<p>En este caso, crearemos el servicio y la implementación en el mismo archivo. Abra un archivo llamado <code>kibana.yaml</code> en su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano kibana.yaml
+</li></ul></code></pre>
+<p>Péguelo en la siguiente especificación de servicio:</p>
+<div class="code-label " title="kibana.yaml">kibana.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: kube-logging
+  labels:
+    app: kibana
+spec:
+  ports:
+  - port: 5601
+  selector:
+    app: kibana
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: kube-logging
+  labels:
+    app: kibana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:7.2.0
+        resources:
+          limits:
+            cpu: 1000m
+          requests:
+            cpu: 100m
+        env:
+          - name: ELASTICSEARCH_URL
+            value: http://elasticsearch:9200
+        ports:
+        - containerPort: 5601
+</code></pre>
+<p>A continuación, guarde y cierre el archivo.</p>
+
+<p>En esta especificación, definimos un servicio llamado <code>kibana</code> en el espacio de nombres <code>kube-logging</code> y le asignamos la etiqueta <code>app: kibana</code>.</p>
+
+<p>También especificamos que el acceso a este debería ser posible en el puerto <code>5601</code> y que debería usar la etiqueta <code>app: kibana</code> para seleccionar los Pods de destino del servicio.</p>
+
+<p>En la especificación <code>Deployment</code>, definimos una implementación llamada <code>kibana</code> y especificamos que quisiéramos 1 réplica de Pod.</p>
+
+<p>Usamos la imagen <code>docker.elastic.co/kibana/kibana:7.2.0</code>. Ahora puede sustituir su propia imagen de Kibana privada o pública que usará.</p>
+
+<p>Especificamos que nos quisiéramos al menos 0,1 vCPU garantizado para el Pod, con un límite de 1 vCPU. Debería cambiar estos valores según su carga prevista y los recursos disponibles.</p>
+
+<p>A continuación, usaremos la variable de entorno <code>ELASTICSEARCH_URL</code> para establecer el punto final y el puerto para el clúster de Elasticsearch. Al usar DNS de Kubernetes, este punto final corresponde a su nombre de servicio <code>elasticsearch</code>. Este dominio se resolverá en una lista de direcciones IP para los 3 Pods de Elasticsearch. Para obtener más información sobre el DNS de Kubernetes, consulte <a href="https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#services">DNS para servicios y Pods</a>.</p>
+
+<p>Por último, fijamos el puerto de contenedor de Kibana en el valor <code>5601</code>, al cual el servicio <code>kibana</code> reenviará las solicitudes.</p>
+
+<p>Cuando esté satisfecho con su configuración de Kibana, podrá implementar el servicio y la implementación usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f kibana.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/kibana created
+deployment.apps/kibana created
+</code></pre>
+<p>Puede comprobar que la implementación se haya realizado con éxito ejecutando el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl rollout status deployment/kibana --namespace=kube-logging
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>deployment "kibana" successfully rolled out
+</code></pre>
+<p>Para acceder a la interfaz de Kibana, reenviaremos un puerto local al nodo de Kubernetes ejecutando Kibana. Obtenga la información del Pod de Kibana usando <code>kubectl get</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pods --namespace=kube-logging
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                      READY     STATUS    RESTARTS   AGE
+es-cluster-0              1/1       Running   0          55m
+es-cluster-1              1/1       Running   0          54m
+es-cluster-2              1/1       Running   0          54m
+kibana-6c9fb4b5b7-plbg2   1/1       Running   0          4m27s
+</code></pre>
+<p>Aquí observamos que nuestro Pod de Kibana se llama <code>kibana-6c9fb4b5b7-plbg2</code>.</p>
+
+<p>Reenvíe el puerto local <code>5601</code> al puerto <code>5601</code> de este Pod:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl port-forward kibana-6c9fb4b5b7-plbg2 5601:5601 --namespace=kube-logging
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Forwarding from 127.0.0.1:5601 -&gt; 5601
+Forwarding from [::1]:5601 -&gt; 5601
+</code></pre>
+<p>Ahora, en su navegador web, visite la siguiente URL:</p>
+<pre class="code-pre "><code langs="">http://localhost:5601
+</code></pre>
+<p>Si ve la siguiente página de bienvenida de Kibana, significa que implementó con éxito Kibana en su clúster de Kubernetes:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/kubernetes_efk/kibana_welcome.png" alt="Pantalla de bienvenida de Kibana"></p>
+
+<p>Ahora puede proseguir con la implementación del componente final de la pila EFK: el colector de registro, Fluentd.</p>
+
+<h2 id="paso-4-crear-el-daemonset-de-fluentd">Paso 4: Crear el DaemonSet de Fluentd</h2>
+
+<p>En esta guía, configuraremos Fluentd como DaemonSet, que es un tipo de carga de trabajo de Kubernetes que ejecuta una copia de un Pod determinado en cada nodo del clúster de Kubernetes. Al usar este controlador de DaemonSet, implementaremos un Pod de agente de registro de Fluentd en cada nodo de nuestro clúster. Para obtener más información sobre esta arquitectura de registro, consulte “<a href="https://kubernetes.io/docs/concepts/cluster-administration/logging/#using-a-node-logging-agent">Usar un agente de registro de nodo</a>” de los documentos oficiales de Kubernetes.</p>
+
+<p>En Kubernetes, los flujos de registro de las aplicaciones en contenedores que realizan registros en <code>stdout</code> y <code>stderr</code> se capturan y redireccionan a los archivos de JSON de los nodos. El Pod de Fluentd  controlará estos archivos de registro, filtrará los eventos de registro, transformará los datos de registro y los enviará al backend de registro de Elasticsearch que implementamos en el <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-an-elasticsearch-fluentd-and-kibana-efk-logging-stack-on-kubernetes#step-2-%E2%80%94-creating-the-elasticsearch-statefulset">Paso 2</a>.</p>
+
+<p>Además de los registros de contenedores, el agente de Fluentd controlará los registros de componentes del sistema de Kubernetes, como kubelet, kube-proxy y los registros de Docker. Para ver una lista completa de fuentes controladas por el agente de registro de Fluentd, consulte el archivo <a href="https://github.com/fluent/fluentd-kubernetes-daemonset/blob/master/docker-image/v0.12/debian-elasticsearch/conf/kubernetes.conf"><code>kubernetes.conf</code></a> utilizado para configurar el agente de registro. Para obtener más información sobre el registro en los clústeres de Kubernetes, consulte &ldquo;<a href="https://kubernetes.io/docs/concepts/cluster-administration/logging/#logging-at-the-node-level">Realizar registros en el nivel de nodo</a>&rdquo; de la documentación oficial de Kubernetes.</p>
+
+<p>Empiece abriendo un archivo llamado <code>fluentd.yaml</code> en su editor de texto favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano fluentd.yaml
+</li></ul></code></pre>
+<p>Una vez más, realizaremos el pegado en las definiciones de objeto de Kubernetes bloque por bloque y proporcionaremos contexto a medida que avancemos. En esta guía, usamos la <a href="https://github.com/fluent/fluentd-kubernetes-daemonset/blob/master/fluentd-daemonset-elasticsearch-rbac.yaml">especificación de DaemonSet de Fluentd</a> proporcionada por los encargados de mantenimiento de Fluentd. Otro recurso útil proporcionado por los encargados de mantenimiento de Fluentd es <a href="https://docs.fluentd.org/v/0.12/articles/kubernetes-fluentd">Kuberentes Fluentd</a>.</p>
+
+<p>Primero, pegue la siguiente definición de ServiceAccount:</p>
+<div class="code-label " title="fluentd.yaml">fluentd.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluentd
+  namespace: kube-logging
+  labels:
+    app: fluentd
+</code></pre>
+<p>Aquí, crearemos una cuenta de servicio llamada <code>fluentd</code> que los Pods de Fluentd usarán para acceder a la API de Kubernetes. La crearemos en el espacio de nombres <code>kube-logging</code> y una vez más le asignaremos la etiqueta <code>app: fluentd</code>. Para obtener más información sobre las cuentas de servicio de Kubernetes, consulte <a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/">Configurar cuentas de servicio para Pods</a> en los documentos oficiales de Kubernetes.</p>
+
+<p>A continuación, pegue el siguiente bloque de <code>ClusterRole</code>:</p>
+<div class="code-label " title="fluentd.yaml">fluentd.yaml</div><pre class="code-pre "><code langs="">. . .
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluentd
+  labels:
+    app: fluentd
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+</code></pre>
+<p>Aquí definiremos un ClusterRole llamado <code>fluentd</code> al que concederemos los permisos <code>get</code>, <code>list</code> y <code>watch</code> en los objetos <code>pods</code> y <code>namespaces</code>. Los clusterRoles le permiten conceder acceso a recursos de Kubernetes con ámbito de clúster como nodos. Para obtener más información sobre el control de acceso basado en roles y los roles de clústeres, consulte <a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/">Usar la autorización de RBAC</a>en la documentación oficial de Kubernetes.</p>
+
+<p>A cotninuación, pegue el siguiente bloque de <code>ClusterRoleBinding</code>:</p>
+<div class="code-label " title="fluentd.yaml">fluentd.yaml</div><pre class="code-pre "><code langs="">. . .
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: fluentd
+roleRef:
+  kind: ClusterRole
+  name: fluentd
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: fluentd
+  namespace: kube-logging
+</code></pre>
+<p>En este bloque, definimos un <code>ClusterRoleBinding</code> llamado <code>fluentd</code> que une el ClusterRole de <code>fluentd</code> a la cuenta de servicio de <code>fluentd</code>. Esto concede a la cuenta de servicio de <code>fluentd</code> los permisos enumerados en el rol de clúster de <code>fluentd</code>.</p>
+
+<p>En este punto, podemos comenzar a realizar el pegado en la especificación real de DaemonSet:</p>
+<div class="code-label " title="fluentd.yaml">fluentd.yaml</div><pre class="code-pre "><code langs="">. . .
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd
+  namespace: kube-logging
+  labels:
+    app: fluentd
+</code></pre>
+<p>Aquí definimos un DaemonSet llamado <code>fluentd</code> en el espacio de nombres <code>kube-logging</code> y le asignamos la etiqueta <code>app: fluentd</code>.</p>
+
+<p>A continuación, pegue la siguiente sección:</p>
+<div class="code-label " title="fluentd.yaml">fluentd.yaml</div><pre class="code-pre "><code langs="">. . .
+spec:
+  selector:
+    matchLabels:
+      app: fluentd
+  template:
+    metadata:
+      labels:
+        app: fluentd
+    spec:
+      serviceAccount: fluentd
+      serviceAccountName: fluentd
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      containers:
+      - name: fluentd
+        image: fluent/fluentd-kubernetes-daemonset:v1.4.2-debian-elasticsearch-1.1
+        env:
+          - name:  FLUENT_ELASTICSEARCH_HOST
+            value: "elasticsearch.kube-logging.svc.cluster.local"
+          - name:  FLUENT_ELASTICSEARCH_PORT
+            value: "9200"
+          - name: FLUENT_ELASTICSEARCH_SCHEME
+            value: "http"
+          - name: FLUENTD_SYSTEMD_CONF
+            value: disable
+</code></pre>
+<p>Aquí hacemos coincidir la etiqueta <code>app:fluentd</code> definida en <code>.metadata.labels</code> y luego asignamos la cuenta de servicio de <code>fluentd</code> al DaemonSet. También seleccionamos la <code>app:fluentd</code> como los Pods administrados por este DaemonSet.</p>
+
+<p>A continuación, definimos una tolerancia de <code>NoSchedule</code> para que coincida con el rasgo equivalente de los nodos maestros de Kubernetes. Esto garantizará que el DaemonSet también se despliegue a los maestros de Kubernetes. Si no desea ejecutar un Pod de Fluentd en sus nodos maestros, elimine esta tolerancia. Para obtener más información sobre los rasgos y las tolerancias de Kubernetes, consulte <a href="https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/">“Rasgos y tolerancias&quot;</a> en los documentos oficiales de Kubernetes.</p>
+
+<p>A continuación, empezaremos a definir el contenedor de Pods, que llamamos <code>fluentd</code>.</p>
+
+<p>Usaremos la imagen oficial de <a href="https://hub.docker.com/r/fluent/fluentd-kubernetes-daemonset/">Debian v1.4.2</a> proporcionada por los responsables de mantenimiento de Fluentd. Si quiere usar su propia imagen privada o pública de Fluentd o una versión de imagen distinta, modifique la etiqueta <code>image</code> en la especificación del contenedor. El Dockerfile y el contenido de esta imagen están disponibles en el <a href="https://github.com/fluent/fluentd-kubernetes-daemonset/tree/master/docker-image/v1.4/debian-elasticsearch">repositorio de Github fluentd-kubernetes-daemonset</a>.</p>
+
+<p>A continuación, configuraremos Fluentd usando algunas variables de entorno:</p>
+
+<ul>
+<li><code>FLUENT_ELASTICSEARCH_HOST</code>: lo fijaremos enala dirección de servicio sin encabezado de Elasticsearch definida anteriormente: el<code>asticsearch.kube-logging.svc.cluster.local</code>. Esto se resolverá en una lista de direcciones IP para los 3 Pods de Elasticsearch. El host real de Elasticsearch probablemente será la primera dirección IP de esta lista. Para distribuir registros en el clúster, deberá modificar la configuración del complemento de resultados de Elasticsearch de Fluentd. Para obtener más información sobre este complemento, consulte <a href="https://docs.fluentd.org/v1.0/articles/out_elasticsearch#hosts-(optional)">Complemento de resultado de Elasticsearch</a>.</li>
+<li><code>FLUENT_ELASTICSEARCH_PORT</code>: lo fijaremos en <code>9200</code>, el puerto de Elasticsearch que configuramos antes.</li>
+<li><code>FLUENT_ELASTICSEARCH_SCHEME</code>: lo fijaremos en <code>http</code>.</li>
+<li><code>FLUENTD_SYSTEMD_CONF</code>: lo fijaremos en <code>disable</code> para eliminar el resultado relacionado con <code>systemd</code> que no está configurado en el contenedor.</li>
+</ul>
+
+<p>Por último, pegue la siguiente sección:</p>
+<div class="code-label " title="fluentd.yaml">fluentd.yaml</div><pre class="code-pre "><code langs="">. . .
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+</code></pre>
+<p>Aquí especificamos un límite de memoria de 512 MiB en el Pod de FluentD y garantizamos 0,1 vCPU y 200 MiB de memoria. Puede ajustar estos límites y estas solicitudes de recursos según su volumen de registro previsto y los recursos disponibles.</p>
+
+<p>A continuación, montamos las rutas host <code>/var/log</code> y <code>/var/lib/docker/containers</code> en el contenedor usando <code>volumeMounts</code> <code>varlog</code> y <code>varlibdockercontainers</code>. Estos <code>volúmenes</code> se definen al final del bloque.</p>
+
+<p>El parámetro final que definimos en este bloque es <code>terminationGracePeriodSeconds</code>, que proporciona a Fluentd 30 segundos para cerrarse de forma correcta tras recibir una señal <code>SIGTERM</code>. Tras 30 segundos, los contenedores se envían a una señal <code>SIGKILL</code> El valor predeterminado de <code>terminationGracePeriodSeconds</code> es de 30 segundos, con lo cual en la mayoría de los casos este parámetro puede omitirse. Para obtener más información sobre la terminación de las cargas de trabajo de Kubernetes de forma correcta, consulte en Google &ldquo;<a href="https://cloud.google.com/blog/products/gcp/kubernetes-best-practices-terminating-with-grace">Buenas prácticas de Kubernetes: cierre correcto</a>&rdquo;.</p>
+
+<p>La especificación completa de Fluentd debería tener un aspecto similar a este:</p>
+<div class="code-label " title="fluentd.yaml">fluentd.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluentd
+  namespace: kube-logging
+  labels:
+    app: fluentd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluentd
+  labels:
+    app: fluentd
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: fluentd
+roleRef:
+  kind: ClusterRole
+  name: fluentd
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: fluentd
+  namespace: kube-logging
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd
+  namespace: kube-logging
+  labels:
+    app: fluentd
+spec:
+  selector:
+    matchLabels:
+      app: fluentd
+  template:
+    metadata:
+      labels:
+        app: fluentd
+    spec:
+      serviceAccount: fluentd
+      serviceAccountName: fluentd
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      containers:
+      - name: fluentd
+        image: fluent/fluentd-kubernetes-daemonset:v1.4.2-debian-elasticsearch-1.1
+        env:
+          - name:  FLUENT_ELASTICSEARCH_HOST
+            value: "elasticsearch.kube-logging.svc.cluster.local"
+          - name:  FLUENT_ELASTICSEARCH_PORT
+            value: "9200"
+          - name: FLUENT_ELASTICSEARCH_SCHEME
+            value: "http"
+          - name: FLUENTD_SYSTEMD_CONF
+            value: disable
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+</code></pre>
+<p>Cuando termine de configurar el DaemonSet de Fluentd, guarde y cierre el archivo.</p>
+
+<p>Ahora, ejecute el DaemonSet usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f fluentd.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>serviceaccount/fluentd created
+clusterrole.rbac.authorization.k8s.io/fluentd created
+clusterrolebinding.rbac.authorization.k8s.io/fluentd created
+daemonset.extensions/fluentd created
+</code></pre>
+<p>Verifique que su DaemonSet se despliegue correctamente usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get ds --namespace=kube-logging
+</li></ul></code></pre>
+<p>Debería ver el siguiente estado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      DESIRED   CURRENT   READY     UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+fluentd   3         3         3         3            3           &lt;none&gt;          58s
+</code></pre>
+<p>Esto indica que hay 3 Pods de <code>fluentd</code> en ejecución, lo que corresponde al número de nodos en nuestro clúster de Kubernetes.</p>
+
+<p>Ahora podemos comprobar Kibana para verificar que los datos de registro se recopilen y envíen correctamente a Elasticsearch.</p>
+
+<p>Con <code>kubectl port-forward</code> todavía abierto, vaya a <code>http://localhost:5601</code>.</p>
+
+<p>Haga clic en <strong>Discover</strong> en el menú de navegación izquierdo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/kubernetes_efk/kibana_discover.png" alt="Descubrir Kibana"></p>
+
+<p>Debería ver la siguiente ventana de configuración:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/kubernetes_efk/kibana_index.png" alt="Configuración del patrón de indexación de Kibana"></p>
+
+<p>Esto le permite definir los índices de Elasticsearch que desea explorar en Kibana. Para obtener más información, consulte <a href="https://www.elastic.co/guide/en/kibana/current/tutorial-define-index.html">Definir sus patrones de indexación</a> en los documentos oficiales de Kibana. Por ahora, simplemente usaremos el patrón comodín <code>logstash-*</code> para capturar todos los datos de registro de nuestro clúster de Elasticsearch. Introduzca <code>logstash-*</code> en la casilla de texto y haga clic en <strong>Next step</strong>.</p>
+
+<p>Accederá a la siguiente página:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/kubernetes_efk/kibana_index_settings.png" alt="Configuración del patrón de indexación de Kibana"></p>
+
+<p>Aquí puede configurar el campo de Kibana que usará para filtrar los datos de registro por tiempo. En el menú desplegable, seleccione el campo <strong>@timestamp</strong> y presione <strong>Create index pattern</strong>.</p>
+
+<p>Luego, presione <strong>Discover</strong> en el menú de navegación izquierdo.</p>
+
+<p>Debería ver un gráfico de histograma y algunas entradas recientes en el registro:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/kubernetes_efk/kibana_logs.png" alt="Registros entrantes de Kibana"></p>
+
+<p>En este punto, habrá configurado e implementado correctamente la pila EFK en su clúster de Kubernetes. Si desea aprender a usar Kibana para analizar sus datos de registro, consulte la <a href="https://www.elastic.co/guide/en/kibana/current/index.html">Guía de usuario de Kibana</a>.</p>
+
+<p>En la siguiente sección opcional, implementaremos un Pod counter simple que imprime números en stdout y encuentra sus registros en Kibana.</p>
+
+<h2 id="paso-5-opcional-probar-el-registro-de-contenedores">Paso 5 (opcional): Probar el registro de contenedores</h2>
+
+<p>Para demostrar un caso básico de uso de Kibana de exploración de los últimos registros de un Pod determinado, implementaremos un Pod counter que imprime números secuenciales en stdout.</p>
+
+<p>Comencemos creando el Pod. Abra un archivo llamado <code>counter.yaml</code> en su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano counter.yaml
+</li></ul></code></pre>
+<p>A continuación, pegue la siguiente especificación de Pod:</p>
+<div class="code-label " title="counter.yaml">counter.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Pod
+metadata:
+  name: counter
+spec:
+  containers:
+  - name: count
+    image: busybox
+    args: [/bin/sh, -c,
+            'i=0; while true; do echo "$i: $(date)"; i=$((i+1)); sleep 1; done']
+</code></pre>
+<p>Guarde y cierre el archivo.</p>
+
+<p>Este es un Pod mínimo llamado <code>counter</code> que ejecuta un bucle <code>while</code> e imprime números de forma secuencial.</p>
+
+<p>Implemente el <code>counter</code> de Pods usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f counter.yaml
+</li></ul></code></pre>
+<p>Cuando el Pod se cree y esté en ejecución, regrese a su panel de control de Kibana.</p>
+
+<p>Desde la página <strong>Discover</strong>, en la barra de búsqueda escriba <code>kubernetes.pod_name:counter</code>. Con esto se filtrarán los datos de registro para Pods que tengan el nombre <code>counter</code>.</p>
+
+<p>A continuación, debería ver una lista de entradas de registro para el Pod <code>counter</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/kubernetes_efk/counter_logs.png" alt="Registros counter en Kibana"></p>
+
+<p>Puede hacer clic en cualquiera de las entradas de registro para ver metadatos adicionales, como el nombre del contenedor, el nodo de Kubernetes, el espacio de nombres y otros.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>En esta guía, demostramos la forma de instalar y configurar Elasticsearch, Fluentd y Kibana en un clúster de Kubernetes. Usamos una arquitectura de registro mínima que consta de un único agente de registro de Pod que se ejecuta en cada nodo de trabajo de Kubernetes.</p>
+
+<p>Antes de implementar esta pila de registro en su clúster de Kubernetes de producción, la mejor opción es ajustar los requisitos y límites de recursos como se indica en esta guía. También es posible que desee configurar <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-xpack.html">X-Pack</a> para habilitar funciones integradas de seguimiento y seguridad.</p>
+
+<p>La arquitectura de registro que usamos aquí consta de 3 Pods de Elasticsearch, un Pod único de Kibana (sin equilibrio de carga) y un conjunto de Pods de Fluentd se implementaron como un DaemonSet. Es posible que desee escalar esta configuración según su caso de uso de producción. Para obtener más información sobre el escalamiento de su pila de Elasticsearch y Kibana, consulte <a href="https://www.elastic.co/blog/small-medium-or-large-scaling-elasticsearch-and-evolving-the-elastic-stack-to-fit">Escalamiento de Elasticsearch</a>.</p>
+
+<p>Kubernetes también permite arquitecturas de agentes de registro más complejas que pueden ajustarse mejor a su caso de uso. Para obtener más información, consulte <a href="https://kubernetes.io/docs/concepts/cluster-administration/logging/">Arquitectura de registro</a> en los documentos de Kubernetes.</p>

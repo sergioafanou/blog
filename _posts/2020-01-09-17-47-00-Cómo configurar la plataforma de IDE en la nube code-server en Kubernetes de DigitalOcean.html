@@ -1,0 +1,228 @@
+---
+layout: post
+title: Cómo configurar la plataforma de IDE en la nube code-server en Kubernetes de DigitalOcean
+network: digitalocean
+date: January 09, 2020 at 05:47PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-the-code-server-cloud-ide-platform-on-digitalocean-kubernetes-es
+image: https://assets.digitalocean.com/articles/codeserver/step1a.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>El autor seleccionó la <a href="https://www.brightfunds.org/funds/foss-nonprofits">Free and Open Source Fund</a> para recibir una donación como parte del programa <a href="https://do.co/w4do-cta">Write for DOnations.</a></em></p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p>Con el traslado de las herramientas de desarrollo a la nube, la creación y la adopción de plataformas de IDE (entorno de desarrollo integrado) en la nube se encuentra en expansión. Los IDE en la nube permiten la colaboración en tiempo real entre los equipos de desarrolladores para trabajar en un entorno de desarrollo unificado, lo cual minimiza las incompatibilidades y mejora la productividad. Los IDE en la nube, a los que se puede acceder a través de los navegadores web, se encuentran disponibles en cualquier tipo de dispositivo moderno. Otra ventaja de un IDE en la nube es la posibilidad de aprovechar el poder de un clúster, que puede superar por mucho el poder de procesamiento de una sola computadora de desarrollo.</p>
+
+<p><a href="https://github.com/cdr/code-server">code-server</a> es <a href="https://code.visualstudio.com/">Microsoft Visual Studio Code</a> en ejecución en un servidor remoto, y usted puede acceder a él de forma directa desde su navegador. Visual Studio Code es un editor de código moderno con soporte de Git integrado, un depurador de código, autocompletado inteligente y características personalizables y extensibles. Esto significa que puede usar varios dispositivos con diferentes sistemas operativos y tener siempre a mano un entorno de desarrollo uniforme.</p>
+
+<p>A través de este tutorial, configurará la plataforma de IDE en la nube code-server en su clúster de Kubernetes de DigitalOcean y la mostrará en su dominio, con protección de certificados de Let´s Encrypt. Al finalizar, contará con Microsoft Visual Studio Code activo en su clúster de Kubernetes, disponible a través de HTTPS y protegido por una contraseña.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<ul>
+<li><p>Un clúster de Kubernetes de DigitalOcean con su conexión configurada como <code>kubectl</code> predeterminado. Verá las instrucciones para configurar <code>kubectl</code> en el paso <strong>Establecer conexión con su clúster</strong> cuando cree su clúster. Para crear un clúster de Kubernetes en DigitalOcean, consulte <a href="https://www.digitalocean.com/docs/kubernetes/quickstart/">Guía rápida de Kubernetes</a>.</p></li>
+<li><p>El administrador de paquetes de Helm instalado en su computadora local y Tiller instalado en su clúster. Para hacerlo, complete los pasos 1 y 2 del tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-install-software-on-kubernetes-clusters-with-the-helm-package-manager">Cómo instalar software en clústeres de Kubernetes con el administrador de paquetes de Helm</a>.</p></li>
+<li><p>El controlador de Ingress de Nginx y Cert-Manager instalados en su clúster usando Helm para exponer code-server usando los recursos de Ingress. Para hacerlo, siga el artículo <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-an-nginx-ingress-on-digitalocean-kubernetes-using-helm">Cómo configurar un Ingress de Nginx en Kubernetes de DigitalOcean usando Helm</a>.</p></li>
+<li><p>Un nombre de dominio registrado por completo para alojar code-server apuntando al equilibrador de carga utilizado por el Ingress de Nginx. Para este tutorial, se utilizará <code><span class="highlight">code-server.your_domain</span></code> en todo momento. Puede adquirir un nombre de dominio en <a href="https://www.namecheap.com/">Namecheap</a>, obtener uno gratuito en <a href="https://www.freenom.com/en/index.html?lang=en">Freenom</a> o utilizar un registrador de dominios que elija. Este nombre de dominio debe ser diferente del que se utilizó en el tutorial Cómo configurar un Ingress de Nginx en Kubernetes de DigitalOcean.</p></li>
+</ul>
+
+<h2 id="paso-1-instalar-y-exponer-code-server">Paso 1: Instalar y exponer code-server</h2>
+
+<p>En esta sección, instalará code-server en su clúster de Kubernetes de DigitalOcean y lo expondrá en su dominio, usando el controlador de Ingress de Nginx. También configurará una contraseña de acceso.</p>
+
+<p>Almacenará la configuración de implementación en su equipo local, en un archivo llamado <code>code-server.yaml</code>. Créelo usando el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano code-server.yaml
+</li></ul></code></pre>
+<p>Añada las líneas siguientes al archivo:</p>
+<div class="code-label " title="code-server.yaml">code-server.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Namespace
+metadata:
+  name: code-server
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: code-server
+  namespace: code-server
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: <span class="highlight">code-server.your_domain</span>
+    http:
+      paths:
+      - backend:
+          serviceName: code-server
+          servicePort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+ name: code-server
+ namespace: code-server
+spec:
+ ports:
+ - port: 80
+   targetPort: 8443
+ selector:
+   app: code-server
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: code-server
+  name: code-server
+  namespace: code-server
+spec:
+  selector:
+    matchLabels:
+      app: code-server
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: code-server
+    spec:
+      containers:
+      - image: codercom/code-server
+        imagePullPolicy: Always
+        name: code-server
+        args: ["--allow-http"]
+        ports:
+        - containerPort: 8443
+        env:
+        - name: PASSWORD
+          value: "<span class="highlight">your_password</span>"
+</code></pre>
+<p>Esta configuración define un espacio de nombres, una implementación, un servicio y un Ingress. El espacio de nombres recibe el nombre <code>code-server</code> y separa la instalación de code-server del resto de su clúster. La implementación consta de una réplica de la imagen de Docker <code>codercom/code-server</code> y una variable de entorno con nombre <code>PASSWORD</code> que especifica la contraseña para tener acceso.</p>
+
+<p>El servicio <code>code-server</code> expone internamente el pod (creado como parte de la implementación) en el puerto <code>80</code>. El Ingress definido en el archivo especifica que el controlador de Ingress es <code>nginx</code> y que el dominio <code><span class="highlight">code-server.your_domain</span></code> se proporcionará desde el servicio.</p>
+
+<p>Recuerde sustituir <code><span class="highlight">your_password</span></code> por su contraseña deseada y <code><span class="highlight">code-server.your_domain</span></code> por su dominio deseado orientado al equilibrador de carga del controlador de Ingress de Nginx.</p>
+
+<p>A continuación, cree la configuración en Kubernetes ejecutando el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f code-server.yaml
+</li></ul></code></pre>
+<p>Verá el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>namespace/code-server created
+ingress.extensions/code-server created
+service/code-server created
+deployment.extensions/code-server created
+</code></pre>
+<p>Podrá ver que el pod de code-server quedará disponible cuando ejecute lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pods -w -n code-server
+</li></ul></code></pre>
+<p>El resultado tendrá este aspecto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                          READY   STATUS              RESTARTS   AGE
+code-server-f85d9bfc9-j7hq6   0/1     ContainerCreating   0          1m
+</code></pre>
+<p>No bien el estado pase a ser <code>Running</code>, habrá terminado la instalación de code-server en su clúster.</p>
+
+<p>Diríjase a su dominio en su navegador. Verá la solicitud de inicio de sesión para code-server.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/step1a.png" alt="Solicitud de inicio de sesión para code-server"></p>
+
+<p>Introduzca la contraseña que estableció en <code>code-server.yaml</code> y presione <strong>Enter IDE</strong>. Ingresará a code-server y de inmediato verá la GUI de su editor.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/step2a.png" alt="GUI de code-server"></p>
+
+<p>Instaló code-server en su clúster de Kubernetes y lo dejó disponible en su dominio. También verificó que le exige iniciar sesión con una contraseña. Ahora, procederá a protegerlo con certificados gratuitos de Let´s Encrypt usando Cert-Manager.</p>
+
+<h2 id="paso-2-proteger-la-implementación-de-code-server">Paso 2: Proteger la implementación de code-server</h2>
+
+<p>En esta sección, protegerá su instalación de code-server aplicando certificados de Let´s Encrypt a su Ingress, que Cert-Manager creará de forma automática. Después de completar este paso, el acceso a su instalación de code-server será posible a través de HTTPS.</p>
+
+<p>Abra <code>code-server.yaml</code> para editarlo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano code-server.yaml
+</li></ul></code></pre>
+<p>Añada las líneas resaltadas a su archivo. Asegúrese de sustituir el dominio de ejemplo por el suyo:</p>
+<div class="code-label " title="code-server.yaml">code-server.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Namespace
+metadata:
+  name: code-server
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: code-server
+  namespace: code-server
+  annotations:
+    kubernetes.io/ingress.class: nginx
+<span class="highlight">    certmanager.k8s.io/cluster-issuer: letsencrypt-prod</span>
+spec:
+<span class="highlight">  tls:</span>
+<span class="highlight">  - hosts:</span>
+<span class="highlight">    - code-server.your_domain</span>
+<span class="highlight">    secretName: codeserver-prod</span>
+  rules:
+  - host: code-server.your_domain
+    http:
+      paths:
+      - backend:
+          serviceName: code-server
+          servicePort: 80
+...
+</code></pre>
+<p>Primero, especificará que el cluster-issuer que este Ingress usará para suministrar certificados será <code>letsencrypt-prod</code>, creado como parte de los requisitos previos. A continuación, especificará los dominios que se protegerán en la sección <code>tls</code>, así como su nombre para el <code>Secret</code> que los contiene.</p>
+
+<p>Aplique los cambios a su clúster de Kubernetes ejecutando el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f code-server.yaml
+</li></ul></code></pre>
+<p>Deberá esperar algunos minutos para que Let´s Encrypt proporcione su certificado. Mientras tanto, puede rastrear su progreso observando el resultado del siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl describe certificate codeserver-prod -n code-server
+</li></ul></code></pre>
+<p>Cuando termine, la parte final del resultado tendrá un aspecto similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Events:
+  Type    Reason              Age    From          Message
+  ----    ------              ----   ----          -------
+  Normal  Generated           2m49s  cert-manager  Generated new private key
+  Normal  GenerateSelfSigned  2m49s  cert-manager  Generated temporary self signed certificate
+  Normal  OrderCreated        2m49s  cert-manager  Created Order resource "codeserver-prod-4279678953"
+  Normal  OrderComplete       2m14s  cert-manager  Order "codeserver-prod-4279678953" completed successfully
+  Normal  CertIssued          2m14s  cert-manager  Certificate issued successfully
+</code></pre>
+<p>Ahora podrá actualizar su dominio en su navegador. Visualizará el candado en la parte izquierda de la barra de direcciones de su navegador, el cual indicará que la conexión es segura.</p>
+
+<p>En este paso, configuró el Ingress para proteger su implementación de code-server. Ahora, podrá revisar la interfaz de usuario de code-server.</p>
+
+<h2 id="paso-3-explorar-la-interfaz-de-code-server">Paso 3: Explorar la interfaz de code-server</h2>
+
+<p>En esta sección, explorará algunas de las características de la interfaz de code-server. Debido a que code-server es Visual Studio Code en ejecución en la nube, tiene la misma interfaz que la edición de escritorio independiente.</p>
+
+<p>En el lado izquierdo del IDE, existe una fila vertical de seis botones que abren las características más utilizadas en un panel lateral conocido como la “Barra de actividades”.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/step3a.png" alt="GUI de code-server: Panel lateral"></p>
+
+<p>Esta barra es personalizable, para que pueda cambiar el orden de estas vistas o eliminarlas de ella. De forma predeterminada, la primera vista abre el panel de Explorer que permite explorar la estructura del proyecto con forma de árbol. Aquí, puede administrar sus carpetas y archivos. Esto incluye crear, eliminar, mover y modificar nombres según sea necesario. En la siguiente vista se proporciona acceso a una funcionalidad de búsqueda y sustitución.</p>
+
+<p>A continuación, en el orden predeterminado, se encuentra la vista de los sistemas de control de fuentes, como <a href="https://git-scm.com/download">Git</a>. El código de Visual Studio también es compatible con otros proveedores de control de fuentes, y puede encontrar más instrucciones para flujos de trabajo de control de fuentes con el editor en esta <a href="https://code.visualstudio.com/docs/editor/versioncontrol">documentación</a>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/git.png" alt="Menú desplegable de Git con acciones de control de versiones"></p>
+
+<p>La opción de depuración de la barra de actividades ofrece todas las acciones comunes para realizar depuraciones en el panel. Visual Studio Code ofrece compatibilidad integrada con el depurador en tiempo de ejecución <a href="https://nodejs.org/">Node.js</a> y cualquier lenguaje que se trasmita a <a href="https://www.javascript.com/">Javascript</a>. En el caso de otros lenguajes, puede instalar <a href="https://code.visualstudio.com/docs/editor/debugging#_debugger-extensions">extensiones</a> para el depurador requerido. Puede guardar las configuraciones de depuración en el archivo <code>launch.json</code>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/debugger.png" alt="Vista del depurador con launch.json abierto"></p>
+
+<p>En la vista final de la barra de actividades se ofrece un menú para acceder a las extensiones disponibles en <a href="https://marketplace.visualstudio.com/VSCode">Marketplace</a>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/step3b.png" alt="GUI de code-server: Pestañas"></p>
+
+<p>La parte central de la GUI es su editor, que usted puede separar por pestañas para editar su código. Puede cambiar la vista de edición a un sistema de cuadrícula o a archivos en paralelo.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/gridview.png" alt="Vista de sistema de cuadrícula"></p>
+
+<p>Una vez que se cree un nuevo archivo a través del menú <strong>File</strong>, se abrirá un archivo vacío en una nueva pestaña y una vez que este se haya guardado su nombre será visible en el panel lateral Explorer. Se pueden crear carpetas haciendo clic con el botón secundario en la barra lateral de Explorer y seleccionando <strong>New Folder</strong>. Puede expandir una carpeta haciendo clic en su nombre, y también arrastrando archivos y carpetas y soltándolos en partes superiores de la jerarquía para trasladarlas a una nueva ubicación.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/codeserver/step3c.png" alt="GUI de code-server: New Folder"></p>
+
+<p>Puede obtener acceso a un terminal presionando <code>CTRL+SHIFT+\</code> o seleccionando <strong>Terminal</strong> en el menú superior y luego <strong>New Terminal</strong>. La terminal se abrirá en un panel inferior y su directorio de trabajo fijará en el espacio de trabajo del proyecto, que contiene los archivos y las carpetas que se muestran en el panel lateral de Explorer.</p>
+
+<p>Exploró una descripción general de alto nivel de la interfaz de code-server y revisó algunas de las características más utilizadas.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Ahora dispone de code-server, un IDE en la nube versátil, instalado en su clúster de Kubernetes de DigitalOcean. Con él puede trabajar en su código fuente y sus documentos de forma individual o colaborar con su equipo. Ejecutar un IDE en la nube en su clúster proporciona más capacidad para pruebas y descargas, y una computación más completa o rigurosa. Para obtener más información, consulte la <a href="https://code.visualstudio.com/docs">documentación de Visual Studio Code</a> respecto de características adicionales e instrucciones detalladas relacionadas con otros componentes de code-server.</p>

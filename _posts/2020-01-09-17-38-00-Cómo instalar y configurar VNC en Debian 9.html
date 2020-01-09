@@ -1,0 +1,210 @@
+---
+layout: post
+title: Cómo instalar y configurar VNC en Debian 9
+network: digitalocean
+date: January 09, 2020 at 05:38PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-vnc-on-debian-9-es
+image: https://assets.digitalocean.com/articles/vnc_debian9/qOf5NgG.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p><em>Virtual Network Computing</em>, o VNC, es un sistema de conexión que le permite usar su teclado y mouse para interactuar con un entorno de escritorio gráfico en un servidor remoto. Hace que administrar archivos, software y ajustes en un servidor remoto sea más fácil para los usuarios que aún no se sienten cómodos con la línea de comandos.</p>
+
+<p>A través de esta guía, configurará un servidor VNC en un servidor de Debian 9 y se conectará de forma segura a través de un túnel SSH. Usará <a href="https://www.tightvnc.com/">TightVNC</a>, un paquete de control remoto rápido y ligero. Esta opción garantizará que nuestra conexión VNC sea perfecta y estable, incluso en las conexiones a Internet más lentas.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para completar este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un servidor de Debian 9 configurado según <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">la guía de configuración inicial para servidores de Debian 9</a>, un usuario no raíz con acceso <code>sudo</code> y un firewall.</li>
+<li>Un equipo local con un cliente VNC instalado que admita conexiones de VNC a través de túneles SSH.
+
+<ul>
+<li>En Windows, puede usar <a href="https://www.tightvnc.com/">TightVNC,</a> <a href="https://www.realvnc.com/">RealVNC</a> o <a href="https://www.uvnc.com/">UltraVNC</a>.</li>
+<li>En macOS, puede usar el programa integrado <a href="https://support.apple.com/guide/mac-help/screen-sharing-overview-mh14066/mac">Screen Sharing</a> o una aplicación multiplataforma como <a href="https://www.realvnc.com/">RealVNC</a>.</li>
+<li>En Linux, puede elegir entre varias opciones, como <code>vinagre,</code> <code>krdc,</code> <a href="https://www.realvnc.com/">RealVNC</a> o <a href="https://www.tightvnc.com/">TightVNC</a>.</li>
+</ul></li>
+</ul>
+
+<h2 id="paso-1-instalación-del-entorno-de-escritorio-y-el-servidor-vcn">Paso 1: instalación del entorno de escritorio y el servidor VCN</h2>
+
+<p>Por defecto, el servidor Debian 9 no viene con un entorno de escritorio gráfico o un servidor VNC instalado, por lo que comenzaremos instalándolos. Específicamente, instalaremos paquetes para el entorno de escritorio <a href="https://xfce.org/">Xfce</a> más reciente y el paquete TightVNC disponible en el repositorio oficial de Debian.</p>
+
+<p>En su servidor, actualice su lista de paquetes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Ahora, instale el entorno de escritorio Xfce en su servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install xfce4 xfce4-goodies
+</li></ul></code></pre>
+<p>Durante la instalación, se le solicitará seleccionar la distribución de su teclado de una lista de posibles opciones. Seleccione la que corresponda para su idioma y presione <code>Enter</code>. La instalación continuará.</p>
+
+<p>Cuando finalice la instalación, instale el servidor TightVNC:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install tightvncserver
+</li></ul></code></pre>
+<p>Para completar la configuración inicial del servidor VNC tras su instalación, utilice el comando <code>vncserver</code> para configurar una contraseña segura y crear los archivos de configuración iniciales:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver
+</li></ul></code></pre>
+<p>Se le indicará que introduzca y verifique una contraseña para acceder a su máquina de forma remota:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>You will require a password to access your desktops.
+
+Password:
+Verify:
+</code></pre>
+<p>La contraseña debe tener entre seis y ocho caracteres de largo. Las contraseñas de más de 8 caracteres se reducirán automáticamente.</p>
+
+<p>Una vez que verifique la contraseña, tendrá la opción de crear una contraseña de solo vista. Los usuarios que inicien sesión con la contraseña de solo vista no podrán controlar la instancia de VNC con su mouse o teclado. Esta es una opción útil si desea demostrar algo a otras personas que utilizan su servidor VNC, pero no es un requisito  necesario.</p>
+
+<p>Luego, el proceso crea los archivos de configuración predeterminados que se requieren y la información de conexión para el servidor:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Would you like to enter a view-only password (y/n)? <span class="highlight">n</span>
+xauth:  file /home/<span class="highlight">sammy</span>/.Xauthority does not exist
+
+New 'X' desktop is <span class="highlight">your_hostname</span>:1
+
+Creating default startup script /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Starting applications specified in /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Log file is /home/<span class="highlight">sammy</span>/.vnc/<span class="highlight">your_hostname</span>:1.log
+</code></pre>
+<p>Ahora, vamos a configurar el servidor VNC.</p>
+
+<h2 id="paso-2-configuración-del-servidor-vnc">Paso 2: configuración del servidor VNC</h2>
+
+<p>El servidor VNC debe saber qué comandos ejecutar cuando se inicia. Específicamente, VNC debe saber a qué escritorio gráfico deberá conectarse.</p>
+
+<p>Estos comandos se encuentran en un archivo de configuración llamado <code>xstartup</code> en la carpeta <code>.vnc</code> de su directorio principal. La secuencia de comandos de inicio se creó cuando ejecutó <code>vncserver</code> en el paso anterior, pero crearemos una propia para abrir el escritorio Xfce.</p>
+
+<p>Cuando VNC se configura por primera vez, se abre como una instancia del servidor predeterminada en el puerto <code>5901</code>. Este puerto se llama <em>puerto de visualización,</em> y VNC se refiere a él como <code>:1</code>. VNC puede abrir múltiples instancias en otros puertos de visualización, como <code>:2</code>, <code>:3</code>, y así sucesivamente.</p>
+
+<p>Debido a que vamos a cambiar la configuración del servidor VNC, primero, detenga la instancia del servidor VNC que se está ejecutando en el puerto <code>5901</code> con el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver -kill :1
+</li></ul></code></pre>
+<p>El resultado debería tener este aspecto, pero verá un PID diferente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Killing Xtightvnc process ID <span class="highlight">17648</span>
+</code></pre>
+<p>Antes de modificar el archivo <code>xstartup</code>, realice una copia de seguridad del original:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mv ~/.vnc/xstartup ~/.vnc/xstartup.bak
+</li></ul></code></pre>
+<p>Ahora, cree un nuevo archivo <code>xstartup</code> y ábralo en su editor de texto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/.vnc/xstartup
+</li></ul></code></pre>
+<p>Los comandos de este archivo se ejecutan automáticamente siempre que inicie o reinicie el servidor VNC. Necesitamos que VNC inicie nuestro entorno de escritorio, si aún no está iniciado. Añada estos comandos al archivo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="~/.vnc/xstartup">~/.vnc/xstartup</div>#!/bin/bash
+xrdb $HOME/.Xresources
+startxfce4 &amp;
+</code></pre>
+<p>El primer comando del archivo, <code>xrdb $HOME/. Xresources</code>, le indica al marco de trabajo de la GUI de VNC que lea el archivo <code>.Xresources</code> del usuario del servidor. El archivo <code>.Xresources</code> es donde un usuario puede realizar cambios a ajustes concretos del escritorio gráfico, como los colores de la terminal, los temas del cursor y la renderización de fuentes. El segundo comando le indica al servidor que inicie Xfce, que es donde encontrará todo el software gráfico que necesita para administrar cómodamente su servidor.</p>
+
+<p>Para garantizar que el servidor VNC pueda usar este nuevo archivo de inicio correctamente, deberá hacerlo ejecutable.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod +x ~/.vnc/xstartup
+</li></ul></code></pre>
+<p>Ahora, reinicie el servidor VNC.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver
+</li></ul></code></pre>
+<p>Visualizará un resultado similar al siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>New 'X' desktop is <span class="highlight">your_hostname</span>:1
+
+Starting applications specified in /home/<span class="highlight">sammy</span>/.vnc/xstartup
+Log file is /home/<span class="highlight">sammy</span>/.vnc/<span class="highlight">your_hostname</span>:1.log
+</code></pre>
+<p>Con la configuración establecida, vamos a conectar con el servidor desde nuestra máquina local.</p>
+
+<h2 id="paso-3-conexión-segura-del-escritorio-de-vnc">Paso 3: conexión segura del escritorio de VNC</h2>
+
+<p>VNC no utiliza protocolos seguros cuando se conecta. Usaremos un túnel SSH para establecer una conexión segura con nuestro servidor y, luego, le indicaremos a nuestro cliente VNC que utilice ese túnel en vez de realizar una conexión directa.</p>
+
+<p>Cree una conexión SSH en su equipo local que se reenvíe de forma segura a la conexión <code>localhost</code> para VNC. Puede hacerlo a través de la terminal en Linux o macOS con el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh -L <span class="highlight">5901</span>:127.0.0.1:<span class="highlight">5901</span> -C -N -l <span class="highlight">sammy</span> <span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>El conmutador <code>-L</code> especifica las vinculaciones del puerto. En este caso, estamos vinculando el puerto <code>5901</code> de la conexión remota con el puerto <code>5901</code>  de su máquina local. El conmutador <code>-C</code> permite la compresión, mientras que el conmutador <code>-N</code> le indica a <code>ssh</code> que no queremos ejecutar el comando remoto. El conmutador <code>-l</code> especifica el nombre de inicio de sesión remoto.</p>
+
+<p>Recuerde sustituir <code><span class="highlight">sammy</span></code> y <code><span class="highlight">your_server_ip</span></code> por el nombre de usuario sudo no root y la dirección IP de su servidor.</p>
+
+<p>Si usa un cliente SSH gráfico, como PuTTY, recurra a <code><span class="highlight">your_server_ip</span></code> para la conexión IP y establezca <code>localhost:5901</code> como un nuevo puerto reenviado en los ajustes del túnel SSH del programa.</p>
+
+<p>Una vez que el túnel se esté ejecutando, utilice un cliente VNC para conectar a <code>localhost:5901</code>. Se le pedirá que autentique usando la contraseña que configuró en el Paso 1.</p>
+
+<p>Una vez conectado, verá el escritorio Xfce predeterminado.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/vnc_debian9/qOf5NgG.png" alt="La conexión VNC al servidor de Debian 9 ">Seleccione <strong>Use default config</strong> para configurar su escritorio de forma rápida.</p>
+
+<p>Puede acceder a los archivos en su directorio principal con el administrador de archivos o desde la línea de comandos, como se indica aquí:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/vnc_debian9/j6HsSCr.png" alt="Archivos a través de la conexión VNC con Debian 9"></p>
+
+<p>En su máquina local, pulse <code>CTRL+C</code> en su terminal para detener el túnel SSH y regresar a su línea de comandos. Esto también desconectará su sesión de VNC.</p>
+
+<p>A continuación, configuraremos el servidor VNC como servicio.</p>
+
+<h2 id="paso-4-ejecución-de-vnc-como-servicio-del-sistema">Paso 4: ejecución de VNC como servicio del sistema</h2>
+
+<p>A continuación, configuraremos el servidor VNC como un servicio de systemd para poder iniciarlo, detenerlo y reiniciarlo según lo necesitemos, como cualquier otro servicio. Esto también garantizará que VNC se inicie al reiniciar su servidor.</p>
+
+<p>Primero, cree un nuevo archivo de unidad llamado <code>/etc/systemd/system/vncserver@.service</code> con el editor de texto de su preferencia:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/vncserver@.service
+</li></ul></code></pre>
+<p>El símbolo <code>@</code> al final del nombre nos dejará pasar un argumento que podemos usar en la configuración del servicio. Lo usaremos para especificar el puerto de visualización de VNC que queremos usar cuando administremos el servicio.</p>
+
+<p>Añada las siguientes líneas al archivo. Asegúrese de cambiar el valor de <strong>User</strong>, <strong>Group</strong>, <strong>WorkingDirectory</strong> y el nombre de usuario en el valor de <strong>PIDFILE</strong> para que coincidan con su nombre de usuario:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="/etc/systemd/system/vncserver@.service ">/etc/systemd/system/vncserver@.service </div>[Unit]
+Description=Start TightVNC server at startup
+After=syslog.target network.target
+
+[Service]
+Type=forking
+User=<span class="highlight">sammy</span>
+Group=<span class="highlight">sammy</span>
+WorkingDirectory=/home/<span class="highlight">sammy</span>
+
+PIDFile=/home/<span class="highlight">sammy</span>/.vnc/%H:%i.pid
+ExecStartPre=-/usr/bin/vncserver -kill :%i &gt; /dev/null 2&gt;&amp;1
+ExecStart=/usr/bin/vncserver <span class="highlight">-depth 24 -geometry 1280x800</span> :%i
+ExecStop=/usr/bin/vncserver -kill :%i
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>El comando <code>ExecStartPre</code> detiene VNC si ya se está ejecutando. El comando <code>ExecStart</code> inicia VNC y establece la profundidad del color a color de 24 bits con una resolución de 1280 x 800. También puede modificar estas opciones de inicio según sus necesidades.</p>
+
+<p>Guarde y cierre el archivo.</p>
+
+<p>A continuación, informe al sistema la existencia de un nuevo archivo de unidad.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl daemon-reload
+</li></ul></code></pre>
+<p>Habilite el archivo de unidad.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable vncserver@1.service
+</li></ul></code></pre>
+<p>El <code>1</code> tras el signo <code>@</code> indica en qué número de pantalla debe aparecer el servicio, en este caso, el valor predeterminado es <code>:1</code>, como se explicó en el paso 2.</p>
+
+<p>Detenga la instancia actual del servidor VNC si aún se está ejecutando.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">vncserver -kill :1
+</li></ul></code></pre>
+<p>Luego, inícielo como iniciaría cualquier otro servicio de systemd.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start vncserver@1
+</li></ul></code></pre>
+<p>Puede verificar si ha comenzado con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status vncserver@1
+</li></ul></code></pre>
+<p>Si se inició correctamente, el resultado debería verse así:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● vncserver@1.service - Start TightVNC server at startup
+   Loaded: loaded (/etc/systemd/system/vncserver@.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active</span> (running) since Wed 2018-09-05 16:47:40 UTC; 3s ago
+  Process: 4977 ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :1 (code=exited, status=0/SUCCESS)
+  Process: 4971 ExecStartPre=/usr/bin/vncserver -kill :1 &gt; /dev/null 2&gt;&amp;1 (code=exited, status=0/SUCCESS)
+ Main PID: 4987 (Xtightvnc)
+
+...
+</code></pre>
+<p>Ahora, su servidor VNC estará disponible cuando reinicie la máquina.</p>
+
+<p>Inicie su túnel SSH de nuevo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh -L <span class="highlight">5901</span>:127.0.0.1:<span class="highlight">5901</span> -C -N -l <span class="highlight">sammy</span> <span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>Luego, realice una nueva conexión usando el software de su cliente VNC con <code>localhost:5901</code> para conectarse con su máquina.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Ahora dispondrá de un servidor VNC seguro configurado y activo en su servidor Debian 9. Ya puede administrar sus archivos, software y ajustes con una interfaz gráfica familiar y fácil de usar, y puede ejecutar software gráfico, como navegadores web, de forma remota.</p>

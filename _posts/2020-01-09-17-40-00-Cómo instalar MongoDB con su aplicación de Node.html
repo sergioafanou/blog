@@ -1,0 +1,807 @@
+---
+layout: post
+title: Cómo instalar MongoDB con su aplicación de Node
+network: digitalocean
+date: January 09, 2020 at 05:40PM
+url: https://www.digitalocean.com/community/tutorials/how-to-integrate-mongodb-with-your-node-application-es
+image: https://assets.digitalocean.com/articles/node_mongo/shark_added.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Al trabajar con <a href="https://nodejs.org/">Node.js</a>, es posible que se encuentre desarrollando un proyecto que almacene y consulte datos. En este caso, deberá elegir una solución de base de datos que tenga sentido para los datos y los tipos de consulta de su aplicación.</p>
+
+<p>A través de este tutorial, integrará una base de datos de <a href="https://www.mongodb.com/">MongoDB</a> con una aplicación de Node existente. Las <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#nosql">bases de datos de NoSQL</a> como MongoDB pueden ser útiles si entre los requisitos de sus datos se incluyen la escalabilidad y la flexibilidad. MongoDB también se integra bien con Node, ya que está diseñado para funcionar de forma asíncrona con objetos <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-json">JSON</a>.</p>
+
+<p>Para integrar MongoDB en su proyecto utilizará <a href="https://mongoosejs.com/">Mongoose</a>, el <em>asignador de documento objeto</em> (ODM), a fin de crear esquemas y modelos para los datos de su aplicación. Esto le permitirá organizar el código de su aplicación siguiendo el patrón de arquitectura de <a href="https://en.wikipedia.org/wiki/Model%E2%80%93view%E2%80%93controller"><em>modelo-vista-controlador</em> (MVC)</a>, lo cual le permitirá separar la lógica de cómo su aplicación gestiona la entradas del usuario de la forma en que sus datos se estructuran y se muestran al usuario. El uso de este patrón puede facilitar las pruebas y el desarrollo futuro introduciendo una separación de problemas en su base de código.</p>
+
+<p>Al completar el tutorial, contará con una aplicación de información sobre tiburones que funcionará y recopilará entradas del usuario sobre sus tiburones favoritos y mostrará los resultados en el navegador:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_added.png" alt="Resultados de tiburones"></p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<ul>
+<li>Una máquina para desarrollo local que funcione con Ubuntu 18.04, junto con un usuario no root con privilegios <code>sudo</code> y un firewall activo. Para obtener orientación sobre cómo configurarlos en un servidor de Ubuntu 18.04 consulte esta <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guía de configuración inicial para servidores</a>.</li>
+<li>Node.js y <a href="https://www.npmjs.com/">npm</a> instalados en su equipo o servidor, siguiendo <a href="https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-ubuntu-18-04#installing-using-a-ppa">estas instrucciones para realizar la instalación con el PPA administrado por NodeSource</a>.</li>
+<li>MongoDB instalado en su equipo o servidor siguiendo el paso 1 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-mongodb-on-ubuntu-18-04">Cómo instalar MongoDB en Ubuntu 18.04</a>.</li>
+</ul>
+
+<h2 id="paso-1-crear-un-usuario-de-mongo">Paso 1: Crear un usuario de Mongo</h2>
+
+<p>Antes de comenzar a trabajar con el código de la aplicación, crearemos un usuario administrativo que tendrá acceso a la base de datos de nuestra aplicación. Este usuario tendrá privilegios administrativos en cualquier base de datos, lo que le brindará la flexibilidad para cambiar y crear nuevas bases de datos según sea necesario.</p>
+
+<p>Primero, compruebe que MongoDB esté en ejecución en su servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status mongodb
+</li></ul></code></pre>
+<p>El siguiente resultado indica que MongoDB se encuentra en ejecución:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● mongodb.service - An object/document-oriented database
+   Loaded: loaded (/lib/systemd/system/mongodb.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Thu 2019-01-31 21:07:25 UTC; 21min ago
+...
+</code></pre>
+<p>A continuación, abra el shell de Mongo para crear su usuario:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mongo
+</li></ul></code></pre>
+<p>Esto lo situará en un shell administrativo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>MongoDB shell version v3.6.3
+connecting to: mongodb://127.0.0.1:27017
+MongoDB server version: 3.6.3
+...
+&gt;
+</code></pre>
+<p>Verá algunas advertencias administrativas cuando abra el shell debido a su acceso sin restricciones a la base de datos de <code>admin</code>. Puede obtener más información sobre la restricción de este acceso leyendo <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-mongodb-on-ubuntu-16-04">Cómo instalar y proteger MongoDB en Ubuntu 16.04</a>, para cuando realice una transición a una configuración de producción.</p>
+
+<p>Por ahora, puede usar su acceso a la base de datos de <code>admin</code> para crear un usuario con privilegios de <a href="https://docs.mongodb.com/manual/reference/built-in-roles/#userAdminAnyDatabase"><code>userAdminAnyDatabase</code></a>, lo cual permitirá el acceso protegido por contraseña a las bases de datos de su aplicación.</p>
+
+<p>En el shell, especifique que desea usar la base de datos de <code>admin</code> para crear su usuario:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">use admin
+</li></ul></code></pre>
+<p>A continuación, cree un rol y una contraseña agregando un nombre de usuario y una contraseña con el comando <code>db.createUser</code>. Una vez que escriba este comando, el shell antepondrá tres puntos antes de cada línea hasta que el comando se complete. Asegúrese de sustituir el usuario y la contraseña que se proporcionan aquí por su propio nombre de usuario y su contraseña:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">db.createUser(
+</li><li class="line" prefix="&gt;">  {
+</li><li class="line" prefix="&gt;">    user: "<span class="highlight">sammy</span>",
+</li><li class="line" prefix="&gt;">    pwd: "<span class="highlight">your_password</span>",
+</li><li class="line" prefix="&gt;">    roles: [ { role: "userAdminAnyDatabase", db: "admin" } ]
+</li><li class="line" prefix="&gt;">  }
+</li><li class="line" prefix="&gt;">)
+</li></ul></code></pre>
+<p>Con esto se crea una entrada para el usuario <code><span class="highlight">sammy</span></code> en la base de datos de <code>admin</code>. El nombre de usuario que seleccione y la base de datos de <code>admin</code> servirán como identificadores para su usuario.</p>
+
+<p>El resultado de todo el proceso tendrá el aspecto que se muestra a continuación. Se incluye el mensaje que indica que la entrada se realizó de manera correcta:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>&gt; db.createUser(
+...  {
+...    user: "<span class="highlight">sammy</span>",
+...    pwd: "<span class="highlight">your_password</span>",
+...    roles: [ { role: "userAdminAnyDatabase", db: "admin" } ]
+...  }
+...)
+Successfully added user: {
+        "user" : "<span class="highlight">sammy</span>",
+        "roles" : [
+                {
+                        "role" : "userAdminAnyDatabase",
+                        "db" : "admin"
+                }
+        ]
+}
+</code></pre>
+<p>Una vez creados su usuario y contraseña, podrá cerrar el shell de Mongo:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">exit
+</li></ul></code></pre>
+<p>Ahora que creó su usuario de base de datos, puede proceder con la clonación del código del proyecto de inicio y añadir la biblioteca de Mongoose, que le permitirá implementar esquemas y modelos para las colecciones de sus bases de datos.</p>
+
+<h2 id="paso-2-agregar-información-sobre-mongoose-y-bases-de-datos-al-proyecto">Paso 2: Agregar información sobre Mongoose y bases de datos al proyecto</h2>
+
+<p>Nuestros próximos pasos serán clonar el código de inicio de la aplicación y añadir información sobre Mongoose y nuestra base de datos de MongoDB al proyecto.</p>
+
+<p>En el directorio principal de su usuario no root, clone el <a href="https://github.com/do-community/nodejs-image-demo">repositorio <code>nodejs-image-demo</code></a> de la <a href="https://github.com/do-community">cuenta de GitHub de la comunidad de DigitalOcean</a>. Este repositorio incluye el código de la configuración descrita en <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker">Cómo crear una aplicación de Node.js con Docker</a>.</p>
+
+<p>Clone el repositorio en un directorio llamado <code><span class="highlight">node_project</span>:</code></p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/do-community/nodejs-image-demo.git <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Diríjase al directorio <code>&lt;^&gt;node_project&lt;^</code>&gt;:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd  <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Antes de modificar el código del proyecto, observaremos la estructura este último usando el comando <code>tree</code>.</p>
+
+<span class='note'><p>
+<strong>Sugerencia:</strong> <code>tree</code> es un comando útil que permite visualizar estructuras de archivos y directorios desde la línea de comandos. Puede instalarlo con el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install tree
+</li></ul></code></pre>
+<p>Para emplearlo, use el comando <code>cd</code> para pasar a un directorio determinado y escriba <code>tree</code>. También puede proporcionar la ruta al punto de partida con un comando como el siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree /home/<span class="highlight">sammy</span>/<span class="highlight">sammys-project</span>
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Escriba lo siguiente para ver el directorio <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree
+</li></ul></code></pre>
+<p>La estructura del proyecto actual tiene el siguiente aspecto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── Dockerfile
+├── README.md
+├── app.js
+├── package-lock.json
+├── package.json
+└── views
+    ├── css
+    │   └── styles.css
+    ├── index.html
+    └── sharks.html
+</code></pre>
+<p>Añadiremos directorios a este proyecto a medida que avancemos en el tutorial,y el comando <code>tree</code> será útil para ayudarnos a monitorear nuestro progreso.</p>
+
+<p>A continuación, añada el paquete de npm de <code>moongoose</code> al proyecto con el comando <code>npm install</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install mongoose
+</li></ul></code></pre>
+<p>Con este comando se creará un <code>directorio node_modules</code> en el directorio de su proyecto, se usarán las dependencias enumeradas en el archivo <code>package.json</code> del proyecto y se agregará <code>mongoose</code> a ese directorio. También se agregará <code>mongoose</code> a las dependencias enumeradas en su archivo <code>package.json</code>. Para hallar un análisis más detallado sobre <code>package.json</code>, consulte el <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker#step-1-%E2%80%94-installing-your-application-dependencies">paso 1</a> de <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker">Cómo crear una aplicación de Node.js con Docker</a>.</p>
+
+<p>Antes de crear cualquier esquema o modelo de Mongoose, añadiremos la información de conexión de nuestra base de datos para que nuestra aplicación pueda conectarse a nuestra base de datos.</p>
+
+<p>A fin de separar al máximo los aspectos de su aplicación que sean motivo de inquietud, cree un archivo por separado para la información de conexión de su base de datos llamada <code>db.js</code>. Puede abrir este archivo con <code>nano</code> o con su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano db.js
+</li></ul></code></pre>
+<p>Primero, importe el <a href="https://nodejs.org/api/modules.html#modules_modules">módulo</a> de <code>mongoose</code> usando la función <code>require</code>:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+</code></pre>
+<p>Esto le brindará acceso a los métodos incorporados de Mongoose que usará para crear la conexión a su base de datos.</p>
+
+<p>A continuación, agregue las siguientes <a href="https://www.digitalocean.com/community/tutorials/understanding-variables-scope-hoisting-in-javascript#constants">constantes</a> a fin de definir información para la conexión de URI de Mongo. Aunque el nombre de usuario y la contraseña son opcionales, los incluiremos para poder exigir la autenticación para nuestra base de datos. Asegúrese de sustituir el nombre de usuario y la contraseña que se muestran a continuación por su propia información, y podrá dar a la base de datos un nombre que no sea <code>'<span class="highlight">sharkinfo</span>'</code> si así lo prefiere:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">const mongoose = require('mongoose');
+
+const MONGO_USERNAME = '<span class="highlight">sammy</span>';
+const MONGO_PASSWORD = '<span class="highlight">your_password</span>';
+const MONGO_HOSTNAME = '127.0.0.1';
+const MONGO_PORT = '27017';
+const MONGO_DB = '<span class="highlight">sharkinfo</span>';
+</code></pre>
+<p>Debido a que ejecutamos nuestra base de datos a nivel local, usamos <code>127.0.0.1</code> como nombre de host. Esto cambiará en otros contextos de desarrollo: por ejemplo, si utiliza un servidor de bases de datos independiente o si trabaja con varios nodos en un flujo de trabajo en contenedores.</p>
+
+<p>Por último, defina una constante para la URI y cree la conexión usando el método <a href="https://mongoosejs.com/docs/api.html#connection_Connection"><code>mongoose.connect()</code></a>:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+const url = `mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOSTNAME}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+
+mongoose.connect(url, {useNewUrlParser: true});
+</code></pre>
+<p>Tenga en cuenta que en la URI especificamos el <code>authSource</code> de nuestro usuario como base de datos de <code>admin</code>. Esto es necesario, ya que especificamos un nombre de usuario en nuestra cadena de conexión. El uso del indicador <code>useNewUrlParser</code> con <code>mongoose.connect()</code> especifica que deseamos usar el <a href="https://mongoosejs.com/docs/deprecations.html">nuevo analizador de URL de Mongo</a>.</p>
+
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Como paso final, añada la información de conexión de la base de datos al archivo <code>app.js</code> para que la aplicación pueda utilizarla. Abra <code>app.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Las primeras líneas del archivo tendrán este aspecto:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const app = express();
+const router = express.Router();
+
+const path = __dirname + '/views/';
+...
+</code></pre>
+<p>Debajo de la definición de la constante <code>router</code>, situada cerca de la parte superior del archivo, agregue la siguiente línea:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+const router = express.Router();
+<span class="highlight">const db = require('./db');</span>
+
+const path = __dirname + '/views/';
+...
+</code></pre>
+<p>Esto indica a la aplicación que utilice la información de conexión de la base de datos especificada en <code>db.js</code>.</p>
+
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Una vez que se implemente la información de su base de datos y se añada Mongoose a su proyecto, estará listo para crear los esquemas y los modelos que configurarán los datos de su colección <code><span class="highlight">sharks</span></code>.</p>
+
+<h2 id="paso-3-crear-esquemas-y-modelos-de-mongoose">Paso 3: Crear esquemas y modelos de Mongoose</h2>
+
+<p>Nuestro siguiente paso será pensar en la estructura de la colección <code><span class="highlight">sharks</span></code> que los usuarios crearán en la base de datos <code><span class="highlight">sharkinfo</span></code> con sus datos. ¿Qué estructura queremos que tengan estos documentos creados? En la página de información sobre tiburones de nuestra aplicación actual se incluyen algunos detalles sobre diferentes tiburones y sus comportamientos:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/sharks.png" alt="Página de información sobre tiburo">nes</p>
+
+<p>En línea con este tema, podemos disponer que los usuarios añadan nuevos tiburones con detalles sobre su carácter general. Este objetivo dará forma a la manera en que creemos nuestro esquema.</p>
+
+<p>Para mantener sus esquemas y modelos diferenciados de las demás partes de su aplicación, cree un directorio <code>models</code> en el directorio de proyectos actual:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir models
+</li></ul></code></pre>
+<p>A continuación, abra un archivo llamado <code>sharks.js</code> para crear su esquema y modelo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano models/sharks.js
+</li></ul></code></pre>
+<p>Importe el módulo <code>mongoose</code> en la parte superior del archivo:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+</code></pre>
+<p>Debajo de esto, defina un objeto de <code>Schema</code> que se utilice como base para su esquema de tiburones:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+<span class="highlight">const Schema = mongoose.Schema;</span>
+</code></pre>
+<p>Ahora podrá definir los campos que desee incluir en su esquema. Debido a que deseamos crear una colección con tiburones individuales e información sobre sus comportamientos, incluiremos una <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-javascript#objects">clave</a> <code>name</code> y una clave <code>character</code>. Añada el siguiente esquema <code>Shark</code> debajo de sus definiciones de constantes:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+const Shark = new Schema ({
+        name: { type: String, required: true },
+        character: { type: String, required: true },
+});
+</code></pre>
+<p>En esta definición se incluye información sobre el tipo de entrada que esperamos de los usuarios; en este caso, una <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-javascript#strings">secuencia de comandos</a> y si es necesaria o no la entrada.</p>
+
+<p>Por último, cree el modelo <code>Shark</code> usando la función <a href="https://mongoosejs.com/docs/api.html#mongoose_Mongoose-model"><code>model()</code> de Mongoose</a>. Este modelo le permitirá consultar documentos de su colección y validar nuevos documentos. Añada la siguiente línea en la parte inferior del archivo:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+module.exports = mongoose.model('Shark', Shark)
+</code></pre>
+<p>Esta última línea hace que nuestro modelo <code>Shark</code> esté disponible como un módulo usando la <a href="https://nodejs.org/api/modules.html#modules_exports_shortcut">propiedad <code>module.exports</code></a>. Esta propiedad define los valores que el módulo exportará y los pondrá a disposición para su uso en cualquier lugar de la aplicación.</p>
+
+<p>El archivo completado de <code>models/sharks.js</code> tiene este aspecto:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
+
+const Shark = new Schema ({
+        name: { type: String, required: true },
+        character: { type: String, required: true },
+});
+
+module.exports = mongoose.model('Shark', Shark)
+</code></pre>
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Una vez implementados el esquema y el modelo de <code>Shark</code>, puede comenzar a trabajar en la lógica que determinará la forma en que su aplicación manejará las entradas del usuario.</p>
+
+<h2 id="paso-4-crear-los-controladores">Paso 4: Crear los controladores</h2>
+
+<p>Nuestro siguiente paso será crear el componente del controlador que determinará la manera en que las entradas del usuario se guarden en nuestra base de datos y se devuelvan a este.</p>
+
+<p>Primero, cree un directorio para el controlador:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir controllers
+</li></ul></code></pre>
+<p>A continuación, abra un archivo llamado <code>sharks.js</code> en esa carpeta:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano controllers/sharks.js
+</li></ul></code></pre>
+<p>En la parte superior del archivo, importaremos el módulo con nuestro modelo <code>Shark</code> para poder utilizarlo en la lógica de nuestro controlador. También importaremos el <a href="https://nodejs.org/api/path.html">módulo <code>path</code></a> para acceder a las utilidades que nos permitirán establecer la ruta en el formulario en el que los usuarios ingresarán sus tiburones.</p>
+
+<p>Añada las siguientes funciones <code>require</code> al inicio del archivo:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const path = require('path');
+const Shark = require('../models/sharks');
+</code></pre>
+<p>A continuación, escribiremos una secuencia de funciones que exportaremos con el módulo de controlador usando el <a href="https://nodejs.org/api/modules.html#modules_exports_shortcut">acceso rápido <code>exports</code></a> de Node. Estas funciones incluirán las tres tareas relacionadas con los datos de tiburones de nuestro usuario:</p>
+
+<ul>
+<li>Enviar a los usuarios el formulario de entrada de tiburones</li>
+<li>Crear una nueva entrada sobre tiburones</li>
+<li>Mostrar los tiburones de vuelta a los usuarios</li>
+</ul>
+
+<p>Para comenzar, cree una función <code>index</code> para mostrar la página de tiburones con el formulario de entrada. Añada esta función debajo de sus importaciones:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+exports.index = function (req, res) {
+    res.sendFile(path.resolve('views/sharks.html'));
+};
+</code></pre>
+<p>A continuación, debajo de la función <code>index</code>, agregue una función llamada <code>create</code> para crear una nueva entrada sobre tiburones en su colección <code>sharks</code>:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+exports.create = function (req, res) {
+    var newShark = new Shark(req.body);
+    console.log(req.body);
+    newShark.save(function (err) {
+            if(err) {
+            res.status(400).send('Unable to save shark to database');
+        } else {
+            res.redirect('/sharks/getshark');
+        }
+  });
+               };
+</code></pre>
+<p>Esta función se mostrará cuando un usuario publique datos de tiburones en el formulario en la página <code>sharks.html</code>. Crearemos la ruta con este extremo de POST más adelante en el tutorial cuando creemos las rutas de nuestra aplicación. Con el <code>body</code> de la solicitud de POST, nuestra función <code>create</code> creará un nuevo objeto de documentos de tiburones, aquí llamado <code>newShark</code>, usando el modelo <code>Shark</code> que importamos. Hemos añadido un <a href="https://developer.mozilla.org/en-US/docs/Web/API/Console/log">método de <code>console.log</code></a> a fin de mostrar la entrada sobre el tiburón en la consola para comprobar que nuestro método POST funciona como está previsto, pero puede optar por omitir esto si así lo prefiere.</p>
+
+<p>Mediante el objeto <code>newShark</code>, la función <code>create</code> llamará al método <a href="https://mongoosejs.com/docs/api.html#model_Model-save"><code>model.save()</code></a> de Mongoose para crear un nuevo documento sobre tiburones usando las claves que definió en el modelo <code>Shark</code>. Esta <a href="https://developer.mozilla.org/en-US/docs/Glossary/Callback_function">función de devolución de llamada</a> sigue el <a href="http://thenodeway.io/posts/understanding-error-first-callbacks/">patrón estándar de devolución de llamada de Node</a>: <code>callback(error, results)</code>. Si se produce un error, enviaremos un mensaje que notificará el error a nuestros usuarios. Si la operación tiene éxito, utilizaremos el <a href="https://expressjs.com/en/api.html#res.redirect"><code>método res.redirect()</code></a> para enviar a los usuarios al extremo que les devolverá su información sobre tiburones en el navegador.</p>
+
+<p>Por último, la función de <code>list</code> mostrará el contenido de la colección de vuelta al usuario. Añada el siguiente código debajo de la función <code>create</code>:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+exports.list = function (req, res) {
+        Shark.find({}).exec(function (err, sharks) {
+                if (err) {
+                        return res.send(500, err);
+                }
+                res.render('getshark', {
+                        sharks: sharks
+             });
+        });
+};
+</code></pre>
+<p>Esta función utiliza el modelo <code>Shark</code> con el <a href="https://mongoosejs.com/docs/api.html#model_Model.find"><code>método model.find()</code></a> de Mongoose para devolver los tiburones que se introdujeron en la colección <code>sharks</code>. Hace esto devolviendo el objeto de consulta; en este caso, todas las entradas de la colección <code>sharks</code>, como un compromiso, usando la <a href="https://mongoosejs.com/docs/api.html#query_Query-exec">función <code>exec()</code> de Mongoose</a>. Si se produce un error, la función de devolución de llamada mostrará un error de 500.</p>
+
+<p>El objeto de consulta devuelto con la colección <code>sharks</code> se mostrará en una página <code>getshark</code> que crearemos en el siguiente paso usando el lenguaje de plantillas <a href="https://ejs.co/">EJS</a>.</p>
+
+<p>El archivo terminado tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const path = require('path');
+const Shark = require('../models/sharks');
+
+exports.index = function (req, res) {
+    res.sendFile(path.resolve('views/sharks.html'));
+};
+
+exports.create = function (req, res) {
+    var newShark = new Shark(req.body);
+    console.log(req.body);
+    newShark.save(function (err) {
+            if(err) {
+            res.status(400).send('Unable to save shark to database');
+        } else {
+            res.redirect('/sharks/getshark');
+        }
+  });
+               };
+
+exports.list = function (req, res) {
+        Shark.find({}).exec(function (err, sharks) {
+                if (err) {
+                        return res.send(500, err);
+                }
+                res.render('getshark', {
+                        sharks: sharks
+             });
+        });
+};
+</code></pre>
+<p>Tenga en cuenta que, aunque no usamos <a href="https://www.digitalocean.com/community/tutorials/how-to-define-functions-in-javascript#arrow-functions">funciones de flecha</a> aquí, quizá desee incluirlas conforme realice repeticiones en este código en su propio proceso de desarrollo.</p>
+
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Antes de continuar con el siguiente paso, puede ejecutar <code>tree</code> de nuevo desde su directorio <code><span class="highlight">node_project</span></code> para ver la estructura del proyecto en este punto. Esta vez, para evitar extendernos, le indicaremos a <code>tree</code> que omita el directorio <code>node_modules</code> usando la opción <code>-I</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree -I node_modules
+</li></ul></code></pre>
+<p>Con las adiciones que realizó, la estructura de su proyecto tendrá este aspecto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── Dockerfile
+├── README.md
+├── app.js
+├── controllers
+│   └── sharks.js
+├── db.js
+├── models
+│   └── sharks.js
+├── package-lock.json
+├── package.json
+└── views
+    ├── css
+    │   └── styles.css
+    ├── index.html
+    └── sharks.html
+</code></pre>
+<p>Ahora que tiene un componente de controlador que dirija la forma de guardar datos y devolverlos al usuario, puede proceder a crear las vistas que implementarán la lógica de su controlador.</p>
+
+<h2 id="paso-5-usar-ejs-y-express-middleware-para-recopilar-y-representar-datos">Paso 5: Usar EJS y Express Middleware para recopilar y representar datos</h2>
+
+<p>Para habilitar nuestra aplicación para trabajar con datos de usuario, realizaremos dos cosas: primero, incluiremos una función de middleware Express integrada, <a href="https://expressjs.com/en/4x/api.html#express.urlencoded"><code>urlencoded()</code></a>, que permitirá que nuestra aplicación analice los datos introducidos por nuestro usuario. En segundo lugar, añadiremos etiquetas de plantillas a nuestras vistas para habilitar la interacción dinámica con los datos del usuario en nuestro código.</p>
+
+<p>Para trabajar con la función <code>urlencoded()</code> de Express, primero abra su archivo <code>app.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Encima de su función <code>express.static()</code> agregue la siguiente línea:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+<span class="highlight">app.use(express.urlencoded({ extended: true }));</span>
+app.use(express.static(path));
+...
+</code></pre>
+<p>La adición de esta función permitirá acceder a los datos analizados de POST de nuestro formulario de información sobre tiburones. Estamos especificando <code>true</code> con la opción <code>extended</code> para permitir una mayor flexibilidad en el tipo de datos que nuestra aplicación analizará (incluidos los elementos como los objetos anidados). Consulte la <a href="https://expressjs.com/en/4x/api.html#express.urlencoded">documentación de funciones</a> para obtener más información sobre opciones.</p>
+
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>A continuación, añadiremos la funcionalidad de plantillas a nuestras vistas. Primero, instale el <a href="https://www.npmjs.com/package/ejs">paquete <code>ejs</code></a> con <code>npm install</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install ejs
+</li></ul></code></pre>
+<p>A continuación, abra el archivo <code>sharks.html</code> en la carpeta de <code>views</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano views/sharks.html
+</li></ul></code></pre>
+<p>En el paso 3, examinamos esta página para determinar cómo debemos escribir nuestro esquema y modelo de Mongoose:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/sharks.png" alt="Página de información de tiburones"></p>
+
+<p>Ahora, en lugar de tener un <a href="https://getbootstrap.com/docs/4.1/layout/grid/">diseño de dos columnas,</a> introduciremos una tercera columna con un formulario en el que los usuarios puedan agregar información sobre tiburones.</p>
+
+<p>Como primer paso, cambie las dimensiones de las columnas existentes a <code>4</code> para crear tres columnas de igual tamaño. Tenga en cuenta que deberá realizar este cambio en las dos líneas que actualmente contienen el texto <code>&lt;div class="col-lg-6"</code>. Ambas se convertirán en <code>&lt;div class="col-lg-<span class="highlight">4</span>&gt;&gt;</code>:</p>
+<div class="code-label " title="~/node_project/views/sharks.html">~/node_project/views/sharks.html</div><pre class="code-pre "><code langs="">...
+&lt;div class="container"&gt;
+    &lt;div class="row"&gt;
+        &lt;div class="col-lg-<span class="highlight">4</span>"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Some sharks are known to be dangerous to humans, though many more are not. The sawshark, for example, is not considered a threat to humans.
+                &lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sawshark.jpg" alt="Sawshark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class="col-lg-<span class="highlight">4</span>"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Other sharks are known to be friendly and welcoming!&lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sammy.png" alt="Sammy the Shark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+ &lt;/html&gt;
+</code></pre>
+<p>Para obtener una introducción al sistema de cuádriculas de Bootstrap, incluidos sus diseños de fila y columna, consulte esta <a href="https://www.taniarascia.com/what-is-bootstrap-and-how-do-i-use-it/">introducción a Bootstrap</a>.</p>
+
+<p>A continuación, añada otra columna que incluya el extremo con nombre para la solicitud de POST con los datos de tiburones del usuario y las etiquetas de la plantilla EJS que capturarán esos datos. Esta columna se colocará debajo de las etiquetas de cierre <code>&lt;/p&gt;</code> y <code>&lt;/div&gt;</code> de la columna anterior y encima de las etiquetas de cierre para la fila, el contenedor y el documento HTML. Estas etiquetas de cierre ya están implementadas en su código; también se muestran a continuación con comentarios. Déjelos implementados al añadir el siguiente código para crear la nueva columna:</p>
+<div class="code-label " title="~/node_project/views/sharks.html">~/node_project/views/sharks.html</div><pre class="code-pre "><code langs="">...
+       &lt;/p&gt; <span class="highlight">&lt;!-- closing p from previous column --&gt;</span>
+   &lt;/div&gt; <span class="highlight">&lt;!-- closing div from previous column --&gt;</span>
+&lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;form action="/sharks/addshark" method="post"&gt;
+                    &lt;div class="caption"&gt;Enter Your Shark&lt;/div&gt;
+                    &lt;input type="text" placeholder="Shark Name" name="name" &lt;%=sharks[i].name; %&gt;
+                    &lt;input type="text" placeholder="Shark Character" name="character" &lt;%=sharks[i].character; %&gt;
+                    &lt;button type="submit"&gt;Submit&lt;/button&gt;
+                &lt;/form&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt; <span class="highlight">&lt;!-- closing div for row --&gt;</span>
+&lt;/div&gt; <span class="highlight">&lt;!-- closing div for container --&gt;</span>
+
+&lt;/html&gt; <span class="highlight">&lt;!-- closing html tag --&gt;</span>
+</code></pre>
+<p>En la etiqueta <code>form</code>, está añadiendo un extremo <code>"/sharks/addshark"</code> para los datos sobre tiburones del usuario y especificando el método de POST para enviarlo. En los campos de entrada, está especificando campos para <code>"Sharks Name"</code> y  <code>"Shark Character"</code>, los cuales corresponden al modelo de <code>Shark</code> que definió previamente.</p>
+
+<p>Para añadir las entradas del usuario a su colección <code>sharks</code>, utiliza etiquetas de la plantilla EJS (<code>&lt;%=</code>, <code>%&gt;</code>) junto con la sintaxis de JavaScript para asignar las entradas del usuario a los campos correspondientes en el documento recién creado. Para obtener más información sobre los objetos de JavaScript, consulte nuestro artículo <a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">Información sobre objetos de JavaScript</a>. Para obtener más información sobre etiquetas de plantillas de EJS, consulte la <a href="https://ejs.co/#docs">documentación de EJS</a>.</p>
+
+<p>Al finalizar, el contenedor completo con las tres columnas, incluida la columna con su formulario de entrada de tiburones, tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/views/sharks.html">~/node_project/views/sharks.html</div><pre class="code-pre "><code langs="">...
+&lt;div class="container"&gt;
+    &lt;div class="row"&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Some sharks are known to be dangerous to humans, though many more are not. The sawshark, for example, is not considered a threat to humans.
+                &lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sawshark.jpg" alt="Sawshark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Other sharks are known to be friendly and welcoming!&lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sammy.png" alt="Sammy the Shark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;form action="/sharks/addshark" method="post"&gt;
+                    &lt;div class="caption"&gt;Enter Your Shark&lt;/div&gt;
+                    &lt;input type="text" placeholder="Shark Name" name="name" &lt;%=sharks[i].name; %&gt;
+                    &lt;input type="text" placeholder="Shark Character" name="character" &lt;%=sharks[i].character; %&gt;
+                    &lt;button type="submit"&gt;Submit&lt;/button&gt;
+                &lt;/form&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Ahora que tiene una forma de recopilar las entradas de su usuario, puede crear un extremo para mostrar los tiburones mostrados y la información asociada sobre su carácter.</p>
+
+<p>Copie el archivo <code>sharks.html</code> recién modificado a un archivo llamado <code>getshark.html</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp views/sharks.html views/getshark.html
+</li></ul></code></pre>
+<p>Abra <code>getshark.html</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano views/getshark.html
+</li></ul></code></pre>
+<p>Dentro del archivo, modificaremos la columna que usamos para crear nuestro formulario de entrada de tiburones sustituyéndola por una columna que mostrará los tiburones en nuestra colección <code>sharks</code>. Una vez más, su código se aplicará entre las etiquetas existentes <code>&lt;/p&gt;</code> y <code>&lt;/div&gt;</code> de la columna anterior y las etiquetas de cierre de la fila, del contenedor y del documento HTML. Recuerde dejar estas etiquetas en su lugar al añadir el siguiente código para crear la columna:</p>
+<div class="code-label " title="~/node_project/views/getshark.html">~/node_project/views/getshark.html</div><pre class="code-pre "><code langs="">...
+       &lt;/p&gt; <span class="highlight">&lt;!-- closing p from previous column --&gt;</span>
+   &lt;/div&gt; <span class="highlight">&lt;!-- closing div from previous column --&gt;</span>
+&lt;div class="col-lg-4"&gt;
+           &lt;p&gt;
+              &lt;div class="caption"&gt;Your Sharks&lt;/div&gt;
+                  &lt;ul&gt;
+                     &lt;% sharks.forEach(function(shark) { %&gt;
+                        &lt;p&gt;Name: &lt;%= shark.name %&gt;&lt;/p&gt;
+                        &lt;p&gt;Character: &lt;%= shark.character %&gt;&lt;/p&gt;
+                     &lt;% }); %&gt;
+                  &lt;/ul&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt; <span class="highlight">&lt;!-- closing div for row --&gt;</span>
+&lt;/div&gt; <span class="highlight">&lt;!-- closing div for container --&gt;</span>
+
+&lt;/html&gt; <span class="highlight">&lt;!-- closing html tag --&gt;</span>
+</code></pre>
+<p>Aquí utiliza etiquetas de plantilla EJS y el <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach">método <code>forEach()</code></a> para mostrar cada valor de su colección <code>sharks</code>, incluida información sobre el tiburón que se añadió.</p>
+
+<p>Al finalizar, el contenedor completo con las tres columnas, incluida la columna con la colección <code>sharks</code>, tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/views/getshark.html">~/node_project/views/getshark.html</div><pre class="code-pre "><code langs="">...
+&lt;div class="container"&gt;
+    &lt;div class="row"&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Some sharks are known to be dangerous to humans, though many more are not. The sawshark, for example, is not considered a threat to humans.
+                &lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sawshark.jpg" alt="Sawshark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Other sharks are known to be friendly and welcoming!&lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sammy.png" alt="Sammy the Shark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+              &lt;div class="caption"&gt;Your Sharks&lt;/div&gt;
+                  &lt;ul&gt;
+                     &lt;% sharks.forEach(function(shark) { %&gt;
+                        &lt;p&gt;Name: &lt;%= shark.name %&gt;&lt;/p&gt;
+                        &lt;p&gt;Character: &lt;%= shark.character %&gt;&lt;/p&gt;
+                     &lt;% }); %&gt;
+                  &lt;/ul&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Para que la aplicación utilice las plantillas que creó, deberá añadir algunas líneas a su archivo <code>app.js</code>. Ábralo de nuevo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Encima del punto en que agregó la función <code>express.urlencoded()</code>, agregue las siguientes líneas:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+<span class="highlight">app.engine('html', require('ejs').renderFile);</span>
+<span class="highlight">app.set('view engine', 'html');</span>
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path));
+
+...
+</code></pre>
+<p>El método <a href="https://expressjs.com/en/4x/api.html#app.engine"><code>app.engine</code></a> indica a la aplicación que asigne el motor de la plantilla EJS a los archivos HTML, mientras que <a href="https://expressjs.com/en/4x/api.html#app.set"><code>app.set</code></a> define el motor de vista predeterminado.</p>
+
+<p>Ahora, su archivo <code>app.js</code> tendrá el siguiente aspecto:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const app = express();
+const router = express.Router();
+const db = require('./db');
+
+const path = __dirname + '/views/';
+const port = 8080;
+
+router.use(function (req,res,next) {
+  console.log('/' + req.method);
+  next();
+});
+
+router.get('/',function(req,res){
+  res.sendFile(path + 'index.html');
+});
+
+router.get('/sharks',function(req,res){
+  res.sendFile(path + 'sharks.html');
+});
+
+app.engine('html', require('ejs').renderFile);
+app.set('view engine', 'html');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path));
+app.use('/', router);
+
+app.listen(port, function () {
+  console.log('Example app listening on port 8080!')
+})
+</code></pre>
+<p>Ahora que creó vistas que pueden funcionar de forma dinámica con datos de usuarios, es el momento de crear las rutas de su proyecto para unir sus vistas y la lógica del controlador.</p>
+
+<h2 id="paso-6-crear-rutas">Paso 6: Crear rutas</h2>
+
+<p>El paso final para establecer los componentes de la aplicación será crear rutas. Separaremos nuestras rutas por funciones incluidas una ruta a la página de destino de nuestra aplicación y otra ruta a nuestra página de tiburones. En nuestra ruta <code>sharks</code> integraremos la lógica de nuestro controlador con las vistas que creamos en el paso anterior.</p>
+
+<p>Primero, cree un directorio <code>routes</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir routes
+</li></ul></code></pre>
+<p>A continuación, abra un archivo llamado <code>index.js</code> en este directorio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano routes/index.js
+</li></ul></code></pre>
+<p>Este archivo primero importará los objetos <code>express</code>, <code>router</code> y <code>path</code>, lo que nos permitirá definir las rutas que deseamos exportar con el objeto <code>router</code> y permitir que funcione de forma dinámica con rutas de archivo. Añada el siguiente código en la parte superior del archivo:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+const path = require('path');
+</code></pre>
+<p>A continuación agregue la función <code>router.use</code>, la cual carga una <a href="https://expressjs.com/en/guide/writing-middleware.html">función de middleware</a> que registrará las solicitudes del router y las transmitirá a las rutas de la aplicación.</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+router.use (function (req,res,next) {
+  console.log('/' + req.method);
+  next();
+});
+</code></pre>
+<p>Las solicitudes al root de nuestra aplicación se dirigirán aquí primero, y desde este punto los usuarios accederán a la página de inicio de nuestra aplicación, la ruta que definiremos a continuación. Añada el siguiente código debajo de la función <code>router.use</code> para definir la ruta a la página de destino:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+router.get('/',function(req,res){
+  res.sendFile(path.resolve('views/index.html'));
+});
+</code></pre>
+<p>Cuando los usuarios visitan nuestra aplicación, el primer lugar al que queremos enviarlos es la página de inicio <code>index.html</code> que tenemos en nuestro directorio <code>views</code>.</p>
+
+<p>Por último, para que sea posible acceder a estas rutas como módulos importables en otros puntos de la aplicación, agregue una expresión de cierre al final del archivo para exportar el <code>objeto router</code>:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+module.exports = router;
+</code></pre>
+<p>El archivo terminado tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+const path = require('path');
+
+router.use (function (req,res,next) {
+  console.log('/' + req.method);
+  next();
+});
+
+router.get('/',function(req,res){
+  res.sendFile(path.resolve('views/index.html'));
+});
+
+module.exports = router;
+</code></pre>
+<p>Guarde y cierre este archivo cuando concluya la edición.</p>
+
+<p>A continuación, abra un archivo llamado <code>sharks.js</code> para definir la forma en que la aplicación debería usar los diferentes extremos y vistas que creamos para trabajar con la entrada sobre tiburones de nuestro usuario:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano routes/sharks.js
+</li></ul></code></pre>
+<p>En la parte superior del archivo, importe los objetos <code>express</code> y <code>router</code>:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+</code></pre>
+<p>A continuación, importe un módulo llamado <code>shark</code> que le permitirá trabajar con las funciones exportadas que definió con su controlador:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+<span class="highlight">const shark = require('../controllers/sharks');</span>
+</code></pre>
+<p>Ahora puede crear rutas usando las funciones <code>index</code>, <code>create</code> y <code>list</code> que definó en su archivo de controlador <code>sharks</code>. Cada ruta se asociará al método HTTP adecuado: GET para la representación de la principal página de inicio de información sobre tiburones y la presentación de la lista de tiburones al usuario, y POST para la creación de una nueva entrada sobre tiburones:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+router.get('/', function(req, res){
+    shark.index(req,res);
+});
+
+router.post('/addshark', function(req, res) {
+    shark.create(req,res);
+});
+
+router.get('/getshark', function(req, res) {
+    shark.list(req,res);
+});
+</code></pre>
+<p>Cada ruta utiliza la función relacionada en <code>controllers/sharks.js</code>, ya que hicimos posible el acceso a ese módulo al importarlo en la parte superior de este archivo.</p>
+
+<p>Por último, cierre el archivo vinculando estas rutas al objeto <code>router</code> y exportándolas:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+module.exports = router;
+</code></pre>
+<p>El archivo terminado tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+const shark = require('../controllers/sharks');
+
+router.get('/', function(req, res){
+    shark.index(req,res);
+});
+
+router.post('/addshark', function(req, res) {
+    shark.create(req,res);
+});
+
+router.get('/getshark', function(req, res) {
+    shark.list(req,res);
+});
+
+module.exports = router;
+</code></pre>
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>El último paso para que su aplicación pueda acceder a estas rutas será añadirlas a <code>app.js</code>. Abra el archivo de nuevo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Debajo de su constante <code>db</code>, agregue la siguiente importación para sus rutas:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+const db = require('./db');
+<span class="highlight">const sharks = require('./routes/sharks');</span>
+</code></pre>
+<p>A continuación, <strong>sustituya</strong> la función <code>app.use</code> que actualmente monta su objeto <code>router</code> por la siguiente línea, que montará el módulo router de <code>sharks</code>:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+app.use(express.static(path));
+<span class="highlight">app.use('/sharks', sharks);</span>
+
+app.listen(port, function () {
+        console.log("Example app listening on port 8080!")
+})
+</code></pre>
+<p>Ahora puede eliminar las rutas que se definieron previamente en este archivo, ya que importará las rutas de su aplicación usando el módulo router de <code>sharks</code>.</p>
+
+<p>La versión final de su archivo <code>app.js</code> tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const app = express();
+const router = express.Router();
+const db = require('./db');
+const sharks = require('./routes/sharks');
+
+const path = __dirname + '/views/';
+const port = 8080;
+
+app.engine('html', require('ejs').renderFile);
+app.set('view engine', 'html');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path));
+app.use('/sharks', sharks);
+
+app.listen(port, function () {
+  console.log('Example app listening on port 8080!')
+})
+</code></pre>
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Ahora puede ejecutar <code>tree</code> de nuevo para ver la estructura final de su proyecto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree -I node_modules
+</li></ul></code></pre>
+<p>Así, la estructura del proyecto tendrá el siguiente aspecto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── Dockerfile
+├── README.md
+├── app.js
+├── controllers
+│   └── sharks.js
+├── db.js
+├── models
+│   └── sharks.js
+├── package-lock.json
+├── package.json
+├── routes
+│   ├── index.js
+│   └── sharks.js
+└── views
+    ├── css
+    │   └── styles.css
+    ├── getshark.html
+    ├── index.html
+    └── sharks.html
+</code></pre>
+<p>Una vez creados e implementados todos los componentes de su aplicación, estará listo para añadir un tiburón de prueba a su base de datos.</p>
+
+<p>Si siguió el tutorial de configuración inicial para servidores de los requisitos previos, deberá modificar su firewall, ya que actualmente solo permite el tráfico SSH. Para permitir el tráfico al puerto <code>8080</code> ejecute lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 8080
+</li></ul></code></pre>
+<p>Inicie la aplicación:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node app.js
+</li></ul></code></pre>
+<p>A continuación, visite la dirección <code>http://<span class="highlight">your_server_ip</span>:8080</code> en su navegador. Visualizará la siguiente página de inicio:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/landing_page.png" alt="Página de inicio de la aplicación"></p>
+
+<p>Haga clic en el botón <strong>Get Shark Info</strong>. Verá la siguiente página de información, con el formulario de entrada de tiburones añadido:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_form.png" alt="Formulario de Shark Info"></p>
+
+<p>En el formulario, agregue un tiburón que elija. A los efectos de esta demostración, añadiremos <code><span class="highlight">Megalodon Shark</span></code> en el campo <strong>Shark Name</strong> y <code><span class="highlight">Ancient</span></code> en el campo <strong>Shark Character</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_filled.png" alt="Formulario de Shark completado"></p>
+
+<p>Haga clic en el botón <strong>Submit</strong>. Visualizará una página con esta información sobre tiburones que se le mostrará de nuevo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_added.png" alt="Resultado de tiburones"></p>
+
+<p>También verá en su consola resultados que indican que el tiburón se agregó a su colección:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Example app listening on port 8080!
+{ name: 'Megalodon Shark', character: 'Ancient' }
+</code></pre>
+<p>Si desea crear una nueva entrada de tiburones, regrese a la página <strong>Sharks</strong> y repita el proceso de adición de un tiburón.</p>
+
+<p>Con esto, dispondrá de una aplicación de información sobre tiburones activa que permite a los usuarios añadir información sobre sus tiburones favoritos.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A través de este tutorial, creó una aplicación de Node integrando una base de datos de MongoDB y reescribiendo la lógica de la aplicación con el patrón de arquitectura de MVC. Esta aplicación puede ser un buen punto de partida para una aplicación <a href="https://en.wikipedia.org/wiki/Create,_read,_update_and_delete">CRUD</a> completa.</p>
+
+<p>Para acceder a más recursos sobre el patrón de MVC en otros contextos, consulte nuestra <a href="https://www.digitalocean.com/community/tutorial_series/django-development">Serie de desarrollo de Django</a> o <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-modern-web-application-to-manage-customer-information-with-django-and-react-on-ubuntu-18-04">Cómo crear una aplicación web moderna para administrar información de clientes con Django y React en Ubuntu 18.04</a>.</p>
+
+<p>Para obtener más información sobre cómo trabajar con MongoDB, consulte nuestra biblioteca de <a href="https://www.digitalocean.com/community/tags/mongodb?type=tutorials">tutoriales de MongoDB</a>.</p>

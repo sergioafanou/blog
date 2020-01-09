@@ -1,0 +1,200 @@
+---
+layout: post
+title: Cómo instalar Ruby on Rails con rbenv en Ubuntu 18.04
+network: digitalocean
+date: January 09, 2020 at 05:39PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-ruby-on-rails-with-rbenv-on-ubuntu-18-04-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p><a href="https://rubyonrails.org">Ruby on Rails</a> es una de las pilas de aplicaciones más popular para los desarrolladores que buscan crear sitios y aplicaciones web. El lenguaje de programación de Ruby, combinado con el marco de desarrollo de Rails simplifica el desarrollo de aplicaciones.</p>
+
+<p>Puede instalar de manera sencilla Ruby y Rails con la herramienta de línea de comandos <a href="https://github.com/rbenv/rbenv">rbenv</a>. El uso de rbenv le proporcionará un entorno sólido para desarrollar sus aplicaciones de Ruby on Rails, ya que le permitirá cambiar de forma sencilla las versiones de Ruby y mantener la misma versión para todo su equipo.</p>
+
+<p>rbenv proporciona apoyo para precisar versiones específicas de aplicaciones de Ruby y le permite cambiar el Ruby global para cada usuario y usar una variable de entorno para anular la versión de Ruby.</p>
+
+<p>A través de este tutorial, conocerá el proceso de instalación de Ruby y Rails a través de rbenv.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un servidor de <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Ubuntu 18.04 configurado mediante la guía de configuración inicial para servidores de Ubuntu 18.04,</a> un usuario sudo no root y un firewall.</li>
+<li>Node.js instalado con el PPA oficial, como se explica en <a href="https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-ubuntu-18-04">Cómo instalar Node.js en Ubuntu 18.04</a>. Algunas características de Rails, como el proceso de recursos, dependen de un tiempo de ejecución de JavaScript. Node.js proporciona esta funcionalidad.</li>
+</ul>
+
+<h2 id="paso-1-instalar-rbenv-y-dependencias">Paso 1: Instalar rbenv y dependencias</h2>
+
+<p>Ruby depende de varios paquetes que puede instalar a través de su administrador de paquetes. Una vez que estos se instalen, puede instalar rbenv y utilizarlo para instalar Ruby.</p>
+
+<p>Primero, actualice su lista de paquetes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>A continuación, instale las dependencias necesarias para instalar Ruby:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install autoconf bison build-essential libssl-dev libyaml-dev libreadline6-dev zlib1g-dev libncurses5-dev libffi-dev libgdbm5 libgdbm-dev
+</li></ul></code></pre>
+<p>Una vez que se descarguen las dependencias, puede instalar el propio rbenv. Clone el repositorio rbenv de GitHub en el directorio <code>~/.rbenv</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/rbenv/rbenv.git ~/.rbenv
+</li></ul></code></pre>
+<p>A continuación, agregue <code>~/.rbenv/bin</code> a su <code>$PATH</code> para que pueda usar la utilidad de línea de comandos <code>rbenv</code>. Hágalo alterando su archivo <code>~/.bashrc</code> para que afecte a las futuras sesiones de inicio de sesión:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo 'export PATH="$HOME/.rbenv/bin:$PATH"' &gt;&gt; ~/.bashrc
+</li></ul></code></pre>
+<p>A continuación agregue el comando <code>eval "$(rbenv init -)"</code>a su archivo <code>~/.bashrc</code> para que rbenv se cargue de forma automática:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo 'eval "$(rbenv init -)"' &gt;&gt; ~/.bashrc
+</li></ul></code></pre>
+<p>Luego, aplique los cambios que realizó a su archivo <code>~/.bashrc</code> en su sesión de shell actual:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">source ~/.bashrc
+</li></ul></code></pre>
+<p>Verifique que rbenv se configure de manera adecuada usando el comando <code>type</code>, que mostrará más información sobre el comando <code>rbenv</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">type rbenv
+</li></ul></code></pre>
+<p>En su ventana de terminal se mostrará lo siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>rbenv is a function
+rbenv ()
+{
+    local command;
+    command="${1:-}";
+    if [ "$#" -gt 0 ]; then
+        shift;
+    fi;
+    case "$command" in
+        rehash | shell)
+            eval "$(rbenv "sh-$command" "$@")"
+        ;;
+        *)
+            command rbenv "$command" "$@"
+        ;;
+    esac
+}
+</code></pre>
+<p>A continuación, instale el complemento de <a href="https://github.com/rbenv/ruby-build">ruby-build</a>. Este complemento agrega el comando <code>rbenv install</code>, que simplifica el proceso de instalación para nuevas versiones de Ruby:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
+</li></ul></code></pre>
+<p>En este punto, tendrá rbenv y ruby-build instalados. A continuación, instalaremos Ruby.</p>
+
+<h2 id="paso-2-instalar-ruby-con-ruby-build">Paso 2: Instalar Ruby con ruby-build</h2>
+
+<p>Con el complemento <code>ruby-build</code> instalado, podrá instalar versiones de Ruby que pueda necesitar a través de un simple comando. Primero, haremos una lista de todas las versiones disponibles de Ruby:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rbenv install -l
+</li></ul></code></pre>
+<p>Como resultado de ese comando, se debería obtener una larga lista de versiones que puede elegir para la instalación.</p>
+
+<p>Instalaremos Ruby <span class="highlight">2.5.1</span>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rbenv install <span class="highlight">2.5.1</span>
+</li></ul></code></pre>
+<p>El proceso de instalación de Ruby puede ser largo; por ello, debe estar preparado para que tarde en completarse.</p>
+
+<p>Una vez que se complete la instalación, configúrela como nuestra versión predeterminada de Ruby con el subcomando <code>global</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rbenv global <span class="highlight">2.5.1</span>
+</li></ul></code></pre>
+<p>Verifique que Ruby se haya instalado de forma correcta revisando su número de versión:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ruby -v
+</li></ul></code></pre>
+<p>Si instaló la versión 2.5.1 de Ruby, su resultado para el comando anterior debería tener un aspecto similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ruby 2.5.1p57 (2018-03-29 revision 63029) [x86_64-linux]
+</code></pre>
+<p>Para instalar y usar una versión diferente de Ruby, ejecute los comandos <code>rbenv</code> con un número de versión diferente, como en <code>rbenv install <span class="highlight">2.3.0</span></code> y <code>rbenv globales <span class="highlight">2.3.0</span></code>.</p>
+
+<p>Ahora tiene al menos una versión de Ruby instalada y estableció su versión de Ruby predeterminada. A continuación, configuraremos gemas y Rails.</p>
+
+<h2 id="paso-3-trabajar-con-gemas">Paso 3: Trabajar con gemas</h2>
+
+<p>Las gemas son el medio de distribución de las bibliotecas de Ruby. Se utiliza el comando <code>gem</code> para administrar estas gemas. Usaremos este comando para instalar Rails.</p>
+
+<p>Cuando instale una gema, el proceso de instalación generará documentación local. Esto puede sumar una cantidad de tiempo considerable al proceso de instalación de cada gema. Por ello, desactive la generación de documentación local creando un archivo llamado <code>~/.gemrc</code> que contenga un ajuste de configuración para desactivar esta característica:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "gem: --no-document" &gt; ~/.gemrc
+</li></ul></code></pre>
+<p><a href="https://bundler.io/">Bundler</a> es una herramienta que administra dependencias de gemas para proyectos. A continuación, instale la gema de Bundler, ya que Rails depende de ello.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">gem install bundler
+</li></ul></code></pre>
+<p>Verá un resultado como este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Fetching: bundler-1.16.2.gem (100%)
+Successfully installed bundler-1.16.2
+1 gem installed
+</code></pre>
+<p>Puede usar el comando <code>gem env</code> (el subcomando <code>env</code> es la abreviatura de <code>environment</code>) para obtener más información sobre el entorno y la configuración de gemas. Puede ver dónde se instalan gemas usando el argumento <code>home</code>, como se muestra a continuación:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">gem env home
+</li></ul></code></pre>
+<p>Verá un resultado similar a este:</p>
+<pre class="code-pre "><code langs="">/home/<span class="highlight">sammy</span>/.rbenv/versions/<span class="highlight">2.5.1</span>/lib/ruby/gems/<span class="highlight">2.5.0</span>
+</code></pre>
+<p>Una vez que tenga gemas configuradas, podrá instalar Rails.</p>
+
+<h2 id="paso-4-instalar-rails">Paso 4: Instalar Rails</h2>
+
+<p>Para instalar Rails, utilice el comando <code>gem install</code> junto con el indicador <code>-v</code> para especificar la versión. Para este tutorial, usaremos la versión <code>5.2.0</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">gem install rails -v <span class="highlight">5.2.0</span>
+</li></ul></code></pre>
+<p>El comando <code>gem</code> instala la gema que especificó y todas las dependencias. Rails es un complejo marco de trabajo de desarrollo web y cuenta con muchas dependencias, por lo que el proceso tomará tiempo en completarse. Finalmente, verá un mensaje que indicará que Rails se instaló junto con sus dependencias:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Successfully installed rails-<span class="highlight">5.2.0</span>
+38 gems installed
+</code></pre>
+<span class='note'><p>
+<strong>Nota</strong>: Si desea instalar una versión diferente de Rails, puede enumerar las versiones válidas de este realizando una búsqueda que dará como resultado una larga lista de posibles versiones. Podemos, entonces, instalar una versión específica, como <span class="highlight">4.2.7</span>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">gem search '^rails$' --all
+</li><li class="line" prefix="$">gem install rails -v <span class="highlight">4.2.7</span>
+</li></ul></code></pre>
+<p>Si quiere instalar la última versión de Rails, ejecute el comando sin especificar una versión:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">gem install rails
+</li></ul></code></pre>
+<p></p></span>
+
+<p>rbenv crea un directorio de <strong>shims</strong>, que apuntan a los archivos utilizados por la versión de Ruby actualmente habilitada. A través del subcomando <code>rehash</code>, rbenv mantiene shims en ese directorio para que coincidan con cada comando de Ruby en cada versión de Ruby instalada en su servidor. Cada vez que instale una nueva versión de Ruby o una gema que proporcione comandos, como hace Rails, deberá ejecutar lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rbenv rehash
+</li></ul></code></pre>
+<p>Verifique que Rails se haya instalado de manera adecuada imprimiendo su versión con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rails -v
+</li></ul></code></pre>
+<p>Si Rails se instaló de manera adecuada, verá la versión:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Rails 5.2.0
+</code></pre>
+<p>En este punto, podrá comenzar a probar su instalación de Ruby on Rails y desarrollar aplicaciones web. Veamos la forma de mantener a rbenv actualizado.</p>
+
+<h2 id="paso-5-actualizar-rbenv">Paso 5: Actualizar rbenv</h2>
+
+<p>Ya que instaló rbenv de forma manual usando Git, puede actualizar su instalación a la versión más reciente en cualquier momento usando el comando <code>git pull</code> en el directorio <code>~/.rbenv</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd ~/.rbenv
+</li><li class="line" prefix="$">git pull
+</li></ul></code></pre>
+<p>Esto garantizará que usemos la versión más actualizada de rbenv disponible.</p>
+
+<h2 id="paso-6-desinstalar-versiones-de-ruby">Paso 6: Desinstalar versiones de Ruby</h2>
+
+<p>Al descargar versiones adicionales de Ruby, puede acumular más versiones de las que podría desear en su directorio <code>~/.rbenv/versions</code>. Utilice el subcomando <code>uninstall</code> del complemento de <code>ruby-build</code> para quitar estas versiones anteriores.</p>
+
+<p>Por ejemplo, escribiendo lo siguiente desinstalará la versión de Ruby <span class="highlight">2.1.3</span>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rbenv uninstall <span class="highlight">2.1.3</span>
+</li></ul></code></pre>
+<p>Con el comando <code>rbenv uninstall</code> puede eliminar las versiones antiguas de Ruby para que no haya instaladas más de las que esté usando.</p>
+
+<h2 id="paso-7-desinstalar-rbenv">Paso 7: Desinstalar rbenv</h2>
+
+<p>Si decidió que ya no quiere usar rbenv, puede eliminarlo de su sistema.</p>
+
+<p>Para hacerlo, primero abra su archivo <code>~/.bashrc</code> en su editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ~/.bashrc
+</li></ul></code></pre>
+<p>Encuentre y elimine las siguientes dos líneas del archivo:</p>
+<div class="code-label " title="~/.bashrc">~/.bashrc</div><pre class="code-pre "><code langs="">...
+export PATH="$HOME/.rbenv/bin:$PATH"
+eval "$(rbenv init -)"
+</code></pre>
+<p>Guarde el archivo y salga del editor.</p>
+
+<p>A continuación elimine rbenv y todas las versiones de Ruby instaladas con este comando:</p>
+<pre class="code-pre "><code langs=""> rm -rf `rbenv root`
+</code></pre>
+<p>Cierre la sesión y vuelva a abrirla para implementar los cambios en su shell.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A través de este tutorial, instaló <code>rbenv</code> y Ruby on Rails. A partir de ahora, podrá aprender más sobre cómo dar más solidez a esos entornos.</p>
+
+<p>Vea cómo sustituir su base de datos <a href="https://www.digitalocean.com/community/tutorials/how-to-use-postgresql-with-your-ruby-on-rails-application-on-ubuntu-14-04">de sqlite3</a> pr<a href="https://www.digitalocean.com/community/tutorials/how-to-use-mysql-with-your-ruby-on-rails-application-on-ubuntu-14-04">edete</a>rminada por Ruby on Rails con PostgreSQL o MySQL, que proporcionan más escalabilidad, centralización y estabilidad para sus aplicaciones. A medida que sus necesidades aumenten, también podrá aprender a <a href="https://www.digitalocean.com/community/tutorials/how-to-scale-ruby-on-rails-applications-across-multiple-droplets-part-1">escalar aplicaciones de Ruby on Rails en varios servidores</a>.</p>

@@ -1,0 +1,755 @@
+---
+layout: post
+title: How To Deploy a PHP Application with Kubernetes on Ubuntu 16.04
+network: digitalocean
+date: January 09, 2020 at 05:46PM
+url: https://www.digitalocean.com/community/tutorials/how-to-deploy-a-php-application-with-kubernetes-on-ubuntu-16-04-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>O autor selecionou a <a href="https://www.brightfunds.org/funds/open-internet-free-speech">Open Internet/Free Speech</a> para receber uma doação como parte do programa <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="introdução">Introdução</h3>
+
+<p>O Kubernetes é um sistema de orquestração de contêiner de código aberto. Ele permite que você crie, atualize e escale contêineres sem se preocupar com o tempo de inatividade.</p>
+
+<p>Para executar um aplicativo PHP, o Nginx age como um proxy para o <a href="http://php.net/manual/en/install.fpm.php">PHP-FPM</a>. A transformação em contêiner dessa configuração em um único contêiner pode ser um processo complicado, mas o Kubernetes ajudará a gerenciar ambos os serviços em contêineres separados. Ao usar o Kubernetes, é permitido que você mantenha seus contêineres reutilizáveis e intercambiáveis, e não será necessário reconstruir sua imagem do contêiner sempre que houver uma nova versão do Nginx ou do PHP.</p>
+
+<p>Neste tutorial, você implantará um aplicativo PHP 7 em um cluster do Kubernetes com o Nginx e o PHP-FPM funcionando em contêineres separados. Você também aprenderá como manter seus arquivos de configuração e código de aplicativo fora da imagem do contêiner usando o sistema de <a href="https://www.digitalocean.com/products/block-storage/">armazenamento de blocos da DigitalOcean.</a> Esta abordagem permitirá a reutilização da imagem do Nginx para qualquer aplicativo que precise de um servidor Web/proxy passando um volume de configuração, ao invés de reconstruir a imagem.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<ul>
+<li>Um entendimento básico sobre objetos do Kubernetes. Verifique nosso artigo <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes#kubernetes-objects-and-workloads">Introdução ao Kubernetes</a> para obter mais informações.</li>
+<li>Um cluster do Kubernetes funcionando no Ubuntu 16.04. Você pode configurar o cluster seguindo o tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-create-a-kubernetes-1-10-cluster-using-kubeadm-on-ubuntu-16-04">Como criar um cluster do Kubernetes 1.10 usando o Kubeadm no Ubuntu 16.04</a>.</li>
+<li>Uma conta DigitalOcean e um token de acesso da API com permissões de leitura e escrita para criar nosso volume de armazenamento. Se não tiver seu token de acesso da API, é possível <a href="https://www.digitalocean.com/docs/api/create-personal-access-token/">criá-lo a partir daqui</a>.</li>
+<li>Seu código do aplicativo hospedado em um URL acessível publicamente, como o <a href="https://github.com">Github</a>.</li>
+</ul>
+
+<h2 id="passo-1-—-criando-os-serviços-php-fpm-e-nginx">Passo 1 — Criando os serviços PHP-FPM e Nginx</h2>
+
+<p>Neste passo, serão criados os serviços PHP-FPM e Nginx. Um serviço permite o acesso a um conjunto de pods de dentro do cluster. Os serviços dentro de um cluster podem se comunicar diretamente através dos seus nomes, sem a necessidade de endereços IP. O serviço PHP-FPM permitirá o acesso aos pods do PHP-FPM, enquanto o serviço Nginx permitirá o acesso aos pods do Nginx.</p>
+
+<p>Como os pods do Nginx irão servir de proxy para os pods do PHP-FPM, será necessário dizer ao serviço como encontrá-los. Ao invés de usar endereços IP, você tirará proveito da descoberta automática do serviço do Kubernetes para usar nomes legíveis para rotear pedidos para o serviço apropriado.</p>
+
+<p>Para criar o serviço, você criará um arquivo de definição de objeto. Cada definição de objeto do Kubernetes é um arquivo YAML que contém pelo menos os seguintes itens:</p>
+
+<ul>
+<li><code>apiVersion</code>: a versão da API do Kubernetes à qual a definição pertence.</li>
+<li><code>kind</code>: o objeto do Kubernetes que este arquivo representa. Por exemplo, um <code>pod</code> ou <code>service</code>.</li>
+<li><code>metadata</code>: contém o <code>name</code> do objeto junto com quaisquer <code>labels</code> que você queira aplicar a ele.</li>
+<li><code>spec</code>: contém uma configuração específica dependendo do tipo de objeto que está sendo criado, como a imagem do contêiner ou as portas das quais o contêiner será acessível.</li>
+</ul>
+
+<p>Primeiro, você criará um diretório para manter suas definições de objeto do Kubernetes.</p>
+
+<p>Pelo SSH vá até seu <strong>master node</strong> e crie o diretório <code>definitions</code> que irá manter suas definições de objeto do Kubernetes.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir definitions
+</li></ul></code></pre>
+<p>Navegue até o diretório recém-criado <code>definitions</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd definitions
+</li></ul></code></pre>
+<p>Crie seu serviço PHP-FPM criando um arquivo <code>php_service.yaml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano php_service.yaml
+</li></ul></code></pre>
+<p>Defina <code>kind</code> como <code>Service</code> para especificar que este objeto é um serviço:</p>
+<div class="code-label " title="php_service.yaml">php_service.yaml</div><pre class="code-pre "><code langs="">...
+apiVersion: v1
+kind: Service
+</code></pre>
+<p>Nomeie o serviço <code>php</code>, já que ele fornecerá acesso ao PHP-FPM:</p>
+<div class="code-label " title="php_service.yaml">php_service.yaml</div><pre class="code-pre "><code langs="">...
+metadata:
+  name: php
+</code></pre>
+<p>Você agrupará logicamente objetos diferentes com rótulos. Neste tutorial, você usará os rótulos para agrupar os objetos em &ldquo;camadas&rdquo;, como frontend ou backend. Os pods do PHP serão executados por trás deste serviço, então você dará o rótulo de <code>tier: backend</code>.</p>
+<div class="code-label " title="php_service.yaml">php_service.yaml</div><pre class="code-pre "><code langs="">...
+  labels:
+    tier: backend
+</code></pre>
+<p>Um serviço determina quais pods acessar usando os rótulos <code>selector</code>. Um pod que corresponda a esses rótulos será atendido, independentemente de se o pod tenha sido criado antes ou após o serviço. Você adicionará rótulos para seus pods mais tarde no tutorial.</p>
+
+<p>Use o rótulo <code>tier: backend</code> para atribuir o pod à camada backend. Você também adicionará o rótulo <code>app: php</code> para especificar que este pod executa o PHP. Adicione esses dois rótulos após a seção <code>metadata</code>.</p>
+<div class="code-label " title="php_service.yaml">php_service.yaml</div><pre class="code-pre "><code langs="">...
+spec:
+  selector:
+    app: php
+    tier: backend
+</code></pre>
+<p>Em seguida, especifique a porta usada para acessar este serviço. A porta <code>9000</code> será usada neste tutorial. Adicione-a ao arquivo <code>php_service.yaml</code> em <code>spec</code>:</p>
+<div class="code-label " title="php_service.yaml">php_service.yaml</div><pre class="code-pre "><code langs="">...
+  ports:
+    - protocol: TCP
+      port: 9000
+</code></pre>
+<p>Seu arquivo final <code>php_service.yaml</code> se parecerá com isso:</p>
+<div class="code-label " title="php_service.yaml">php_service.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: php
+  labels:
+    tier: backend
+spec:
+  selector:
+    app: php
+    tier: backend
+  ports:
+  - protocol: TCP
+    port: 9000
+</code></pre>
+<p>Pressione <code>CTRL + o</code> para salvar o arquivo e, depois, <code>CTRL + x</code> para sair do <code>nano</code>.</p>
+
+<p>Agora que criou a definição de objeto para seu serviço, para executar o serviço você usará o comando <code>kubectl apply</code> junto com o argumento <code>-f</code> e especificará seu arquivo <code>php_service.yaml</code>.</p>
+
+<p>Crie seu serviço:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f php_service.yaml
+</li></ul></code></pre>
+<p>Este resultado confirma a criação do serviço:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/php created
+</code></pre>
+<p>Verifique se seu serviço está funcionando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get svc
+</li></ul></code></pre>
+<p>Você verá seu serviço PHP-FPM funcionando:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+kubernetes   ClusterIP   10.96.0.1       &lt;none&gt;        443/TCP    10m
+php          ClusterIP   10.100.59.238   &lt;none&gt;        9000/TCP   5m
+</code></pre>
+<p>Existem vários <a href="https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types">tipos de serviço</a> que o Kubernetes suporta. Seu serviço <code>php</code> usa o tipo padrão de serviço, o <code>ClusterIP</code>. Este tipo de serviço atribui um IP interno e torna o serviço acessível apenas a partir de dentro do cluster.</p>
+
+<p>Agora que o serviço PHP-FPM está pronto, você criará o serviço Nginx. Crie e abra um novo arquivo chamado <code>nginx_service.yaml</code> com o editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx_service.yaml
+</li></ul></code></pre>
+<p>Este serviço irá atingir os pods do <code>Nginx, então você irá chamá-lo de nginx</code>. Um rótulo <code>tier: backend</code> também será adicionado, já que ele pertence à camada backend:</p>
+<div class="code-label " title="nginx_service.yaml">nginx_service.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    tier: backend
+</code></pre>
+<p>De forma similar ao serviço <code>php,</code> mire nos pods com os rótulos seletores <code>app: nginx</code> e <code>tier: backend</code>. Torne este serviço acessível na porta 80, a porta padrão HTTP.</p>
+<div class="code-label " title="nginx_service.yaml">nginx_service.yaml</div><pre class="code-pre "><code langs="">...
+spec:
+  selector:
+    app: nginx
+    tier: backend
+  ports:
+  - protocol: TCP
+    port: 80
+</code></pre>
+<p>O serviço Nginx estará acessível publicamente na Internet do endereço IP público do seu Droplet. O <code><span class="highlight">your_public_ip</span></code> pode ser encontrado no seu <a href="https://cloud.digitalocean.com">painel na nuvem DigitalOcean</a>. Em <code>spec.externalIPs</code>, adicione:</p>
+<div class="code-label " title="nginx_service.yaml">nginx_service.yaml</div><pre class="code-pre "><code langs="">...
+spec:
+  externalIPs:
+  - <span class="highlight">your_public_ip</span>
+</code></pre>
+<p>Seu arquivo <code>nginx_service.yaml</code> se parecerá com isto:</p>
+<div class="code-label " title="nginx_service.yaml">nginx_service.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    tier: backend
+spec:
+  selector:
+    app: nginx
+    tier: backend
+  ports:
+  - protocol: TCP
+    port: 80
+  externalIPs:
+  - <span class="highlight">your_public_ip</span>    
+</code></pre>
+<p>Salve e feche o arquivo. Crie o serviço Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f nginx_service.yaml
+</li></ul></code></pre>
+<p>Você verá o seguinte resultado quando o serviço estiver funcionando:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/nginx created
+</code></pre>
+<p>Você pode ver todos os serviços em funcionamento executando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get svc
+</li></ul></code></pre>
+<p>Você verá tanto os serviços PHP-FPM como os serviços Nginx listados no resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+kubernetes   ClusterIP   10.96.0.1       &lt;none&gt;        443/TCP    13m
+nginx        ClusterIP   10.102.160.47   <span class="highlight">your_public_ip</span> 80/TCP     50s
+php          ClusterIP   10.100.59.238   &lt;none&gt;        9000/TCP   8m
+</code></pre>
+<p>Note, se quiser excluir um serviço, execute:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl delete svc/<span class="highlight">service_name</span>
+</li></ul></code></pre>
+<p>Agora que você criou seus serviços PHP-FPM e Nginx, será necessário especificar onde armazenar seu código de aplicativo e arquivos de configuração.</p>
+
+<h2 id="passo-2-—-instalando-o-plug-in-de-armazenamento-da-digitalocean">Passo 2 — Instalando o plug-in de armazenamento da DigitalOcean</h2>
+
+<p>O Kubernetes fornece plug-ins de armazenamento diferentes que podem criar o espaço de armazenamento para seu ambiente. Neste passo, será instalado o <a href="https://github.com/digitalocean/csi-digitalocean">plug-in de armazenamento da DigitalOcean</a> para criar o armazenamento de bloco na <a href="https://www.digitalocean.com/products/storage/">DigitalOcean</a>. Assim que a instalação for concluída, será adicionada uma classe de armazenamento chamada <code>do-block-storage</code> que você usará para criar seu armazenamento de bloco.</p>
+
+<p>Primeiro, você irá configurar um objeto segredo do Kubernetes para armazenar seu token de API da DigitalOcean. Os objetos segredo são usados para compartilhar informações sensíveis, como chaves SSH e senhas, com outros objetos do Kubernetes dentro do mesmo namespace. Os namespaces fornecem uma maneira de separar seus objetos do Kubernetes logicamente.</p>
+
+<p>Abra um arquivo chamado <code>secret.yaml</code> com o editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano secret.yaml
+</li></ul></code></pre>
+<p>Você irá nomear seu segredo <code>digitalocean</code> e adicioná-lo ao <code>namespace kube-system</code><code>.</code> O namespace <code>kube-system</code> é o nome padrão de namespace para serviços internos do Kubernetes e é usado também pelo plug-in de armazenamento da DigitalOcean para inicializar vários componentes.</p>
+<div class="code-label " title="secret.yaml">secret.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Secret
+metadata:
+  name: digitalocean
+  namespace: kube-system
+</code></pre>
+<p>Ao invés de uma chave <code>spec</code>, um segredo usa uma chave <code>data</code> ou <code>stringData</code> para reter as informações necessárias. O parâmetro <code>data</code> retém os dados na base64 codificados que são automaticamente decodificados quando recuperados. O parâmetro <code>stringData</code> retém dados não codificados que são automaticamente codificados durante a criação ou atualizações e não gera os exibe os dados ao recuperar os segredos. Você usará o <code>stringData</code> neste tutorial por conveniência.</p>
+
+<p>Adicione o <code>access-token</code> como <code>stringData</code>:</p>
+<div class="code-label " title="secret.yaml">secret.yaml</div><pre class="code-pre "><code langs="">...
+stringData:
+  access-token: <span class="highlight">your-api-token</span>
+</code></pre>
+<p>Salve e saia do arquivo.</p>
+
+<p>Seu arquivo <code>secret.yaml</code> se parecerá com isso:</p>
+<div class="code-label " title="secret.yaml">secret.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Secret
+metadata:
+  name: digitalocean
+  namespace: kube-system
+stringData:
+  access-token: <span class="highlight">your-api-token</span>
+</code></pre>
+<p>Crie o segredo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f secret.yaml
+</li></ul></code></pre>
+<p>Você verá este resultado após a criação do segredo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>secret/digitalocean created
+</code></pre>
+<p>Você pode ver o segredo com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl -n kube-system get secret digitalocean
+</li></ul></code></pre>
+<p>O resultado será semelhante a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME           TYPE      DATA      AGE
+digitalocean   Opaque    1         41s
+</code></pre>
+<p>O tipo <code>Opaque</code> significa que este segredo é apenas de leitura, que é o padrão para os segredos <code>stringData</code>. Você pode ler mais sobre isso nas <a href="https://github.com/kubernetes/community/blob/master/contributors/design-proposals/auth/secrets.md">Especificações de design do segredo</a>. O campo <code>DATA</code> mostra o número de itens armazenados neste segredo. Neste caso, ele mostra <code>1</code> porque você tem uma única chave armazenada.</p>
+
+<p>Agora que seu segredo está funcionando, instale o <a href="https://github.com/digitalocean/csi-digitalocean">plug-in de armazenamento de bloco da DigitalOcean</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f https://raw.githubusercontent.com/digitalocean/csi-digitalocean/master/deploy/kubernetes/releases/csi-digitalocean-v0.3.0.yaml
+</li></ul></code></pre>
+<p>Você verá um resultado similar ao seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>storageclass.storage.k8s.io/do-block-storage created
+serviceaccount/csi-attacher created
+clusterrole.rbac.authorization.k8s.io/external-attacher-runner created
+clusterrolebinding.rbac.authorization.k8s.io/csi-attacher-role created
+service/csi-attacher-doplug-in created
+statefulset.apps/csi-attacher-doplug-in created
+serviceaccount/csi-provisioner created
+clusterrole.rbac.authorization.k8s.io/external-provisioner-runner created
+clusterrolebinding.rbac.authorization.k8s.io/csi-provisioner-role created
+service/csi-provisioner-doplug-in created
+statefulset.apps/csi-provisioner-doplug-in created
+serviceaccount/csi-doplug-in created
+clusterrole.rbac.authorization.k8s.io/csi-doplug-in created
+clusterrolebinding.rbac.authorization.k8s.io/csi-doplug-in created
+daemonset.apps/csi-doplug-in created
+</code></pre>
+<p>Agora que você instalou o plug-in de armazenamento da DigitalOcean, é possível criar o armazenamento de bloco para reter seu código de aplicativo e arquivos de configuração.</p>
+
+<h2 id="passo-3-—-criando-o-volume-persistente">Passo 3 — Criando o volume persistente</h2>
+
+<p>Com seu segredo funcionando e o plug-in <em>de armazenamento de bloco instalado, você está pronto para criar seu Volume Persistente</em>. Um Volume Persistente, ou PV, é o armazenamento de bloco de um tamanho específico que vive independentemente do ciclo de vida de um pod. Usar um Volume Persistente permitirá que você gerencie ou atualize seus pods sem se preocupar em perder o código do seu aplicativo. Um Volume Persistente é acessado usando um <code>PersistentVolumeClaim</code>, ou PVC, que monta o PV no caminho necessário.</p>
+
+<p>Abra um arquivo chamado <code>code_volume.yaml</code> com seu editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano code_volume.yaml
+</li></ul></code></pre>
+<p>Nomeie o <code>code</code> do PVC adicionando os seguintes parâmetros e valores ao seu arquivo:</p>
+<div class="code-label " title="code_volume.yaml">code_volume.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: code
+</code></pre>
+<p>A <code>spec</code> para um PVC contém os seguintes itens:</p>
+
+<ul>
+<li><code>accessModes</code> que variam com o caso de uso. Esses são:
+
+<ul>
+<li><code>ReadWriteOnce</code> — monta o volume como leitura-escrita por um único nó</li>
+<li><code>ReadOnlyMany</code> — monta o volume como apenas leitura por muitos nós</li>
+<li><code>ReadWriteMany</code> — monta o volume como leitura-escrita por muitos nós</li>
+</ul></li>
+<li><code>resources</code> — o espaço de armazenamento que você precisa</li>
+</ul>
+
+<p>O armazenamento de bloco da DigitalOcean é montado apenas em um único nó, então você irá definir o <code>accessModes</code> para <code>ReadWriteOnce</code>. Este tutorial irá guiá-lo na adição de uma pequena quantidade de códigos do aplicativo, então 1GB de uso será o bastante neste caso. Se você planeja armazenar uma maior quantidade de código ou dados no volume, é possível modificar o parâmetro <code>storage</code> para satisfazer seus requisitos. Você pode aumentar a quantidade de armazenamento após a criação do volume, mas a redução do disco não é suportada.</p>
+<div class="code-label " title="code_volume.yaml">code_volume.yaml</div><pre class="code-pre "><code langs="">...
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: <span class="highlight">1Gi</span>
+</code></pre>
+<p>Em seguida, especifique a classe de armazenamento que o Kubernetes usará para fornecer os volumes. Você usará a classe <code>do-block-storage</code> criada pelo plug-in de armazenamento de bloco da DigitalOcean.</p>
+<div class="code-label " title="code_volume.yaml">code_volume.yaml</div><pre class="code-pre "><code langs="">...
+  storageClassName: do-block-storage
+</code></pre>
+<p>Seu arquivo <code>code_volume.yaml</code> se parecerá com isto:</p>
+<div class="code-label " title="code_volume.yaml">code_volume.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: code
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: <span class="highlight">1Gi</span>
+  storageClassName: do-block-storage
+</code></pre>
+<p>Salve e saia do arquivo.</p>
+
+<p>Crie o <code>code</code> PersistentVolumeClaim usando o <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f code_volume.yaml
+</li></ul></code></pre>
+<p>O resultado a seguir diz que o objeto foi criado com sucesso e você está pronto para montar seu PVC de 1GB como um volume.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>persistentvolumeclaim/code created
+</code></pre>
+<p>Para ver os Volumes Persistentes (PV) disponíveis:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pv
+</li></ul></code></pre>
+<p>Você verá seu PV listado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM          STORAGECLASS       REASON    AGE
+pvc-ca4df10f-ab8c-11e8-b89d-12331aa95b13   1Gi        RWO            Delete           Bound     default/code   do-block-storage             2m
+</code></pre>
+<p>Os campos acima são uma visão geral do seu arquivo de configuração, exceto para o <code>Reclaim Policy</code> e <code>Status</code>. O <code>Reclaim Policy</code> define o que é feito com o PV após o acesso do PVC for deletado. O <code>Delete</code> remove o PV do Kubernetes assim como a infraestrutura da DigitalOcean. Você pode aprender mais sobre o <code>Reclaim Policy</code> e <code>Status</code> na <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/">documentação PV do Kubernetes</a>.</p>
+
+<p>Você criou um Volume Persistente usando o plug-in de armazenamento de bloco da DigitalOcean com sucesso. Agora que seu Volume Persistente está pronto, você criará seus pods usando uma implantação.</p>
+
+<h2 id="passo-4-—-criando-uma-implantação-do-php-fpm">Passo 4 — Criando uma implantação do PHP-FPM</h2>
+
+<p>Neste passo, você aprenderá como usar uma implantação para criar seu pod PHP-FPM. Implantações fornecem uma maneira uniforme de criar, atualizar e gerenciar pods usando o <a href="https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/">ReplicaSets</a>. Se uma atualização não funcionar como esperado, uma implantação irá mudar automaticamente seus pods para uma imagem anterior.</p>
+
+<p>A chave da implantação <code>spec.selector</code> listará os rótulos dos pods que irá gerenciar. Ela também usará a chave <code>template</code> para criar os pods necessários.</p>
+
+<p>Este passo também irá introduzir o uso dos contêineres de inicialização. Os <em>Init Containers</em> executam um ou mais comandos antes dos contêineres regulares especificados na chave <code>template</code> do pod. Neste tutorial, seu contêiner de inicialização trará um arquivo de amostra <code>index.php</code> do <a href="https://gist.github.com">GitHub Gist</a> usando o <code>wget</code>. Este é o conteúdo do arquivo de amostra:</p>
+<div class="code-label " title="index.php">index.php</div><pre class="code-pre "><code langs="">&lt;?php
+echo phpinfo();
+</code></pre>
+<p>Para criar sua implantação, abra um novo arquivo chamado <code>php_deployment.yaml</code> com seu editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano php_deployment.yaml
+</li></ul></code></pre>
+<p>Esta implantação irá gerenciar seus pods PHP-FPM. Assim, você irá nomear o objeto de implantação como <code>php</code>. Os pods pertencem à camada backend, então a implantação será agrupada neste grupo usando o rótulo <code>tier: backend</code>:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php
+  labels:
+    tier: backend
+</code></pre>
+<p>Para a <code>spec</code> da implantação, serão especificadas quantas cópias deste pod serão criadas usando o parâmetro <code>replicas</code>. O número de <code>replicas</code> irá variar dependendo das suas necessidades e recursos disponíveis. Você criará uma réplica neste tutorial:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+spec:
+  replicas: 1
+</code></pre>
+<p>Esta implantação irá gerenciar pods que correspondam aos rótulos <code>app: php</code> e <code>tier: backend</code>. Sob a chave <code>selector</code>, adicione:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+  selector:
+    matchLabels:
+      app: php
+      tier: backend
+</code></pre>
+<p>Em seguida, a <code>spec</code> da implantação exige o <code>template</code> para a definição de objeto do seu pod. Este modelo definirá as especificações para criação do pod. Primeiro, serão adicionados rótulos que foram especificados para os <code>selectors</code> de serviço <code>php</code> e os <code>matchLabels</code> da implantação. Adicione <code>app: php</code> e <code>tier: backend</code> em <code>template.metadata.labels</code>:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+  template:
+    metadata:
+      labels:
+        app: php
+        tier: backend
+</code></pre>
+<p>Um pod pode ter vários contêineres e volumes, mas cada um precisará de um nome. Você pode montar volumes de modo seletivo para um contêiner ao especificar um caminho de montagem para cada volume.</p>
+
+<p>Primeiro, especifique os volumes que seus contêineres irão acessar. Você criou um PVC chamado <code>code</code> para reter seu código do aplicativo, então chame este volume de <code>code</code> também. Em <code>spec.template.spec.volumes</code>, adicione o seguinte:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+    spec:
+      volumes:
+      - name: code
+        persistentVolumeClaim:
+          claimName: code
+</code></pre>
+<p>Em seguida, especifique o contêiner que você quer executar neste pod. Você pode encontrar uma variedade de imagens na <a href="https://hub.docker.com/explore/">loja do Docker</a>, mas neste tutorial você usará a imagem <code>php:7-fpm</code>.</p>
+
+<p>Em <code>spec.template.spec.containers</code>, adicione o seguinte:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+      containers:
+      - name: php
+        image: php:7-fpm
+</code></pre>
+<p>Em seguida, serão montados os volumes aos quais o contêiner exige acesso. Este contêiner executará seu código PHP, então ele precisará de acesso ao volume <code>code</code>. Você também usará o <code>mountPath</code> para especificar <code>/code</code> como o ponto de montagem.</p>
+
+<p>Em <code>spec.template.spec.containers.volumeMounts</code>, adicione:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+        volumeMounts:
+        - name: code
+          mountPath: /code
+</code></pre>
+<p>Agora que você montou seu volume, será necessário colocar seu código do aplicativo no volume. Você pode ter usado anteriormente o FTP/SFTP ou clonado o código em uma conexão via protocolo SSH para fazer isso, mas este passo irá mostrar como copiar o código usando um contêiner de inicialização.</p>
+
+<p>Dependendo da complexidade do seu processo de configuração, você pode usar um único <code>initContainer</code> para executar um script que constrói seu aplicativo, ou usar um <code>initContainer</code> por comando. Certifique-se de que os volumes são montados no <code>initContainer</code>.</p>
+
+<p>Neste tutorial, será usado um único contêiner de inicialização com o <code>busybox</code> para baixar o código. O <code>busybox</code> é uma pequena imagem que contém o utilitário <code>wget</code> que você usará para fazer isso.</p>
+
+<p>Em <code>spec.template.spec</code>, adicione seu <code>initContainer</code>​​​ e especifique a imagem <code>busybox</code>:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+      initContainers:
+      - name: install
+        image: busybox
+</code></pre>
+<p>Seu contêiner de inicialização precisará de acesso ao volume <code>code</code> para que ele possa baixar o código naquele local. Em <code>spec.template.spec.initContainers</code>, monte o volume <code>code</code> no caminho <code>/code</code>:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+        volumeMounts:
+        - name: code
+          mountPath: /code
+</code></pre>
+<p>Cada contêiner de inicialização precisa executar um <code>command</code>. Seu contêiner de inicialização usará o <code>wget</code> para baixar <a href="https://raw.githubusercontent.com/do-community/php-kubernetes/master/index.php">o código</a> do <a href="https://github.com/do-community/php-kubernetes">Github</a> para o diretório de trabalho <code>/code</code>. A opção <code>-O</code> dá ao arquivo baixado um nome e você irá nomear este arquivo <code>index.php</code>.</p>
+
+<p><span class='note'><strong>Nota:</strong> Certifique-se de confiar no código que você está fazendo o pull. Antes de fazer o pull dele para seu servidor, inspecione o código fonte para garantir que você se sinta confortável com o que o código faz.<br></span></p>
+
+<p>Sob o contêiner <code>install</code> em <code>spec.template.spec.initContainers</code>, adicione estas linhas:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">...
+        command:
+        - wget
+        - "-O"
+        - "/code/index.php"
+        - <span class="highlight">https://raw.githubusercontent.com/do-community/php-kubernetes/master/index.php</span>
+</code></pre>
+<p>Seu arquivo final <code>php_deployment.yaml</code> se parecerá com isso:</p>
+<div class="code-label " title="php_deployment.yaml">php_deployment.yaml</div><pre class="code-pre "><code langs="">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php
+  labels:
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: php
+        tier: backend
+    spec:
+      volumes:
+      - name: code
+        persistentVolumeClaim:
+          claimName: code
+      containers:
+      - name: php
+        image: php:7-fpm
+        volumeMounts:
+        - name: code
+          mountPath: /code
+      initContainers:
+      - name: install
+        image: busybox
+        volumeMounts:
+        - name: code
+          mountPath: /code
+        command:
+        - wget
+        - "-O"
+        - "/code/index.php"
+        - <span class="highlight">https://raw.githubusercontent.com/do-community/php-kubernetes/master/index.php</span>
+</code></pre>
+<p>Salve o arquivo e saia do editor.</p>
+
+<p>Crie a implantação PHP-FPM com o <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f php_deployment.yaml
+</li></ul></code></pre>
+<p>Você verá o seguinte resultado após a criação da implantação:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>deployment.apps/php created
+</code></pre>
+<p>Para resumir, essa implantação irá começar baixando as imagens especificadas. Então, solicitará o <code>PersistentVolume</code> do seu <code>PersistentVolumeClaim</code> e executará seus <code>initContainers​​​</code> em série. Assim que terminar, os contêiners executarão e montarão os <code>volumes</code> no ponto de montagem especificado. Assim que todos esses passos estiverem completos, seu pod estará em funcionamento.</p>
+
+<p>Você pode ver sua implantação executando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get deployments
+</li></ul></code></pre>
+<p>Você verá o resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+php       1         1         1            0           19s
+</code></pre>
+<p>Este resultado pode ajudar você a compreender o estado atual da implantação. Uma <code>Deployment</code> é <a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/">um dos controladores</a> que mantêm um estado desejado. O <code>template</code> que você criou especifica que o estado <code>DESIRED</code> terá 1 <code>replicas</code> do pod chamado <code>php</code>. O campo <code>CURRENT</code> indica quantas réplicas estão funcionando, e isso deve corresponder ao estado <code>DESIRED</code>. Você pode ler sobre os campos restantes na <a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/">documentação de implantações do Kubernetes</a>.</p>
+
+<p>Você pode ver os pods que essa implantação iniciou com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pods
+</li></ul></code></pre>
+<p>O resultado deste comando varia dependendo de quanto tempo passou desde a criação da implantação. Se você executá-lo pouco após a criação, o resultado se parecerá com isso:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                   READY     STATUS     RESTARTS   AGE
+php-86d59fd666-bf8zd   0/1       Init:0/1   0          9s
+</code></pre>
+<p>As colunas representam as seguintes informações:</p>
+
+<ul>
+<li><code>Ready</code>: o número de <code>replicas</code> que está funcionando neste pod.</li>
+<li><code>Status</code>: o status do pod. <code>Init</code> indica que os contêineres de inicialização estão em funcionamento. Neste resultado, 0 de 1 contêineres de inicialização terminaram de executar.</li>
+<li><code>Restarts</code>: quantas vezes este processo foi reiniciado para iniciar o pod. Este número aumentará se algum dos seus contêineres de inicialização falhar. A implantação irá reiniciar até chegar no estado desejado.</li>
+</ul>
+
+<p>Dependendo da complexidade dos seus scripts de inicialização, pode levar alguns minutos para o status mudar para <code>podInitializing</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                   READY     STATUS            RESTARTS   AGE
+php-86d59fd666-lkwgn   0/1       podInitializing   0          39s
+</code></pre>
+<p>Isso significa que os contêineres de inicialização finalizaram e os contêineres estão inicializando. Se você executar o comando quando todos os contêineres estiverem funcionando, verá a mudança de status do pod para <code>Running</code>.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                   READY     STATUS            RESTARTS   AGE
+php-86d59fd666-lkwgn   1/1       Running   0          1m
+</code></pre>
+<p>Agora, seu pod está funcionando com sucesso. Se seu pod não iniciar, você pode depurá-lo com os comandos a seguir:</p>
+
+<ul>
+<li>Ver informações detalhadas de um pod:</li>
+</ul>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl describe pods <span class="highlight">pod-name</span>
+</li></ul></code></pre>
+<ul>
+<li>Ver registros gerados por um pod:</li>
+</ul>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl logs <span class="highlight">pod-name</span>
+</li></ul></code></pre>
+<ul>
+<li>Ver registros para um contêiner específico em um pod:</li>
+</ul>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl logs <span class="highlight">pod-name</span> <span class="highlight">container-name</span>
+</li></ul></code></pre>
+<p>Seu código do aplicativo está montado e o serviço PHP-FPM está agora pronto para lidar com conexões. Agora, você pode criar sua implantação do Nginx.</p>
+
+<h2 id="passo-5-—-criando-a-implantação-do-nginx">Passo 5 — Criando a implantação do Nginx</h2>
+
+<p>Neste passo, será usado um <em>ConfigMap</em> para configurar o Nginx. Um ConfigMap retém suas configurações em um formato de valor de chave que você pode referenciar em outras definições de objeto do Kubernetes. Esta abordagem dará a você a flexibilidade de reutilização ou de alternar a imagem com uma versão diferente do Nginx caso necessário. Ao atualizar o ConfigMap, serão replicadas automaticamente as alterações em qualquer pod montado nele.</p>
+
+<p>Crie um arquivo <code>nginx_configMap.yaml</code> para seu ConfigMap com seu editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx_configMap.yaml
+</li></ul></code></pre>
+<p>Nomeie o ConfigMap <code>nginx-config</code> e agrupe-o no micro serviço <code>tier: backend</code>:</p>
+<div class="code-label " title="nginx_configMap.yaml">nginx_configMap.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  labels:
+    tier: backend
+</code></pre>
+<p>Em seguida, adicione o <code>data</code> para o ConfigMap. Nomeie a chave <code>config</code> e adicione o conteúdo do seu arquivo de configuração do Nginx como o valor. Você pode usar a configuração exemplo do Nginx <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-nginx-server-blocks-virtual-hosts-on-ubuntu-16-04#step-three-create-server-block-files-for-each-domain">deste tutorial</a>.</p>
+
+<p>Como o Kubernetes pode rotear pedidos para o host apropriado para um serviço, você pode digitar o nome do seu serviço PHP-FPM no parâmetro <code>fastcgi_pass</code> ao invés de seu endereço IP. Adicione o seguinte ao seu arquivo <code>nginx_configMap.yaml</code>:</p>
+<div class="code-label " title="nginx_configMap.yaml">nginx_configMap.yaml</div><pre class="code-pre "><code langs="">...
+data:
+  config : |
+    server {
+      index index.php index.html;
+      error_log  /var/log/nginx/error.log;
+      access_log /var/log/nginx/access.log;
+      root ^/code^;
+
+      location / {
+          try_files $uri $uri/ /index.php?$query_string;
+      }
+
+      location ~ \.php$ {
+          try_files $uri =404;
+          fastcgi_split_path_info ^(.+\.php)(/.+)$;
+          fastcgi_pass <span class="highlight">php:9000</span>;
+          fastcgi_index index.php;
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+          fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+    }
+</code></pre>
+<p>Seu arquivo <code>nginx_configMap.yaml</code> se parecerá com isto:</p>
+<div class="code-label " title="nginx_configMap.yaml">nginx_configMap.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  labels:
+    tier: backend
+data:
+  config : |
+    server {
+      index index.php index.html;
+      error_log  /var/log/nginx/error.log;
+      access_log /var/log/nginx/access.log;
+      root <span class="highlight">/code</span>;
+
+      location / {
+          try_files $uri $uri/ /index.php?$query_string;
+      }
+
+      location ~ \.php$ {
+          try_files $uri =404;
+          fastcgi_split_path_info ^(.+\.php)(/.+)$;
+          fastcgi_pass <span class="highlight">php:9000</span>;
+          fastcgi_index index.php;
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+          fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+    }
+</code></pre>
+<p>Salve o arquivo e saia do editor.</p>
+
+<p>Crie o ConfigMap:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f nginx_configMap.yaml
+</li></ul></code></pre>
+<p>Você verá o seguinte resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>configmap/nginx-config created
+</code></pre>
+<p>Você terminou de criar seu ConfigMap e agora pode construir sua implantação do Nginx.</p>
+
+<p>Inicie abrindo um novo arquivo <code>nginx_deployment.yaml</code> no editor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx_deployment.yaml
+</li></ul></code></pre>
+<p>Nomeie a implantação <code>nginx</code> e adicione o rótulo <code>tier: backend</code>:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    tier: backend
+</code></pre>
+<p>Especifique que você quer uma <code>replicas</code> na <code>spec</code> da implantação. Esta implantação irá gerenciar pods com rótulos <code>app: nginx</code> e <code>tier: backend</code>. Adicione os parâmetros e valores a seguir:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">...
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+      tier: backend
+</code></pre>
+<p>Em seguida, adicione o pod <code>template</code>. Você precisa usar os mesmos rótulos que adicionou para o <code>selector.matchLabels</code> da implantação. Adicione o seguinte:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">...
+  template:
+    metadata:
+      labels:
+        app: nginx
+        tier: backend
+</code></pre>
+<p>Forneça ao Nginx acesso ao <code>code</code> PVC que criou mais cedo. Em <code>spec.template.spec.volumes</code>, adicione:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">...
+    spec:
+      volumes:
+      - name: code
+        persistentVolumeClaim:
+          claimName: code
+</code></pre>
+<p>Os pods podem montar um ConfigMap como um volume. Especificar um nome de arquivo e chave criará um arquivo com seu valor como conteúdo. Para usar o ConfigMap, defina <code>path</code> como nome do arquivo que irá reter o conteúdo da <code>key</code>. Você quer criar um arquivo <code>site.conf</code> a partir da <code>config</code> da chave. Em <code>spec.template.spec.volumes</code>, adicione o seguinte:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">...
+      - name: config
+        configMap:
+          name: nginx-config
+          items:
+          - key: config
+            path: site.conf
+</code></pre>
+<p><span class='warning'><strong>Aviso</strong>: Se um arquivo não for especificado, o conteúdo da <code>key</code> substituirá o <code>mountPath</code> do volume. Isso significa que se um caminho não for especificado explicitamente, você perderá todo o conteúdo na pasta de destino.<br></span></p>
+
+<p>Em seguida, você irá especificar a imagem da qual irá criar seu pod. Este tutorial usará a imagem <code>nginx:1.7.9</code> por motivos de estabilidade, mas você pode encontrar outras imagens do Nginx na <a href="https://hub.docker.com/explore/">loja do Docker</a>. Além disso, torne o Nginx disponível na porta 80. Em <code>spec.template.spec</code> adicione:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">...
+      containers:
+      - name: nginx
+        image: <span class="highlight">nginx:1.7.9</span>
+        ports:
+        - containerPort: 80
+</code></pre>
+<p>O Nginx e o PHP-FPM precisam acessar o arquivo no mesmo caminho, então monte o volume <code>code</code> em <code>/code</code>:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">...
+        volumeMounts:
+        - name: code
+          mountPath: /code
+</code></pre>
+<p>A imagem <code>nginx:1.7.9</code> irá carregar automaticamente quaisquer arquivos de configuração no diretório <code>/etc/nginx/conf.d</code>. Ao montar o volume <code>config</code> neste diretório, será criado o arquivo <code>/etc/nginx/conf.d/site.conf</code>. Em <code>volumeMounts</code>, adicione o seguinte:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">...
+        - name: config
+          mountPath: /etc/nginx/conf.d
+</code></pre>
+<p>Seu arquivo <code>nginx_deployment.yaml</code> se parecerá com isto:</p>
+<div class="code-label " title="nginx_deployment.yaml">nginx_deployment.yaml</div><pre class="code-pre "><code langs="">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: nginx
+        tier: backend
+    spec:
+      volumes:
+      - name: code
+        persistentVolumeClaim:
+          claimName: code
+      - name: config
+        configMap:
+          name: nginx-config
+          items:
+          - key: config
+            path: site.conf
+      containers:
+      - name: nginx
+        image: <span class="highlight">nginx:1.7.9</span>
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: code
+          mountPath: /code
+        - name: config
+          mountPath: /etc/nginx/conf.d
+</code></pre>
+<p>Salve o arquivo e saia do editor.</p>
+
+<p>Crie a implantação Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f nginx_deployment.yaml
+</li></ul></code></pre>
+<p>O resultado a seguir indica que sua implantação foi criada:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>deployment.apps/nginx created
+</code></pre>
+<p>Liste suas implantações com este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get deployments
+</li></ul></code></pre>
+<p>Você verá as implantações do Nginx e do PHP-FPM:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx     1         1         1            0           16s
+php       1         1         1            1           7m
+</code></pre>
+<p>Liste os pods gerenciados por ambas as implantações:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pods
+</li></ul></code></pre>
+<p>Você verá os pods que estão em funcionamento:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                     READY     STATUS    RESTARTS   AGE
+nginx-7bf5476b6f-zppml   1/1       Running   0          32s
+php-86d59fd666-lkwgn     1/1       Running   0          7m
+</code></pre>
+<p>Agora que todos os objetos do Kubernetes estão ativos, é possível visitar o serviço Nginx no seu navegador.</p>
+
+<p>Liste os serviços em execução:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get services -o wide
+</li></ul></code></pre>
+<p>Obtenha o IP externo para seu serviço Nginx:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE       SELECTOR
+kubernetes   ClusterIP   10.96.0.1       &lt;none&gt;        443/TCP    39m       &lt;none&gt;
+nginx        ClusterIP   10.102.160.47   <span class="highlight">your_public_ip</span> 80/TCP     27m       app=nginx,tier=backend
+php          ClusterIP   10.100.59.238   &lt;none&gt;        9000/TCP   34m       app=php,tier=backend
+</code></pre>
+<p>No seu navegador, visite seu servidor digitando <code>http://<span class="highlight">your_public_ip</span></code>. Você verá o resultado do <code>php_info()</code> e terá confirmado que seus serviços do Kubernetes estão funcionando.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste guia, você transformou em contêiner os serviços PHP-FPM e Nginx para gerenciá-los independentemente. Esta abordagem não só irá melhorar a escalabilidade do seu projeto conforme for crescendo, como também permitirá que você use recursos de maneira eficiente. Você também armazenou seu código do aplicativo em um volume para que você possa atualizar facilmente seus serviços no futuro.</p>

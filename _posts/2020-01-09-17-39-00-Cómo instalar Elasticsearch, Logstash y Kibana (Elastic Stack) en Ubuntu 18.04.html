@@ -1,0 +1,473 @@
+---
+layout: post
+title: Cómo instalar Elasticsearch, Logstash y Kibana (Elastic Stack) en Ubuntu 18.04
+network: digitalocean
+date: January 09, 2020 at 05:39PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-elasticsearch-logstash-and-kibana-elastic-stack-on-ubuntu-18-04-es
+image: https://assets.digitalocean.com/articles/elastic_1804/kibana_status_page_md.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>El autor seleccionó <a href="https://www.brightfunds.org/organizations/internet-archive">el lnternet Archive</a> para recibir una donación como parte del programa <a href="https://do.co/w4do-cta">Write for DOnations</a></em>.</p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p>Elastic Stack, previamente conocida como <em>la pila ELK,</em> es una colección de software de código abierto producido por <a href="https://www.elastic.co/">Elastic</a> que le permite buscar, analizar, y visualizar registros generados desde cualquier fuente y en cualquier formato, una práctica conocida como <em>registro centralizado</em>. El registro centralizado puede ser muy útil al intentar identificar problemas en sus servidores o aplicaciones, ya que le permite realizar búsquedas en todos sus registros desde un solo sitio. También es útil porque le permite identificar problemas que abarcan varios servidores vinculando sus registros durante un período de tiempo específico.</p>
+
+<p>Elastic Stack cuenta con cuatro componentes principales:</p>
+
+<ul>
+<li><a href="https://www.elastic.co/products/elasticsearch"><strong>Elasticsearch</strong></a>: motor de búsqueda de <a href="https://en.wikipedia.org/wiki/Representational_state_transfer"><em>RESTful</em></a> distribuido que almacena todos los datos recopilados.</li>
+<li><a href="https://www.elastic.co/products/logstash"><strong>Logstash</strong></a>: componente de procesamiento de datos de Elastic Stack que envía datos entrantes a Elasticsearch.</li>
+<li><a href="https://www.elastic.co/products/kibana"><strong>Kibana</strong></a>: interfaz web para buscar y visualizar registros.</li>
+<li><a href="https://www.elastic.co/products/beats"><strong>Beats</strong></a>: transportadores de datos ligeros de uso único que pueden enviar datos de cientos o miles de máquinas a Logstash o Elasticsearch.</li>
+</ul>
+
+<p>A través de este tutorial, instalará <a href="https://www.elastic.co/elk-stack">Elastic Stack</a> en un servidor de Ubuntu 18.04. Aprenderá a instalar todos los componentes de Elastic Stack, incluido <a href="https://www.elastic.co/products/beats/filebeat">Filebeat</a>, un Beat que se usa para reenviar y centralizar registros y archivos, y los configurará para recopilar y visualizar registros del sistema. Además, debido a que Kibana normalmente está sólo disponible en el <code>localhost</code>, usaremos <a href="https://www.nginx.com/">Nginx</a> para hacer un proxy de modo que el acceso sea posible a través de un navegador web. Instalaremos todos estos componentes en un único servidor al que nos referiremos como nuestro <em>servidor de pila de Elastic</em>.</p>
+
+<p><span class='note'><strong>Nota</strong>: Al instalar Elastic Stack, debe usar la misma versión en toda la pila. A los efectos de este tutorial, instalaremos las últimas versiones de toda la pila que, al redactarse el presente artículo, fueron Elasticsearch 6.4.3, Kibana 6.4.3, Logstash 6.4.3 y Filebeat 6.4.3.<br></span></p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para completar este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li><p>Un servidor de Ubuntu 18.04 configurado siguiendo nuestra <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">Guía de configuración inicial para servidores de Ubuntu 18.04</a>, incluidos un usuario no root con privilegios sudo y un firewall configurado con <code>ufw</code>. La proporción de CPU, RAM y almacenamiento que su servidor de Elastic Stack requiere depende del volumen de registros que desee recopilar. Para este tutorial, usaremos un VPS con las siguientes especificaciones para nuestro servidor de Elastic Stack:</p>
+
+<ul>
+<li>SO: Ubuntu 18.04</li>
+<li>RAM: 4 GB</li>
+<li>CPU: 2</li>
+</ul></li>
+<li><p>Java 8 (requerido por Elasticsearch y Logstash) instalado en su servidor. Tenga en cuenta que Java 9 no es compatible. Para instalarlo, siga la sección <a href="https://www.digitalocean.com/community/tutorials/how-to-install-java-with-apt-on-ubuntu-18-04#installing-the-oracle-jdk">“Instalar JDK de Oracle”</a> de nuestra guía de instalación de Java 8 en Ubuntu 18.04.</p></li>
+<li><p>Nginx instalado en su servidor, que configuraremos más adelante en esta guía como proxy inverso para Kibana. Para configurarlo, siga nuestra guía <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">Cómo instalar Nginx en Ubuntu 18.04</a>.</p></li>
+</ul>
+
+<p>Además, debido a que Elastic Stack se usa para acceder a información valiosa sobre su servidor a la que no quiere que accedan usuarios no autorizados, es importante que mantenga su servidor protegido instalando un certificado TLS o SSL. Esto es opcional, pero se** recomienda mucho**.</p>
+
+<p>Sin embargo, ya que eventualmente realizará cambios en su bloque de servidor de Nginx a lo largo de esta guía, es probable que tenga más sentido completar la guía de <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">Let´s Encrypt sobre Ubuntu 18.04</a> al final del segundo paso de este tutorial. Teniendo eso en cuenta, si planea configurar Let´s Encrypt en su servidor, necesitará lo siguiente antes de hacerlo:</p>
+
+<ul>
+<li>Un nombre de dominio totalmente apto (FQDN). Para este tutorial, se utilizará <code><span class="highlight">example.com</span></code> en todo momento. Puede adquirir un nombre de dominio en <a href="https://namecheap.com">Namecheap</a>, obtener uno gratuito en <a href="http://www.freenom.com/en/index.html">Freenom</a> o utilizar un registrador de dominios de su elección.</li>
+<li><p>Los dos registros DNS que se indican a continuación se han configurado para su servidor. Puede utilizar <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">esta introducción al DNS de DigitalOcean</a> para obtener más información sobre cómo agregarlos.</p>
+
+<ul>
+<li>Un registro A con <code><span class="highlight">example.com</span>​​​</code> orientado a la dirección IP pública de su servidor.</li>
+<li>Un registro A con <code><span class="highlight">example.com</span>​​​ ​​</code>orientado a la dirección IP pública de su servidor.</li>
+</ul></li>
+</ul>
+
+<h2 id="paso-1-instalar-y-configurar-elasticsearch">Paso 1: Instalar y configurar Elasticsearch</h2>
+
+<p>Los componentes de Elastic Stack no están disponibles en los repositorios de paquetes predeterminados de Ubuntu. Sin embargo, pueden instalarse con APT una vez que agregue la lista de fuentes de paquetes de Elastic.</p>
+
+<p>Todos los paquetes de Elastic Stack están firmados con la clave de firma de Elasticsearch para proteger su sistema contra la suplantación de paquetes. Su administrador de paquetes considerará confiables los paquetes autenticados con la clave. En este paso, importará la clave GPG pública de Elasticsearch y agregará la lista de fuentes de paquetes de Elastic para instalar Elasticsearch.</p>
+
+<p>Para comenzar, ejecute el siguiente comando a fin de importar la clave de GPG pública de Elasticsearch en APT:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+</li></ul></code></pre>
+<p>A continuación, agregue la lista de fuentes de Elastic al directorio <code>sources.list.d</code>, donde APT buscará nuevas fuentes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "deb https://artifacts.elastic.co/packages/6.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-6.x.list
+</li></ul></code></pre>
+<p>A continuación, actualice sus listas de paquetes para que APT lea la nueva fuente de Elastic:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Luego, instale Elasticsearch con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install elasticsearch
+</li></ul></code></pre>
+<p>Una vez que Elasticsearch complete la instalación, utilice su editor de texto preferido para editar el archivo de configuración principal de Elasticsearch, <code>elasticsearch.yml.</code> En este caso, utilizaremos <code>nano</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/elasticsearch/elasticsearch.yml
+</li></ul></code></pre>
+<p><span class='note '><strong>Nota:</strong> El archivo de configuración de Elasticsearch tiene formato YAML; esto significa que la indentación es muy importante. Asegúrese de no añadir espacios adicionales al editar este archivo. </span></p>
+
+<p>Elasticsearch escucha el tráfico de todos los lugares en el puerto <code>9200</code>. Deberá restringir el acceso externo a su instancia de Elasticsearch para evitar que terceros lean sus datos o cierren su clúster de Elasticsearch a través de la API REST. Encuentre la línea que especifica <code>network.host</code>, quite los comentarios y sustituya su valor por <code>localhost</code> para que tenga este aspecto:</p>
+<div class="code-label " title="/etc/elasticsearch/elasticsearch.yml">/etc/elasticsearch/elasticsearch.yml</div><pre class="code-pre "><code langs="">. . .
+network.host: <span class="highlight">localhost</span>
+. . .
+</code></pre>
+<p>Guarde y cierre <code>elasticsearch.yml</code> presionando <code>CTRL+X</code>, seguido de <code>Y</code> y <code>ENTER</code> si está usando <code>nano</code>. A continuación, inicie el servicio de Elasticsearch con <code>systemctl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start elasticsearch
+</li></ul></code></pre>
+<p>Luego, ejecute el siguiente comando para permitir que Elasticsearch se cargue cada vez que su servidor se inicie:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable elasticsearch
+</li></ul></code></pre>
+<p>Puede comprobar si su servicio de Elasticsearch se está ejecutando enviando una solicitud HTTP:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -X GET "localhost:9200"
+</li></ul></code></pre>
+<p>Visualizará una respuesta que mostrará información básica sobre su nodo local, similar a la siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "name" : "ZlJ0k2h",
+  "cluster_name" : "elasticsearch",
+  "cluster_uuid" : "beJf9oPSTbecP7_i8pRVCw",
+  "version" : {
+    "number" : "6.4.2",
+    "build_flavor" : "default",
+    "build_type" : "deb",
+    "build_hash" : "04711c2",
+    "build_date" : "2018-09-26T13:34:09.098244Z",
+    "build_snapshot" : false,
+    "lucene_version" : "7.4.0",
+    "minimum_wire_compatibility_version" : "5.6.0",
+    "minimum_index_compatibility_version" : "5.0.0"
+  },
+  "tagline" : "You Know, for Search"
+}
+</code></pre>
+<p>Ahora que Elasticsearch está configurado y activo, instalaremos Kibana, el siguiente componente de Elastic Stack.</p>
+
+<h2 id="paso-2-instalar-y-configurar-el-panel-de-kibana">Paso 2: Instalar y configurar el panel de Kibana</h2>
+
+<p>De acuerdo con la <a href="https://www.elastic.co/guide/en/elastic-stack/current/installing-elastic-stack.html">documentación oficial</a>, deberá instalar Kibana sólo después de instalar Elasticsearch. La instalación en este orden garantiza que los componentes de los que depende cada producto estén correctamente implementados.</p>
+
+<p>Debido a que ya agregó la fuente de paquetes de Elastic en el paso anterior, puede instalar los componentes restantes de Elastic Stack usando <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install kibana
+</li></ul></code></pre>
+<p>A continuación, habilite e inicie el servicio de Kibana:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable kibana
+</li><li class="line" prefix="$">sudo systemctl start kibana
+</li></ul></code></pre>
+<p>Debido a que Kibana está configurado para escuchar solo en <code>localhost</code>, debemos configurar un <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#reverse-proxy">proxy inverso</a> para permitir el acceso externo a este. Utilizaremos Nginx para este propósito, que ya debería estar instalado en su servidor.</p>
+
+<p>Primero, utilice el comando <code>openssl</code> para crear un usuario administrativo de Kibana que usará para acceder a la interfaz web de Kibana. Como ejemplo, nombraremos esta cuenta <code><span class="highlight">kibanaadmin</span></code>, pero para garantizar una mayor seguridad, le recomendamos elegir un nombre no estándar para su usuario que sea difícil de adivinar.</p>
+
+<p>Con el siguiente comando se crearán el usuario y la contraseña administrativa de Kibana, y se almacenarán en el archivo <code>htpasswd.users</code>. Configurará Nginx para que requiera este nombre de usuario y contraseña, y lea este archivo de manera momentánea:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "<span class="highlight">kibanaadmin</span>:`openssl passwd -apr1`" | sudo tee -a /etc/nginx/htpasswd.users
+</li></ul></code></pre>
+<p>Introduzca y confirme una contraseña cuando se le solicite. Recuerde este dato de inicio de sesión o tome nota de él, ya que lo necesitará para acceder a la interfaz web de Kibana.</p>
+
+<p>A continuación, crearemos un archivo de bloque de servidor de Nginx. Como ejemplo, nos referiremos a este archivo como <code><span class="highlight">example.com</span></code>, aunque podría resultarle más útil dar al suyo un nombre más descriptivo. Por ejemplo, si tiene un FQDN y registros de DNS configurados para este servidor, podría dar a este archivo el nombre de su FQDN:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Añada el siguiente bloque de código al archivo y asegúrese de actualizar <code><span class="highlight">example.com</span></code> para que coincida con el FQDN o la dirección IP pública de su servidor. Con este código, se configura Nginx para dirigir el tráfico HTTP de su servidor a la aplicación de Kibana, que escucha en <code>localhost:5601</code>. También se configura Nginx para leer el archivo <code>htpasswd.users</code> y requerir la autenticación básica.</p>
+
+<p>Tenga en cuenta que si siguió todo el <a href="https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-18-04">tutorial de los requisitos previos de Nginx</a>, es posible que ya haya creado este archivo y lo haya completado con contenido. En ese caso, elimine todo el contenido existente en el archivo antes de añadir lo siguiente:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code langs="">server {
+    listen 80;
+
+    server_name <span class="highlight">example.com</span>;
+
+    auth_basic "Restricted Access";
+    auth_basic_user_file /etc/nginx/htpasswd.users;
+
+    location / {
+        proxy_pass http://localhost:5601;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+</code></pre>
+<p>Cuando termine, guarde y cierre el archivo.</p>
+
+<p>A continuación, habilite la nueva configuración creando un enlace simbólico al directorio <code>sites-enabled</code>. Si ya creó un archivo de bloque de servidor con el mismo nombre en el requisito previo de Nginx, no necesitará ejecutar este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">example.com</span> /etc/nginx/sites-enabled/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>A continuación, compruebe que no haya errores de sintaxis en la configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Si se muestran errores en su resultado, regrese y verifique bien que el contenido que ingresó en su archivo de configuración se haya agregado correctamente. Una vez que vea <code>syntax is ok</code> en el resultado, reinicie el servicio de Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Si siguió la guía de configuración inicial para servidores, debería tener activado un firewall UFW. Para permitir las conexiones con Nginx, podemos ajustar las reglas escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Nginx Full'
+</li></ul></code></pre>
+<span class='note'><p>
+<strong>Nota:</strong> Si siguió el tutorial de los requisitos previos de Nginx, es posible que haya creado una regla de UFW que admita el perfil <code>Nginx HTTP</code> en el firewall. Debido a que el perfil <code>Nginx Full</code> admite el paso del tráfico HTTP y HTTPS por el firewall, puede eliminar de forma segura la regla que creó en el tutorial de los requisitos previos. Hágalo con el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw delete allow 'Nginx HTTP'
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Con esto, el acceso a Kibana será posible a través de su FQDN o de la dirección IP pública de su servidor de Elastic Stack. Puede comprobar la página de estado del servidor de Kibana visitando la siguiente dirección e ingresando sus credenciales de inicio de sesión cuando se le soliciten:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>/status
+</code></pre>
+<p>En esta página de estado se muestra información sobre el uso de los recursos del servidor y se enumeran los complementos instalados.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/elastic_1804/kibana_status_page_md.png" alt="Página de estado de Kibana"></p>
+
+<p><span class='note'><strong>Nota</strong>: Como se indica en la sección de requisitos previos, se le recomienda habilitar SSL o TLS en su servidor. Puede seguir <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">este tutorial</a> ahora para obtener un certificado SSL gratuito para Nginx en Ubuntu 18.04. Una vez que obtenga sus certificados SSL y TLS, puede volver y completar este tutorial.<br></span></p>
+
+<p>Ahora que el panel de Kibana está configurado, instalaremos el siguiente componente: Logstash.</p>
+
+<h2 id="paso-3-instalar-y-configurar-logstash">Paso 3: Instalar y configurar Logstash</h2>
+
+<p>Aunque es posible que Beats envíe datos de manera directa a la base de datos de Elasticsearch, recomendamos usar Logstash para procesar los datos. Esto le permitirá recopilar datos de diferentes fuentes, transformarlos en un formato común y exportarlos a otra base de datos.</p>
+
+<p>Instale Logstash con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install logstash
+</li></ul></code></pre>
+<p>Después de instalar Logstash, puede continuar con su configuración. Los archivos de configuración de Logstash están escritos en el formato JSON y se alojan en el directorio <code>/etc/logstash/conf.d</code>. Al configurarlo, es útil considerar a Logstash como un ducto que obtiene datos en un extremo, los procesa de una manera u otra y los envía a su destino (en este caso, el destino será Elasticsearch). Un proceso de Logstash tiene dos elementos necesarios, <code>input</code> y <code>output</code>, y un elemento opcional, <code>filter</code>. Los complementos de entrada consumen datos de una fuente, los complementos del filtro procesan los datos y los complementos de salida escriben los datos en un destino.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/elastic_1804/logstash_pipeline_updated.png" alt="Proceso de Logstash"></p>
+
+<p>Cree un archivo de configuración llamado <code>02-beats-input.conf</code> en el que establecerá su entrada de Filebeat:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/logstash/conf.d/02-beats-input.conf
+</li></ul></code></pre>
+<p>Introduzca la siguiente configuración de <code>input</code>. Con esto, se especifica una entrada de <code>beats</code> que escuchará en el puerto TCP <code>5044</code>.</p>
+<div class="code-label " title="/etc/logstash/conf.d/02-beats-input.conf">/etc/logstash/conf.d/02-beats-input.conf</div><pre class="code-pre "><code langs="">input {
+  beats {
+    port =&gt; 5044
+  }
+}
+</code></pre>
+<p>Guarde y cierre el archivo. A continuación, cree un archivo de configuración llamado <code>10syslog-filter.conf</code>, en el que añadiremos un filtro para registros de sistema, también conocido como <em>syslogs</em>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/logstash/conf.d/10-syslog-filter.conf
+</li></ul></code></pre>
+<p>Introduzca la siguiente configuración del filtro de syslog. Este ejemplo de registro de sistema se tomó de la <a href="https://www.elastic.co/guide/en/logstash/6.x/logstash-config-for-filebeat-modules.html#parsing-system">documentación oficial de Elastic</a>. Este filtro se utiliza para analizar los registros de sistema entrantes a fin de hacer que tengan estructura y puedan utilizarse en los paneles predeterminados de Kibana:</p>
+<div class="code-label " title="/etc/logstash/conf.d/10-syslog-filter.conf">/etc/logstash/conf.d/10-syslog-filter.conf</div><pre class="code-pre "><code langs="">filter {
+  if [fileset][module] == "system" {
+    if [fileset][name] == "auth" {
+      grok {
+        match =&gt; { "message" =&gt; ["%{SYSLOGTIMESTAMP:[system][auth][timestamp]} %{SYSLOGHOST:[system][auth][hostname]} sshd(?:\[%{POSINT:[system][auth][pid]}\])?: %{DATA:[system][auth][ssh][event]} %{DATA:[system][auth][ssh][method]} for (invalid user )?%{DATA:[system][auth][user]} from %{IPORHOST:[system][auth][ssh][ip]} port %{NUMBER:[system][auth][ssh][port]} ssh2(: %{GREEDYDATA:[system][auth][ssh][signature]})?",
+                  "%{SYSLOGTIMESTAMP:[system][auth][timestamp]} %{SYSLOGHOST:[system][auth][hostname]} sshd(?:\[%{POSINT:[system][auth][pid]}\])?: %{DATA:[system][auth][ssh][event]} user %{DATA:[system][auth][user]} from %{IPORHOST:[system][auth][ssh][ip]}",
+                  "%{SYSLOGTIMESTAMP:[system][auth][timestamp]} %{SYSLOGHOST:[system][auth][hostname]} sshd(?:\[%{POSINT:[system][auth][pid]}\])?: Did not receive identification string from %{IPORHOST:[system][auth][ssh][dropped_ip]}",
+                  "%{SYSLOGTIMESTAMP:[system][auth][timestamp]} %{SYSLOGHOST:[system][auth][hostname]} sudo(?:\[%{POSINT:[system][auth][pid]}\])?: \s*%{DATA:[system][auth][user]} :( %{DATA:[system][auth][sudo][error]} ;)? TTY=%{DATA:[system][auth][sudo][tty]} ; PWD=%{DATA:[system][auth][sudo][pwd]} ; USER=%{DATA:[system][auth][sudo][user]} ; COMMAND=%{GREEDYDATA:[system][auth][sudo][command]}",
+                  "%{SYSLOGTIMESTAMP:[system][auth][timestamp]} %{SYSLOGHOST:[system][auth][hostname]} groupadd(?:\[%{POSINT:[system][auth][pid]}\])?: new group: name=%{DATA:system.auth.groupadd.name}, GID=%{NUMBER:system.auth.groupadd.gid}",
+                  "%{SYSLOGTIMESTAMP:[system][auth][timestamp]} %{SYSLOGHOST:[system][auth][hostname]} useradd(?:\[%{POSINT:[system][auth][pid]}\])?: new user: name=%{DATA:[system][auth][user][add][name]}, UID=%{NUMBER:[system][auth][user][add][uid]}, GID=%{NUMBER:[system][auth][user][add][gid]}, home=%{DATA:[system][auth][user][add][home]}, shell=%{DATA:[system][auth][user][add][shell]}$",
+                  "%{SYSLOGTIMESTAMP:[system][auth][timestamp]} %{SYSLOGHOST:[system][auth][hostname]} %{DATA:[system][auth][program]}(?:\[%{POSINT:[system][auth][pid]}\])?: %{GREEDYMULTILINE:[system][auth][message]}"] }
+        pattern_definitions =&gt; {
+          "GREEDYMULTILINE"=&gt; "(.|\n)*"
+        }
+        remove_field =&gt; "message"
+      }
+      date {
+        match =&gt; [ "[system][auth][timestamp]", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss" ]
+      }
+      geoip {
+        source =&gt; "[system][auth][ssh][ip]"
+        target =&gt; "[system][auth][ssh][geoip]"
+      }
+    }
+    else if [fileset][name] == "syslog" {
+      grok {
+        match =&gt; { "message" =&gt; ["%{SYSLOGTIMESTAMP:[system][syslog][timestamp]} %{SYSLOGHOST:[system][syslog][hostname]} %{DATA:[system][syslog][program]}(?:\[%{POSINT:[system][syslog][pid]}\])?: %{GREEDYMULTILINE:[system][syslog][message]}"] }
+        pattern_definitions =&gt; { "GREEDYMULTILINE" =&gt; "(.|\n)*" }
+        remove_field =&gt; "message"
+      }
+      date {
+        match =&gt; [ "[system][syslog][timestamp]", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss" ]
+      }
+    }
+  }
+}
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<p>Por último, cree un archivo de configuración llamado <code>30-elasticsearch-output.conf</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/logstash/conf.d/30-elasticsearch-output.conf
+</li></ul></code></pre>
+<p>Introduzca la siguiente configuración de <code>output</code>. Básicamente, con este resultado se configura Logstash para almacenar los datos de Beats en Elasticsearch, que se ejecuta en <code>localhost:9200</code>, en un índice con el nombre del Beat utilizado. El Beat utilizado en este tutorial es Filebeat:</p>
+<div class="code-label " title="/etc/logstash/conf.d/30-elasticsearch-output.conf">/etc/logstash/conf.d/30-elasticsearch-output.conf</div><pre class="code-pre "><code langs="">output {
+  elasticsearch {
+    hosts =&gt; ["localhost:9200"]
+    manage_template =&gt; false
+    index =&gt; "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
+  }
+}
+</code></pre>
+<p>Guarde y cierre el archivo.</p>
+
+<p>Si desea añadir filtros para otras aplicaciones que utilizan la entrada de Filebeat, asegúrese de dar nombres a los archivos de modo que estén ordenados entre la configuración de entrada y salida, lo que significa que los nombres de archivo deben comenzar con un número de dos dígitos entre <code>02</code> y <code>30</code>.</p>
+
+<p>Pruebe su configuración de Logstash con el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo -u logstash /usr/share/logstash/bin/logstash --path.settings /etc/logstash -t
+</li></ul></code></pre>
+<p>Si no hay errores de sintaxis, en su resultado verá <code>Configuration OK</code> después de unos segundos. Si no visualiza esto en su resultado, verifique cualquier error que aparezca en su resultado y actualice su configuración para corregirlo.</p>
+
+<p>Si su prueba de configuración tiene éxito, inicie y habilite Logstash para implementar los cambios de configuración:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start logstash
+</li><li class="line" prefix="$">sudo systemctl enable logstash
+</li></ul></code></pre>
+<p>Ahora que Logstash se ejecuta de manera correcta y está totalmente configurado, instalaremos Filebeat.</p>
+
+<h2 id="paso-4-instalar-y-configurar-filebeat">Paso 4: Instalar y configurar Filebeat</h2>
+
+<p>La pila de Elastic utiliza varios transportadores de datos ligeros llamados Beats para recopilar datos de varias fuentes y transportarlos a Logstash o Elasticsearch. Aquí se muestran los Beats que ahora están disponibles en Elastic:</p>
+
+<ul>
+<li><a href="https://www.elastic.co/products/beats/filebeat">Filebeat</a>: recopila y envía archivos de registro.</li>
+<li><a href="https://www.elastic.co/products/beats/metricbeat">Metricbeat</a>: recopila métricas de sus sistemas y servicios.</li>
+<li><a href="https://www.elastic.co/products/beats/packetbeat">Packetbeat</a>: recopila y analiza datos de red.</li>
+<li><a href="https://www.elastic.co/products/beats/winlogbeat">Winlogbeat</a>: recopila registros de eventos de Windows.</li>
+<li><a href="https://www.elastic.co/products/beats/auditbeat">Auditbeat</a>: recopila datos del marco de trabajo de auditoría de Linux y supervisa la integridad de los archivos.</li>
+<li><a href="https://www.elastic.co/products/beats/heartbeat">Heartbeat</a>: supervisa la disponibilidad de los servicios con sondeo activo.</li>
+</ul>
+
+<p>En este tutorial, usaremos Filebeat para reenviar registros locales a nuestra pila de Elastic.</p>
+
+<p>Instale Filebeat usando <code>apt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install filebeat
+</li></ul></code></pre>
+<p>A continuación, configure Filebeat para establecer conexión con Logstash. Aquí, modificaremos el archivo de configuración de ejemplo que viene con Filebeat.</p>
+
+<p>Abra el archivo de configuración de Filebeat:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/filebeat/filebeat.yml
+</li></ul></code></pre>
+<p><span class='note'><strong>Nota:</strong> Al igual que con Elasticsearch, el archivo de configuración de Filebeat está en formato YAML. Esto significa que una correcta indentación es esencial. Por lo tanto, asegúrese de usar el mismo número de espacios que se indican en estas instrucciones.<br></span></p>
+
+<p>Filebeat admite numerosas salidas, pero por lo general sólo enviará eventos directamente a Elasticsearch o a Logstash para su procesamiento adicional. En este tutorial, usaremos Logstash para aplicar procesamiento adicional a los datos recopilados por Filebeat. Filebeat no tendrá que enviar datos de manera directa a Elasticsearch, por lo que desactivaremos esa salida. Para hacerlo, encuentre la sección <code>output.elasticsearch</code> y comente las siguientes líneas anteponiéndoles <code>“#”</code>:</p>
+<div class="code-label " title="/etc/filebeat/filebeat.yml">/etc/filebeat/filebeat.yml</div><pre class="code-pre "><code langs="">...
+<span class="highlight">#</span>output.elasticsearch:
+  # Array of hosts to connect to.
+  <span class="highlight">#</span>hosts: ["localhost:9200"]
+...
+</code></pre>
+<p>A continuación, configure la sección <code>output.logstash</code>. Elimine el comentario de las líneas <code>output.logstash</code>: y <code>hosts: ["localhost:5044"]</code> quitando el “<code>#</code>”. Con esto, se configurará Filebeat para establecer conexión con Logstash en su servidor de Elastic Stack en el puerto <code>5044</code>, para el que especificamos una entrada de Logstash previamente:</p>
+<div class="code-label " title="/etc/filebeat/filebeat.yml">/etc/filebeat/filebeat.yml</div><pre class="code-pre "><code langs="">output.logstash:
+  # The Logstash hosts
+  hosts: ["localhost:5044"]
+</code></pre>
+<p>Guarde y cierre el archivo.</p>
+
+<p>La funcionalidad de Filebeat puede ampliarse con <a href="https://www.elastic.co/guide/en/beats/filebeat/6.4/filebeat-modules.html">módulos de Filebeat</a>. En este tutorial usaremos el módulo de <a href="https://www.elastic.co/guide/en/beats/filebeat/6.4/filebeat-module-system.html">sistema</a>, que recopila y analiza registros creados por el servicio de registro del sistema de distribuciones comunes de Linux.</p>
+
+<p>Vamos a habilitarlo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo filebeat modules enable system
+</li></ul></code></pre>
+<p>Puede ver una lista de módulos habilitados y desactivados ejecutando lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo filebeat modules list
+</li></ul></code></pre>
+<p>Verá una lista similar a la siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Enabled:
+system
+
+Disabled:
+apache2
+auditd
+elasticsearch
+icinga
+iis
+kafka
+kibana
+logstash
+mongodb
+mysql
+nginx
+osquery
+postgresql
+redis
+traefik
+</code></pre>
+<p>Por defecto, Filebeat está configurado para usar rutas predeterminadas para los registros syslog y de autorización. En el caso de este tutorial, no necesita aplicar cambios en la configuración. Puede ver los parámetros del módulo en el archivo de configuración <code>/etc/filebeat/modules.d/system.yml</code>.</p>
+
+<p>A continuación, cargue la plantilla de índice en Elasticsearch. Un <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/_basic_concepts.html#_index"><em>índice de Elasticsearch</em></a> es un conjunto de documentos que tienen características similares. Los índices se identifican con un nombre, que se utiliza para referirse al índice cuando se realizan varias operaciones dentro de este. La plantilla de índice se aplicará de forma automática al crear un nuevo índice.</p>
+
+<p>Para cargar la plantilla, utilice el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo filebeat setup --template -E output.logstash.enabled=false -E 'output.elasticsearch.hosts=["localhost:9200"]'
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Loaded index template
+</code></pre>
+<p>Filebeat viene empaquetado con paneles de muestra de Kibana que le permiten visualizar datos de Filebeat en Kibana. Para poder usar los paneles, deberá crear el patrón de índice y cargar los paneles en Kibana.</p>
+
+<p>Al cargarse los paneles, Filebeat se conecta a Elasticsearch para verificar la información de la versión. Para cargar paneles cuando se habilite Logstash, deberá desactivar el resultado de Logstash y habilitar el de Elasticsearch:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo filebeat setup -e -E output.logstash.enabled=false -E output.elasticsearch.hosts=['localhost:9200'] -E setup.kibana.host=localhost:5601
+</li></ul></code></pre>
+<p>Verá un resultado similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>2018-09-10T08:39:15.844Z        INFO    instance/beat.go:273    Setup Beat: filebeat; Version: 6.4.2
+2018-09-10T08:39:15.845Z        INFO    elasticsearch/client.go:163     Elasticsearch url: http://localhost:9200
+2018-09-10T08:39:15.845Z        INFO    pipeline/module.go:98   Beat name: elk
+2018-09-10T08:39:15.845Z        INFO    elasticsearch/client.go:163     Elasticsearch url: http://localhost:9200
+2018-09-10T08:39:15.849Z        INFO    elasticsearch/client.go:708     Connected to Elasticsearch version 6.4.2
+2018-09-10T08:39:15.856Z        INFO    template/load.go:129    Template already exists and will not be overwritten.
+Loaded index template
+Loading dashboards (Kibana must be running and reachable)
+2018-09-10T08:39:15.857Z        INFO    elasticsearch/client.go:163     Elasticsearch url: http://localhost:9200
+2018-09-10T08:39:15.865Z        INFO    elasticsearch/client.go:708     Connected to Elasticsearch version 6.4.2
+2018-09-10T08:39:15.865Z        INFO    kibana/client.go:113    Kibana url: http://localhost:5601
+2018-09-10T08:39:45.357Z        INFO    instance/beat.go:659    Kibana dashboards successfully loaded.
+Loaded dashboards
+2018-09-10T08:39:45.358Z        INFO    elasticsearch/client.go:163     Elasticsearch url: http://localhost:9200
+2018-09-10T08:39:45.361Z        INFO    elasticsearch/client.go:708     Connected to Elasticsearch version 6.4.2
+2018-09-10T08:39:45.361Z        INFO    kibana/client.go:113    Kibana url: http://localhost:5601
+2018-09-10T08:39:45.455Z        WARN    fileset/modules.go:388  X-Pack Machine Learning is not enabled
+Loaded machine learning job configurations
+</code></pre>
+<p>Ahora podrá iniciar y habilitar Filebeat:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start filebeat
+</li><li class="line" prefix="$">sudo systemctl enable filebeat
+</li></ul></code></pre>
+<p>Si configuró su pila de Elastic de manera correcta, Filebeat iniciará el envío de sus registros syslog y de autorización a Logstash, que a su vez cargará esos datos en Elasticsearch.</p>
+
+<p>Para verificar que Elasticsearch realmente reciba estos datos, consulte el índice de Filebeat con este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -XGET 'http://localhost:9200/filebeat-*/_search?pretty'
+</li></ul></code></pre>
+<p>Verá un resultado similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+{
+  "took" : 32,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 3,
+    "successful" : 3,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : 1641,
+    "max_score" : 1.0,
+    "hits" : [
+      {
+        "_index" : "filebeat-6.4.2-2018.10.10",
+        "_type" : "doc",
+        "_id" : "H_bZ62UBB4D0uxFRu_h3",
+        "_score" : 1.0,
+        "_source" : {
+          "@version" : "1",
+          "message" : "Oct 10 06:22:36 elk systemd[1]: Reached target Local File Systems (Pre).",
+          "@timestamp" : "2018-10-10T08:43:56.969Z",
+          "host" : {
+            "name" : "elk"
+          },
+          "source" : "/var/log/syslog",
+          "input" : {
+            "type" : "log"
+          },
+          "tags" : [
+            "beats_input_codec_plain_applied"
+          ],
+          "offset" : 296,
+          "prospector" : {
+            "type" : "log"
+          },
+          "beat" : {
+            "version" : "6.4.2",
+            "hostname" : "elk",
+            "name" : "elk"
+          }
+        }
+      },
+...
+</code></pre>
+<p>Si en su resultado no se muestran aciertos, Elasticsearch significa que no está cargando ningún registro bajo el índice que buscó y deberá verificar su configuración en busca de errores. Si obtuvo el resultado esperado, continúe con el siguiente paso, en el que veremos la manera de explorar algunos de los paneles de Kibana.</p>
+
+<h2 id="paso-5-explorar-los-paneles-de-kibana">Paso 5: Explorar los paneles de Kibana</h2>
+
+<p>Veamos Kibana, la interfaz web que instalamos previamente.</p>
+
+<p>En un navegador web, diríjase al FQDN o a la dirección IP pública de su servidor de Elastic Stack. Después de ingresar las credenciales de inicio de sesión que definió en el paso 2, verá la página de inicio de Kibana:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/elastic_1804/kibana_homepage_md.png" alt="Página de inicio de Kibana"></p>
+
+<p>Haga clic en el enlace <strong>Discover</strong> de la barra de navegación del lado izquierdo. En la página <strong>Discover</strong>, seleccione el patrón de índice predeterminado de <strong>filebeat-</strong>* para ver datos de Filebeat. Por defecto, esto le mostrará todos los datos de registro de los últimos 15 minutos. Visualizará un histograma con eventos de registro y algunos mensajes de registro a continuación:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/elastic_1804/discover_page_md.png" alt="Página de Discover"></p>
+
+<p>Aquí puede buscar y explorar sus registros y también personalizar su panel. Sin embargo, en este punto no habrá muchos registros porque solo recopila syslogs de su servidor de Elastic Stack.</p>
+
+<p>Utilice el panel del lado izquierdo para acceder a la página <strong>Dashboard</strong> y buscar los paneles de <strong>Filebeat System</strong>. Una vez ahí, puede buscar los paneles de muestra que vienen con el módulo <code>system</code> de Filebeat.</p>
+
+<p>Por ejemplo, puede ver estadísticas detalladas basadas en sus mensajes de syslog:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/elastic_1804/syslog_dashboard_md.png" alt="Panel de Syslog"></p>
+
+<p>También puede ver los usuarios que utilizaron el comando <code>sudo</code> y el momento en que lo hicieron:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/elastic_1804/sudo_dashboard_md.png" alt="Panel de sudo"></p>
+
+<p>Kibana tiene muchas otras características, como graficar y filtrar. No dude en explorarlas.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A través de este tutorial, aprendió a instalar y configurar Elastic Stack para recopilar y analizar registros del sistema. Recuerde que puede enviar casi cualquier tipo de datos de registro o de índice a Logstash usando <a href="https://www.elastic.co/products/beats">Beats</a>, pero los datos se vuelven aún más útiles si se analizan y estructuran con un filtro de Logstash, ya que transforma los datos en un formato uniforme que Elasticsearch puede leer de forma sencilla.</p>

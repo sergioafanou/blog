@@ -1,0 +1,547 @@
+---
+layout: post
+title: Cómo configurar un Ingress de Nginx con Cert-Manager en Kubernetes de DigitalOcean
+network: digitalocean
+date: January 09, 2020 at 05:47PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-an-nginx-ingress-with-cert-manager-on-digitalocean-kubernetes-es
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Los <a href="https://kubernetes.io/docs/concepts/services-networking/ingress/">Ingress</a> de Kubernetes le permiten dirigir de manera flexible el tráfico del exterior de su clúster de Kubernetes a servicios dentro de su clúster. Esto se realiza usando <em>recursos</em> de Ingress, que definen reglas para dirigir el tráfico HTTP y HTTPS a servicios de Kubernetes, y <em>controladores</em> de Ingress, que implementan las reglas equilibrando la carga de tráfico y dirigiéndola a los servicios de backend correspondientes. Entre los controladores populares de Ingress se incluyen <a href="https://github.com/kubernetes/ingress-nginx/blob/master/README.md">Nginx</a>, <a href="https://github.com/heptio/contour">Contour</a>, <a href="https://www.haproxy.com/blog/haproxy_ingress_controller_for_kubernetes/">HAProxy</a> y <a href="https://github.com/containous/traefik">Traefik</a>. Los Ingress ofrecen una alternativa más eficiente y flexible para configurar varios servicios de LoadBalancer, cada uno de los cuales utiliza su propio equilibrador de cargas dedicado.</p>
+
+<p>En esta guía, configuraremos el <a href="https://github.com/kubernetes/ingress-nginx">controlador de Ingress de Nginx</a> mantenido por Kubernetes y  crearemos algunos recursos de Ingress para dirigir el tráfico a varios servicios de backend ficticios. Una vez que configuremos el Ingress, instalaremos <a href="https://github.com/jetstack/cert-manager">cert-manager</a> en nuestro clúster para administrar y proporcionar certificados TLS, a fin de cifrar el tráfico de HTTP en el Ingress.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de comenzar con esta guía, asegúrese de contar con lo siguiente:</p>
+
+<ul>
+<li>Un clúster de Kubernetes 1.10, o una versión posterior, con <a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/">control de acceso basado en roles</a> (RBCA) activado</li>
+<li>La herramienta de línea de comandos <code>kubectl</code> instalada en su equipo local y configurada para conectarse a su clúster. Puede leer más sobre la instalación de <code>kubectl</code> <a href="https://kubernetes.io/docs/tasks/tools/install-kubectl/">en la documentación oficial</a>.</li>
+<li>Un nombre de dominio y registros DNS A que puede orientar al equilibrador de cargas de DigitalOcean utilizado por el Ingress. Si usa DigitalOcean para administrar los registros DNS de su dominio, consulte <a href="https://www.digitalocean.com/docs/networking/dns/how-to/manage-records/">Cómo administrar registros DNS</a> para aprender a crear registros A.</li>
+<li>El administrador de paquetes de Helm instalado en su computadora local y Tiller instalado en su clúster, como se detalla en <a href="https://www.digitalocean.com/community/tutorials/how-to-install-software-on-kubernetes-clusters-with-the-helm-package-manager">Cómo instalar software en clústeres de Kubernetes con el administrador de paquetes de Helm</a>. Asegúrese de utilizar Helm v2.12.1 o una versión posterior. De lo contrario, podría experimentar problemas al instalar el chart de Helm de cert-manager. Para comprobar la versión de Helm que instaló, ejecute <code>helm version</code> en su máquina local.</li>
+<li>La utilidad de línea de comandos <code>wget</code> instalada en su equipo local. Puede instalar <code>wget</code> usando el administrador de paquetes incorporado en su sistema operativo.</li>
+</ul>
+
+<p>Cuando tenga estos componentes configurados, estará listo para comenzar con esta guía.</p>
+
+<h2 id="paso-1-configurar-servicios-de-backend-ficticios">Paso 1: Configurar servicios de backend ficticios</h2>
+
+<p>Antes de implementar el controlador de Ingress, crearemos e implementaremos primero dos servicios echo ficticios a los que dirigiremos el tráfico externo usando el Ingress. Los servicios echo ejecutan el contenedor del servidor web hashi<a href="https://hub.docker.com/r/hashicorp/http-echo/"><code>corp/http-echo</code></a>, el cual muestra una página que contiene una cadena de texto transmitida cuando se inicia el servidor web. Para obtener más información sobre <code>http-echo</code>, consulte su <a href="https://github.com/hashicorp/http-echo">repositorio de GitHub</a> y para obtener más información sobre los Servicios de Kubernetes, consulte <a href="https://kubernetes.io/docs/concepts/services-networking/service/">Servicios</a> en los documentos oficiales de Kubernetes.</p>
+
+<p>En su equipo local, cree y edite un archivo llamado <code>echo1.yaml</code> usando <code>nano</code> o su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano echo1.yaml
+</li></ul></code></pre>
+<p>Pegue el siguiente manifiesto de servicio e implementación:</p>
+<div class="code-label " title="echo1.yaml">echo1.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: echo1
+spec:
+  ports:
+  - port: 80
+    targetPort: 5678
+  selector:
+    app: echo1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo1
+spec:
+  selector:
+    matchLabels:
+      app: echo1
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: echo1
+    spec:
+      containers:
+      - name: echo1
+        image: hashicorp/http-echo
+        args:
+        - "-text=echo1"
+        ports:
+        - containerPort: 5678
+</code></pre>
+<p>En este archivo, definimos un servicio llamado <code>echo1</code> que dirige el tráfico hacia los Pods con el selector de etiquetas <code>app: echo1</code>. Acepta el tráfico de TCP en el puerto <code>80</code> y lo dirige al puerto <code>5678</code>, el predeterminado de <code>http-echo</code>.</p>
+
+<p>A continuación, definimos una implementación, también llamada <code>echo1</code>, que administra los Pods con el <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/">selector de etiquetas</a> <code>app: echo1</code>. Especificamos que la implementación debe tener 2 réplicas de Pods y que los Pods deben iniciar un contenedor llamado <code>echo1</code> ejecutando la imagen <code>hashicorp/http-echo</code>. Especificamos el parámetro <code>text</code> y lo fijamos en <code>echo1</code>, para que el servidor web <code>http-echo</code> muestre <code>echo1</code>. Por último, abrimos el puerto <code>5678</code> en el contenedor de Pods.</p>
+
+<p>Una vez que esté satisfecho con su servicio ficticio y manifiesto de implementación, guarde y cierre el archivo.</p>
+
+<p>A continuación, cree los recursos de Kubernetes usando <code>kubectl create</code> con el indicador <code>-f</code> y especificando el archivo que acaba de guardar como un parámetro:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f echo1.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/echo1 created
+deployment.apps/echo1 created
+</code></pre>
+<p>Verifique que el servicio se haya iniciado de manera correcta confirmando que este tenga un ClusterIP, el IP interno en el que se expone el servicio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get svc echo1
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME      TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+echo1     ClusterIP   10.245.222.129   &lt;none&gt;        80/TCP    60s
+</code></pre>
+<p>Esto indica que el servicio <code>echo1</code> ahora se encuentra disponible de manera interna en <code>10.245.222.129</code> en el puerto <code>80</code>. Reenviará el tráfico al containerPort <code>5678</code> en los Pods que seleccione.</p>
+
+<p>Ahora que el servicio <code>echo1</code> está activo y en ejecución, repita este proceso para el servicio <code>echo2</code>.</p>
+
+<p>Cree y abra un archivo llamado <code>echo2.yaml</code>:</p>
+<div class="code-label " title="echo2.yaml">echo2.yaml</div><pre class="code-pre "><code langs="">apiVersion: v1
+kind: Service
+metadata:
+  name: echo2
+spec:
+  ports:
+  - port: 80
+    targetPort: 5678
+  selector:
+    app: echo2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo2
+spec:
+  selector:
+    matchLabels:
+      app: echo2
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: echo2
+    spec:
+      containers:
+      - name: echo2
+        image: hashicorp/http-echo
+        args:
+        - "-text=echo2"
+        ports:
+        - containerPort: 5678
+</code></pre>
+<p>Aquí, básicamente utilizamos el mismo manifiesto de servicio e implementación de arriba, pero asignamos el nombre y la nueva etiqueta <code>echo2</code> al servicio y a la implementación. Además, para proporcionar variedad, creamos solo una réplica de Pod. Nos aseguramos de fijar el parámetro de <code>text</code> en <code>echo2</code> para que el servidor web muestre el texto <code>echo2</code>.</p>
+
+<p>Guarde y cierre el archivo, y cree los recursos de Kubernetes usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f echo2.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/echo2 created
+deployment.apps/echo2 created
+</code></pre>
+<p>Una vez más, compruebe que el servicio esté activo y en ejecución:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get svc
+</li></ul></code></pre>
+<p>Debería ver ambos servicios <code>echo1</code> y <code>echo2</code> con ClusterIP asignados:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+echo1        ClusterIP   10.245.222.129   &lt;none&gt;        80/TCP    6m6s
+echo2        ClusterIP   10.245.128.224   &lt;none&gt;        80/TCP    6m3s
+kubernetes   ClusterIP   10.245.0.1       &lt;none&gt;        443/TCP   4d21h
+</code></pre>
+<p>Ahora que nuestros servicios web ficticios de echo están activos y en ejecución, podemos implementar el controlador de Ingress de Nginx.</p>
+
+<h2 id="paso-2-configurar-el-controlador-de-ingress-de-nginx-en-kubernetes">Paso 2: Configurar el controlador de Ingress de Nginx en Kubernetes</h2>
+
+<p>En este paso, implementaremos <code><span class="highlight">v0.24.1</span></code> del <a href="https://github.com/kubernetes/ingress-nginx">controlador de Ingress de Nginx</a> mantenido por Kubernetes. Tenga en cuenta que hay <a href="https://github.com/nginxinc/kubernetes-ingress/blob/master/docs/nginx-ingress-controllers.md">varios</a> controladores de Ingress de Nginx; la comunidad de Kubernetes mantiene el que utilizamos en esta guía y Nginx Inc. mantiene <a href="https://github.com/nginxinc/kubernetes-ingress">kubernetes-ingress</a>. Las instrucciones de este tutorial están basadas en las de la <a href="https://kubernetes.github.io/ingress-nginx/deploy/">Guía de instalación</a> oficial del controlador de Ingress de Nginx en Kubernetes.</p>
+
+<p>El controlador de Ingress de Nginx consta de un Pod que ejecuta el servidor web de Nginx y verifica el panel de control de Kubernetes en busca de objetos de recursos de Ingress nuevos y actualizados. Un recurso de Ingress es esencialmente una lista de reglas de enrutamiento de tráfico para los servicios de backend. Por ejemplo, una regla de Ingress puede especificar que el tráfico HTTP que llegue a la ruta <code>/web1</code> deberá dirigirse hacía el servidor web de backend <code>web1</code>. Utilizando los recursos de Ingress, también puede aplicar enrutamiento basado en host: por ejemplo, dirigir las solicitudes que llegan de <code>web1.yoyour_domain.com</code> al servicio de backend de Kubernetes <code>web1</code>.</p>
+
+<p>En este caso, debido a que implementamos el controlador de Ingress en un clúster de Kubernetes de DigitalOcean, el controlador creará un servicio LoadBalancer que hará aparecer un equilibrador de carga de DigitalOcean al cual se dirigirá todo el tráfico externo. Este equilibrador de carga dirigirá el tráfico externo al Pod del controlador de Ingress ejecutando Nginx, que posteriormente reenviará el tráfico a los servicios de backend correspondientes.</p>
+
+<p>Comenzaremos creando primero los recursos de Kubernetes requeridos por el controlador de Ingress de Nginx. Estos consisten en ConfigMaps que contienen la configuración del controlador, roles de control de acceso basado en roles (RBAC) para otorgar al controlador acceso a la API de Kubernetes y la implementación real del controlador Ingress que utiliza <a href="https://quay.io/repository/kubernetes-ingress-controller/nginx-ingress-controller?tag=0.24.1&amp;tab=tags">v0.24.1</a> de la imagen del controlador de Ingress de Nginx. Para ver una lista completa de estos recursos necesarios, consulte el <a href="https://raw.githubusercontent.com/kubernetes/ingress-nginx/nginx-0.24.1/deploy/mandatory.yaml">manifiesto</a> del repositorio GitHub del controlador de Ingress de Nginx en Kubernetes.</p>
+
+<p>Para crear estos recursos obligatorios, utilice <code>kubectl apply</code> y el indicador <code>-f</code> para especificar el archivo de manifiesto alojado en GitHub:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/<span class="highlight">nginx-0.24.1</span>/deploy/mandatory.yaml
+</li></ul></code></pre>
+<p>En este caso, utilizamos <code>apply</code> en lugar de <code>create</code> para que en el futuro podamos implementar cambios <code>apply</code> en incrementos a los objetos del controlador de Ingress en lugar de sobrescribirlos por completo. Para obtener más información sobre <code>apply</code>, consulte <a href="https://kubernetes.io/docs/concepts/cluster-administration/manage-deployment/#kubectl-apply">Recursos de administración</a> de los documentos oficiales de Kubernetes.</p>
+
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>namespace/ingress-nginx created
+configmap/nginx-configuration created
+configmap/tcp-services created
+configmap/udp-services created
+serviceaccount/nginx-ingress-serviceaccount created
+clusterrole.rbac.authorization.k8s.io/nginx-ingress-clusterrole created
+role.rbac.authorization.k8s.io/nginx-ingress-role created
+rolebinding.rbac.authorization.k8s.io/nginx-ingress-role-nisa-binding created
+clusterrolebinding.rbac.authorization.k8s.io/nginx-ingress-clusterrole-nisa-binding created
+deployment.extensions/nginx-ingress-controller created
+</code></pre>
+<p>Este resultado también sirve como un resumen práctico de todos los objetos del controlador de Ingress creados a partir del manifiesto <code>mandatory.yaml</code>.</p>
+
+<p>A continuación, crearemos el servicio LoadBalancer del controlador de Ingress, el cual creará un equilibrador de carga de DigitalOcean que equilibrará la carga y dirigirá el tráfico HTTP y HTTPS al Pod del controlador de Ingress implementado en el comando anterior.</p>
+
+<p>Para crear el servicio LoadBalancer, una vez más utilice <code>kubectl apply</code> en un archivo de manifiesto que contenga la definición del servicio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/<span class="highlight">nginx-0.24.1</span>/deploy/provider/cloud-generic.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>service/ingress-nginx created
+</code></pre>
+<p>Ahora, confirme que el equilibrador de carga de DigitalOcean se haya creado de manera exitosa obteniendo los detalles del servicio con <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get svc --namespace=ingress-nginx
+</li></ul></code></pre>
+<p>Debería ver una dirección IP externa que corresponda a la dirección IP del equilibrador de carga de DigitalOcean:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME            TYPE           CLUSTER-IP      EXTERNAL-IP       PORT(S)                      AGE
+ingress-nginx   LoadBalancer   <span class="highlight">10.245.247.67</span>   <span class="highlight">203.0.113.0</span>   80:32486/TCP,443:32096/TCP   20h
+</code></pre>
+<p>Anote la dirección IP externa del equilibrador de carga, ya que la necesitará en un paso posterior.</p>
+
+<p><span class='note'><strong>Nota:</strong> Por defecto, para el servicio LoadBalancer de Ingress de Nginx se fijó <code>service.spec.externalTrafficPolicy</code> en el valor <code>Local</code>, que dirige todo el tráfico del equilibrador de carga a los nodos ejecutando los Pods de Ingress de Nginx. Los otros nodos experimentarán fallas de manera deliberada en las verificaciones de estado del equilibrador de carga, de modo que el tráfico de Ingress no se dirija a estos. Las políticas de tráfico externo están fuera del alcance de este tutorial, pero para obtener más información puede consultar <a href="https://www.asykim.com/blog/deep-dive-into-kubernetes-external-traffic-policies">Análisis detallado de las políticas de tráfico externo de Kubernetes</a> e <a href="https://kubernetes.io/docs/tutorials/services/source-ip/#source-ip-for-services-with-type-loadbalancer">IP de origen para servicios con Type=LoadBalancer</a> en los documentos oficiales de Kubernetes.<br></span></p>
+
+<p>Este equilibrador de carga recibe tráfico en los puertos HTTP y HTTPS 80 y 443, y lo reenvía al Pod del controlador de Ingress. Luego, el controlador de Ingress dirigirá el tráfico al servicio de backend correspondiente.</p>
+
+<p>Ahora podemos apuntar nuestros registros DNS hacia este equilibrador de carga externo y crear algunos recursos de Ingress para implementar reglas de enrutamiento de tráfico.</p>
+
+<h2 id="paso-3-crear-el-recurso-de-ingress">Paso 3: Crear el recurso de Ingress</h2>
+
+<p>Comencemos creando un recurso de Ingress mínimo para direccionar el tráfico orientado a un subdominio determinado hacia un servicio de backend correspondiente.</p>
+
+<p>En esta guía, utilizaremos el dominio de prueba <strong>example.com</strong>. Deberá sustituirlo por el nombre de dominio que posea.</p>
+
+<p>Primero crearemos una regla sencilla para direccionar el tráfico dirigido a <strong>echo1.<span class="highlight">example.com</span></strong> hacia el servicio de backend <code>echo1</code> y el  tráfico dirigido a <strong>echo2.<span class="highlight">example.com</span></strong> hacia el servicio de backend <code>echo2</code>.</p>
+
+<p>Empiece abriendo un archivo llamado <code>echo_ingress.yaml</code> en su editor de texto favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano echo_ingress.yaml
+</li></ul></code></pre>
+<p>Pegue la siguiente definición de ingress:</p>
+<div class="code-label " title="echo_ingress.yaml">echo_ingress.yaml</div><pre class="code-pre "><code langs="">apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: echo-ingress
+spec:
+  rules:
+  - host: echo1.<span class="highlight">example.com</span>
+    http:
+      paths:
+      - backend:
+          serviceName: echo1
+          servicePort: 80
+  - host: echo2.<span class="highlight">example.com</span>
+    http:
+      paths:
+      - backend:
+          serviceName: echo2
+          servicePort: 80
+</code></pre>
+<p>Cuando haya terminado de editar sus reglas de Ingress, guarde y cierre el archivo.</p>
+
+<p>Aquí, especificamos que queremos crear un recurso de Ingress llamado <code>echo-ingress</code> y dirigir el tráfico según el encabezado del host. Una solicitud de encabezado de host HTTP especifica el nombre de dominio del servidor de destino. Para obtener más información sobre encabezados de solicitudes de hosts, consulte la <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host">página de definición</a> de Mozilla Developer Network. Las solicitudes con el host <strong>echo1.<span class="highlight">example.com</span></strong> se dirigirán al backend <code>echo1</code>, configurado en el paso 1, y las solicitudes con el host <strong>echo2</strong>.<code><span class="highlight">example.com</span></code> se dirigirán al backend echo2.</p>
+
+<p>Ahora puede crear el Ingress usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f echo_ingress.yaml
+</li></ul></code></pre>
+<p>Visualizará la siguiente salida que confirma la creación de Ingress:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ingress.extensions/echo-ingress created
+</code></pre>
+<p>Para comprobar el Ingress, diríjase a su servicio de administración de DNS y cree registros A para <code>echo1.example.com</code> y <code>echo2.example.com</code> apuntando al IP externo del equilibrador de carga de DigitalOcean. El IP externo del equilibrador de carga es la dirección IP externa para el servicio de <code>ingress-nginx</code>, que obtuvimos en el paso anterior. Si usa DigitalOcean para administrar los registros DNS de su dominio, consulte <a href="https://www.digitalocean.com/docs/networking/dns/how-to/manage-records/">Cómo administrar registros DNS</a> para aprender a crear registros A.</p>
+
+<p>Una vez que haya creado los registros DNS <code>echo1.example.com</code> y <code>echo2.example.com</code> necesarios, puede probar el controlador y el recurso de Ingress que creó usando la utilidad de línea de comandos <code>curl</code>.</p>
+
+<p>Desde su computadora local, aplique <code>curl</code> al servicio <code>echo1</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl echo1.example.com
+</li></ul></code></pre>
+<p>Debe obtener la siguiente respuesta del servicio <code>echo1</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>echo1
+</code></pre>
+<p>Esto confirma que su solicitud a <code>echo1.example.com</code> se está dirigiendo de manera correcta a través del Ingress de Nginx al servicio de backend <code>echo1</code>.</p>
+
+<p>Ahora, realice la misma prueba para el servicio <code>echo2</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl echo2.example.com
+</li></ul></code></pre>
+<p>Debe obtener la siguiente respuesta del servicio <code>echo2</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>echo2
+</code></pre>
+<p>Esto confirma que su solicitud a <code>echo2.example.com</code> se está dirigiendo de manera correcta a través del Ingress de Nginx al servicio de backend <code>echo2</code>.</p>
+
+<p>En este punto, habrá configurado con éxito un Ingress básico de Nginx para realizar enrutamientos virtuales basados en host. En el siguiente paso, instalaremos <a href="https://github.com/jetstack/cert-manager">cert-manager</a> usando Helm para proporcionar certificados TLS para nuestro Ingress y habilitaremos el protocolo HTTPS por ser más seguro.</p>
+
+<h2 id="paso-4-instalar-y-configurar-cert-manager">Paso 4: Instalar y configurar Cert-Manager</h2>
+
+<p>En este paso, usaremos Helm para instalar cert-manager en nuestro clúster. cert-manager es un servicio de Kubernetes que proporciona certificados TLS de <a href="https://letsencrypt.org/">Let´s Encrypt</a>, y otras autoridades certificadoras, y administra sus ciclos de vida. Los certificados pueden solicitarse y configurarse aplicando a recursos de Ingress la anotación <code>certmanager.k8s.io/issuer</code>, añadiendo una sección <code>tls</code> a la especificación de Ingress y configurando uno o más *emisores *para especificar su autoridad de certificación preferida. Para obtener más información sobre los objetos de emisores, consulte la documentación oficial de cert-manager sobre <a href="https://cert-manager.readthedocs.io/en/latest/reference/issuers.html">emisores</a>.</p>
+
+<p><span class='note'><strong>Nota:</strong> Verifique que está utilizando Helm v2.12.1 o una versión posterior antes de instalar cert-manager. Para comprobar la versión de Helm que instaló, ejecute <code>helm version</code> en su equipo local.<br></span></p>
+
+<p>Antes de usar Helm para instalar cert-manager en nuestro clúster, debemos crear las <a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/">Definiciones de recursos personalizados</a> (CRD) de cert-manager. Créelos con <code>apply</code> de manera directa desde el <a href="https://github.com/jetstack/cert-manager/">repositorio de cert-manager de GitHub</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply \
+</li><li class="line" prefix="$">    -f https://raw.githubusercontent.com/jetstack/cert-manager/release-0.8/deploy/manifests/00-crds.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>customresourcedefinition.apiextensions.k8s.io/certificates.certmanager.k8s.io created
+customresourcedefinition.apiextensions.k8s.io/issuers.certmanager.k8s.io created
+customresourcedefinition.apiextensions.k8s.io/clusterissuers.certmanager.k8s.io created
+customresourcedefinition.apiextensions.k8s.io/orders.certmanager.k8s.io created
+customresourcedefinition.apiextensions.k8s.io/challenges.certmanager.k8s.io created
+</code></pre>
+<p>A continuación, añadiremos una etiqueta al espacio de nombres <code>kube-system</code>, donde instalaremos cert-manager, para habilitar la validación avanzada de recursos mediante un <a href="https://docs.cert-manager.io/en/venafi/admin/resource-validation-webhook.html">webhook</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl label namespace kube-system certmanager.k8s.io/disable-validation="true"
+</li></ul></code></pre>
+<p>Ahora, añadiremos el <a href="https://hub.helm.sh/charts/jetstack">repositorio de Jetstack de Helm</a> a Helm. Este repositorio contiene el <a href="https://hub.helm.sh/charts/jetstack/cert-manager">chart de Helm</a> de cert-manager.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm repo add jetstack https://charts.jetstack.io
+</li></ul></code></pre>
+<p>Por último, podemos instalar el chart en el espacio de nombres de <code>kube-system</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm install --name cert-manager --namespace kube-system jetstack/cert-manager --version v0.8.0
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+NOTES:
+cert-manager has been deployed successfully!
+
+In order to begin issuing certificates, you will need to set up a ClusterIssuer
+or Issuer resource (for example, by creating a 'letsencrypt-staging' issuer).
+
+More information on the different types of issuers and how to configure them
+can be found in our documentation:
+
+https://cert-manager.readthedocs.io/en/latest/reference/issuers.html
+
+For information on how to configure cert-manager to automatically provision
+Certificates for Ingress resources, take a look at the `ingress-shim`
+documentation:
+
+https://cert-manager.readthedocs.io/en/latest/reference/ingress-shim.html
+</code></pre>
+<p>Esto indica que la instalación de cert-manager se realizó de manera correcta.</p>
+
+<p>Antes de comenzar a emitir certificados para nuestros hosts de Ingress, debemos crear un emisor, el cual especifica la autoridad de certificación de la que se pueden obtener certificados firmados x509. En esta guía, usaremos la autoridad de certificación de Let´s Encrypt, que proporciona certificados TLS gratuitos y ofrece un servidor de ensayo para probar la configuración de sus certificados y un servidor de producción para implementar certificados de TLS verificables.</p>
+
+<p>Crearemos un emisor de prueba para asegurarnos de que el mecanismo de suministro de certificados funcione de manera correcta. Abra un archivo llamado <code>staging_issuer.yaml</code> en su editor de texto favorito:</p>
+<pre class="code-pre "><code langs="">nano staging_issuer.yaml
+</code></pre>
+<p>Pegue el siguiente manifiesto de ClusterIssuer:</p>
+<div class="code-label " title="staging_issuer.yaml">staging_issuer.yaml</div><pre class="code-pre "><code langs="">apiVersion: certmanager.k8s.io/v1alpha1
+kind: ClusterIssuer
+metadata:
+ name: letsencrypt-staging
+spec:
+ acme:
+   # The ACME server URL
+   server: https://acme-staging-v02.api.letsencrypt.org/directory
+   # Email address used for ACME registration
+   email: <span class="highlight">your_email_address_here</span>
+   # Name of a secret used to store the ACME account private key
+   privateKeySecretRef:
+     name: letsencrypt-staging
+   # Enable the HTTP-01 challenge provider
+   http01: {}
+</code></pre>
+<p>Aquí especificamos que deseamos crear un objeto de ClusterIssuer llamado <code>letsencrypt-staging</code> y usar el servidor de ensayo de Let´s Encrypt. Más adelante usaremos el servidor de producción para implementar nuestros certificados, pero el servidor de producción puede limitar las solicitudes que se hagan con el mismo. Por ello, para fines de prueba es mejor usar la URL de ensayo.</p>
+
+<p>A continuación, especificaremos una dirección de correo electrónico para registrar el certificado y crearemos un <a href="https://kubernetes.io/docs/concepts/configuration/secret/">Secreto</a> de Kubernetes llamado <code>letsencrypt-staging</code> para almacenar la clave privada de la cuenta de ACME. También habilitaremos el mecanismo de comprobación <code>HTTP-01</code>. Para obtener más información sobre estos parámetros, consulte la documentación oficial de cert-manager sobre <a href="https://cert-manager.readthedocs.io/en/latest/reference/issuers.html">emisores</a>.</p>
+
+<p>Implemente el ClusterIssuer usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f staging_issuer.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>clusterissuer.certmanager.k8s.io/letsencrypt-staging created
+</code></pre>
+<p>Ahora que creamos nuestro emisor de ensayo de Let´s Encrypt, estamos listos para modificar el recurso de Ingress que creamos previamente y habilitar el cifrado TLS para las rutas de <code>echo1.example.com</code> y <code>echo2.example.com</code>.</p>
+
+<p>Abra <code>echo_ingress.yaml</code> de nuevo en su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano echo_ingress.yaml
+</li></ul></code></pre>
+<p>Añada lo siguiente al manifiesto de recurso de Ingress:</p>
+<div class="code-label " title="echo_ingress.yaml">echo_ingress.yaml</div><pre class="code-pre "><code langs="">apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: echo-ingress
+  <span class="highlight">annotations:</span>  
+    <span class="highlight">kubernetes.io/ingress.class: nginx</span>
+    <span class="highlight">certmanager.k8s.io/cluster-issuer: letsencrypt-staging</span>
+spec:
+  <span class="highlight">tls:</span>
+  <span class="highlight">- hosts:</span>
+    <span class="highlight">- echo1.example.com</span>
+    <span class="highlight">- echo2.example.com</span>
+    <span class="highlight">secretName: letsencrypt-staging</span>
+  rules:
+  - host: echo1.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: echo1
+          servicePort: 80
+  - host: echo2.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: echo2
+          servicePort: 80
+</code></pre>
+<p>Aquí agregamos algunas anotaciones para especificar la <code>ingress.class</code>, que determina el controlador de Ingress que debería utilizarse para implementar las reglas de Ingress. Además, definimos que el <code>cluster-issuer</code> es <code>letsencrypt-staging</code>, el emisor de certificados que acabamos de crear.</p>
+
+<p>Por último, agregamos un bloque de <code>tls</code> a fin de especificar los hosts para los que queremos adquirir certificados y especificamos un <code>secretName</code>. Este secreto contendrá la clave privada TLS y el certificado emitido.</p>
+
+<p>Cuando haya terminado de realizar cambios, guarde y cierre el archivo.</p>
+
+<p>Ahora actualizaremos el recurso de Ingress existente usando <code>kubectl apply</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f echo_ingress.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ingress.extensions/echo-ingress configured
+</code></pre>
+<p>Puede usar <code>kubectl describe</code> para rastrear el estado de los cambios de Ingress que acaba de aplicar:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl describe ingress
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Events:
+  Type    Reason             Age               From                      Message
+  ----    ------             ----              ----                      -------
+  Normal  CREATE             14m               nginx-ingress-controller  Ingress default/echo-ingress
+  Normal  UPDATE             1m (x2 over 13m)  nginx-ingress-controller  Ingress default/echo-ingress
+  Normal  CreateCertificate  1m                cert-manager              Successfully created Certificate "letsencrypt-staging"
+</code></pre>
+<p>Una vez que el certificado se haya creado con éxito, puede ejecutar un <code>describe</code> adicional sobre este para confirmar aún más que se creó de forma correcta:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl describe certificate
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado en la sección <code>Events</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Events:
+  Type    Reason         Age   From          Message
+  ----    ------         ----  ----          -------
+  Normal  Generated      63s   cert-manager  Generated new private key
+  Normal  OrderCreated   63s   cert-manager  Created Order resource "letsencrypt-staging-147606226"
+  Normal  OrderComplete  19s   cert-manager  Order "letsencrypt-staging-147606226" completed successfully
+  Normal  CertIssued     18s   cert-manager  Certificate issued successfully
+</code></pre>
+<p>Esto confirma que el certificado TLS se realizó de forma correcta y que el cifrado HTTPS ahora está activo para los dos dominios configurados.</p>
+
+<p>Ahora estamos listos para enviar una solicitud a un servidor de backend <code>echo</code> y probar que HTTPS funciona bien.</p>
+
+<p>Ejecute el siguiente comando <code>wget</code> para enviar una solicitud a <code>echo1.example.com</code> e imprimir los encabezados de respuesta en <code>STDOUT</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget --save-headers -O- echo1.example.com
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>URL transformed to HTTPS due to an HSTS policy
+--2018-12-11 14:38:24--  https://echo1.example.com/
+Resolving echo1.example.com (echo1.example.com)... 203.0.113.0
+Connecting to echo1.example.com (echo1.example.net)|203.0.113.0|:443... connected.
+ERROR: cannot verify echo1.example.com's certificate, issued by ‘CN=Fake LE Intermediate X1’:
+  Unable to locally verify the issuer's authority.
+To connect to echo1.example.com insecurely, use `--no-check-certificate'.
+</code></pre>
+<p>Esto indica que HTTPS se habilitó con éxito, pero el certificado no puede verificarse porque es un certificado temporal de carácter falso emitido por el servidor de ensayo de Let´s Encrypt.</p>
+
+<p>Ahora que probamos que todo funciona usando este certificado temporal falso, podemos implementar certificados de producción para los dos hosts <code>echo1.example.com</code> y <code>echo2.example.com</code>.</p>
+
+<h2 id="paso-5-implementar-el-emisor-de-producción">Paso 5: Implementar el emisor de producción</h2>
+
+<p>En este paso, modificaremos el procedimiento utilizado para proporcionar certificados de ensayo, y generaremos un certificado de producción válido y verificable para nuestros hosts de Ingress.</p>
+
+<p>Para comenzar, crearemos primero un certificado de producción ClusterIssuer.</p>
+
+<p>Abra un archivo llamado <code>prod_issuer.yaml</code> en su editor favorito:</p>
+<pre class="code-pre "><code langs="">nano prod_issuer.yaml
+</code></pre>
+<p>Pegue el siguiente manifiesto:</p>
+<div class="code-label " title="prod_issuer.yaml">prod_issuer.yaml</div><pre class="code-pre "><code langs="">apiVersion: certmanager.k8s.io/v1alpha1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # The ACME server URL
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: <span class="highlight">your_email_address_here</span>
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    # Enable the HTTP-01 challenge provider
+    http01: {}
+</code></pre>
+<p>Observe la URL del servidor de ACME diferente y el nombre de clave secreta <code>letsencrypt-prod</code>.</p>
+
+<p>Cuando finalice la edición, guarde y cierre el archivo.</p>
+
+<p>Ahora, implemente este emisor usando <code>kubectl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create -f prod_issuer.yaml
+</li></ul></code></pre>
+<p>Debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>clusterissuer.certmanager.k8s.io/letsencrypt-prod created
+</code></pre>
+<p>Actualice <code>echo_ingress.yaml</code> para usar este nuevo emisor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano echo_ingress.yaml
+</li></ul></code></pre>
+<p>Realice los siguientes cambios al archivo:</p>
+<div class="code-label " title="echo_ingress.yaml">echo_ingress.yaml</div><pre class="code-pre "><code langs="">apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: echo-ingress
+  annotations:  
+    kubernetes.io/ingress.class: nginx
+    certmanager.k8s.io/cluster-issuer: <span class="highlight">letsencrypt-prod</span>
+spec:
+  tls:
+  - hosts:
+    - echo1.example.com
+    - echo2.example.com
+    secretName: <span class="highlight">letsencrypt-prod</span>
+  rules:
+  - host: echo1.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: echo1
+          servicePort: 80
+  - host: echo2.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: echo2
+          servicePort: 80
+</code></pre>
+<p>Aquí actualizamos el nombre de ClusterIssuer y el nombre secreto a <code>letsencrypt-prod</code>.</p>
+
+<p>Una vez que esté satisfecho con sus cambios, guarde y cierre el archivo.</p>
+
+<p>Implemente los cambios usando <code>kubectl apply</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl apply -f echo_ingress.yaml
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>ingress.extensions/echo-ingress configured
+</code></pre>
+<p>Espere unos minutos para que el servidor de producción de Let´s Encrypt emita el certificado. Puede supervisar el progreso de la operación usando <code>kubectl describe</code> en el objeto <code>certificate</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl describe certificate letsencrypt-prod
+</li></ul></code></pre>
+<p>El certificado se habrá emitido de forma correcta cuando visualice el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Events:
+  Type    Reason         Age   From          Message
+  ----    ------         ----  ----          -------
+  Normal  Generated      82s   cert-manager  Generated new private key
+  Normal  OrderCreated   82s   cert-manager  Created Order resource "letsencrypt-prod-2626449824"
+  Normal  OrderComplete  37s   cert-manager  Order "letsencrypt-prod-2626449824" completed successfully
+  Normal  CertIssued     37s   cert-manager  Certificate issued successfully
+</code></pre>
+<p>Ahora, realizaremos una prueba usando <code>curl</code> para verificar que HTTPS funcione de forma correcta:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl echo1.example.com
+</li></ul></code></pre>
+<p>Debería ver lo siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>&lt;html&gt;
+&lt;head&gt;&lt;title&gt;308 Permanent Redirect&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+&lt;center&gt;&lt;h1&gt;308 Permanent Redirect&lt;/h1&gt;&lt;/center&gt;
+&lt;hr&gt;&lt;center&gt;nginx/1.15.9&lt;/center&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Esto indica que las solicitudes HTTP se redirigen para emplear HTTPS.</p>
+
+<p>Ejecute <code>curl</code> en <code>https://echo1.example.com</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl https://echo1.example.com
+</li></ul></code></pre>
+<p>Ahora, debería ver el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>echo1
+</code></pre>
+<p>Puede ejecutar el comando anterior con el indicador verbose <code>-v</code> para profundizar en el protocolo de enlace del certificado y para verificar la información del certificado.</p>
+
+<p>En este punto, habrá configurado con éxito HTTPS usando un certificado de Let´s Encrypt para su Ingress de Nginx.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A través de esta guía, configuró un Ingress de Nginx para equilibrar las cargas y dirigir las solicitudes externas a los servicios de backend dentro de su clúster de Kubernetes. También protegió el Ingress instalando el proveedor de certificado cert-manager y configurando un certificado de Let´s Encrypt para dos rutas de host.</p>
+
+<p>Existen muchas alternativas al controlador de Ingress de Nginx. Para obtener más información, consulte <a href="https://kubernetes.io/docs/concepts/services-networking/ingress/#ingress-controllers">Controladores de Ingress</a> en la documentación oficial de Kubernetes.</p>

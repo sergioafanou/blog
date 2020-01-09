@@ -1,0 +1,209 @@
+---
+layout: post
+title: How To Install Software on Kubernetes Clusters with the Helm Package Manager
+network: digitalocean
+date: January 09, 2020 at 05:40PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-software-on-kubernetes-clusters-with-the-helm-package-manager-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://www.helm.sh">Helm</a> é um gerenciador de pacotes para o Kubernetes que permite que os desenvolvedores e operadores configurem e implantem mais facilmente aplicativos nos clusters do Kubernetes.</p>
+
+<p>Neste tutorial, vamos configurar o Helm e usá-lo para instalar, reconfigurar, reverter e então excluir uma instância do <a href="https://github.com/kubernetes/dashboard">aplicativo de painel do Kubernetes</a>. O painel é uma GUI oficial do Kubernetes baseada em Web.</p>
+
+<p>Para uma visão conceitual do Helm e seu ecossistema de empacotamento, leia nosso artigo <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-helm-the-package-manager-for-kubernetes"><em>Uma introdução ao Helm</em></a>.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para este tutorial, você precisará de:</p>
+
+<ul>
+<li>Um cluster do Kubernetes 1.8+ com controle de acesso baseado na função (RBAC) habilitado</li>
+<li>A ferramenta <code>kubectl</code> de linha de comando instalada em sua máquina local, configurada para se conectar ao seu cluster. Você pode ler mais sobre como instalar o <code>kubectl</code> <a href="https://kubernetes.io/docs/tasks/tools/install-kubectl/">na documentação oficial</a>.</li>
+</ul>
+
+<p>Você pode testar sua conectividade com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">   kubectl cluster-info
+</li></ul></code></pre>
+<p>Se não houver erros, você está conectado ao cluster. Se acessar vários clusters com o <code>kubectl</code>, certifique-se de verificar se você selecionou o contexto de cluster correto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">   kubectl config get-contexts
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>      CURRENT   NAME                    CLUSTER                      AUTHINFO                      NAMESPACE
+   <span class="highlight">*</span>         do-nyc1-k8s-example     do-nyc1-k8s-example          do-nyc1-k8s-example-admin
+             docker-for-desktop      docker-for-desktop-cluster   docker-for-desktop
+</code></pre>
+<p>Neste exemplo, o asterisco (<code><span class="highlight">*</span></code>) indica que estamos conectados ao cluster <code>do-nyc1-k8s-example</code>. Para trocar os clusters execute:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">   kubectl config use-context <span class="highlight">context-name</span>
+</li></ul></code></pre>
+<p>Quando estiver conectado ao cluster correto, continue para o Passo 1 para começar a instalar o Helm.</p>
+
+<h2 id="passo-1-—-como-instalar-o-helm">Passo 1 — Como instalar o Helm</h2>
+
+<p>Primeiro, vamos instalar o utilitário de linha de comando <code>helm</code> na nossa máquina local. O Helm fornece um script que lida com o processo de instalação no MacOS, Windows ou Linux.</p>
+
+<p>Mude para um diretório gravável e baixe o script do repositório do GitHub do Helm:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li><li class="line" prefix="$">curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get &gt; install-helm.sh
+</li></ul></code></pre>
+<p>Crie o executável do script com o <code>chmod</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod u+x install-helm.sh
+</li></ul></code></pre>
+<p>Neste ponto, você pode usar seu editor de texto favorito para abrir o script e inspecioná-lo para garantir que ele está seguro. Quando estiver satisfeito, execute-o:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./install-helm.sh
+</li></ul></code></pre>
+<p>Você pode ser solicitado a colocar sua senha. Digite ela e pressione <code>ENTER</code>.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>helm installed into /usr/local/bin/helm
+Run 'helm init' to configure helm.
+</code></pre>
+<p>Em seguida, vamos concluir a instalação instalando alguns componentes do Helm no nosso cluster.</p>
+
+<h2 id="passo-2-—-como-instalar-o-tiller">Passo 2 — Como instalar o Tiller</h2>
+
+<p>O Tiller é um companheiro do comando <code>helm</code> que é executado no seu cluster, recebendo comandos do <code>helm</code> e se comunicando diretamente com a API do Kubernetes para fazer o trabalho real de criar e excluir recursos. Para dar ao Tiller as permissões que ele precisa para ser executado no cluster, vamos fazer um recurso do Kubernetes, o <code>serviceaccount</code>.</p>
+
+<span class='note'><p>
+<strong>Nota:</strong> vamos ligar esse <code>serviceaccount</code> à função do cluster <strong>cluster-admin</strong>. Isso dará ao superusuário do serviço <code>tiller</code> acesso ao cluster e permitirá que ele instale todos os tipos de recurso em todos os namespaces. Isso é bom para explorar o Helm, mas você pode querer uma configuração mais fechada para um cluster do Kubernetes de produção.</p>
+
+<p>Por favor, consulte <a href="https://docs.helm.sh/using_helm/#role-based-access-control">a documentação oficial do Helm RBAC</a> para mais informações sobre a configuração de diferentes cenários RBAC para o Tiller.<br></p></span>
+
+<p>Crie o <strong>tiller</strong> <code>serviceaccount</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl -n kube-system create serviceaccount tiller
+</li></ul></code></pre>
+<p>Em seguida, vincule o <strong>tiller</strong> <code>serviceaccount</code> à função <strong>cluster-admin</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
+</li></ul></code></pre>
+<p>Agora, podemos executar o <code>helm init</code>, que instala o Tiller no nosso cluster, junto com algumas tarefas de organização local, como baixar os detalhes do repositório <strong>stable</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm init --service-account tiller
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+
+Tiller (the Helm server-side component) has been installed into your Kubernetes Cluster.
+
+Please note: by default, Tiller is deployed with an insecure 'allow unauthenticated users' policy.
+For more information on securing your installation see: https://docs.helm.sh/using_helm/#securing-your-helm-installation
+Happy Helming!
+</code></pre>
+<p>Para verificar se o Tiller está funcionando, liste os módulos no namespace <strong>kube-system</strong>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get pods --namespace kube-system
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                                    READY     STATUS    RESTARTS   AGE
+. . .
+kube-dns-64f766c69c-rm9tz               3/3       Running   0          22m
+kube-proxy-worker-5884                  1/1       Running   1          21m
+kube-proxy-worker-5885                  1/1       Running   1          21m
+kubernetes-dashboard-7dd4fc69c8-c4gwk   1/1       Running   0          22m
+<span class="highlight">tiller-deploy-5c688d5f9b-lccsk          1/1       Running   0          40s</span>
+</code></pre>
+<p>O nome do módulo do Tiller começa com o prefixo <code>tiller-deploy-</code>.</p>
+
+<p>Agora que instalamos ambos os componentes do Helm, estamos prontos para usar o <code>helm</code> para instalar nosso primeiro aplicativo.</p>
+
+<h2 id="passo-3-—-instalando-um-chart-do-helm">Passo 3 — Instalando um chart do Helm</h2>
+
+<p>Os pacotes de software do Helm são chamados de <em>charts</em>. O Helm vem pré-configurado com um repositório de charts coletados chama do <strong>stable</strong>. Você pode verificar os gráficos disponíveis <a href="https://github.com/helm/charts/tree/master/stable">nos seus repositórios do GitHub</a>. Vamos instalar o <a href="https://github.com/kubernetes/dashboard">Painel do Kubernetes</a> como um exemplo.</p>
+
+<p>Use o <code>helm</code> para instalar o pacote <code>kubernetes-dashboard</code> do repositório <code>stable</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm install stable/kubernetes-dashboard --name dashboard-demo
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME:   <span class="highlight">dashboard-demo</span>
+LAST DEPLOYED: Wed Aug  8 20:11:07 2018
+NAMESPACE: default
+STATUS: DEPLOYED
+
+. . .
+</code></pre>
+<p>Observe a linha <code>NAME</code>, em destaque no exemplo de resultado acima. Neste caso, especificamos o nome <code>dashboard-demo</code>. Este é o nome do nosso <em>release</em>. Um <em>release</em> do Helm é uma única implantação de um chart com uma configuração específica. Você pode implantar vários releases do mesmo chart, tendo cada um sua própria configuração.</p>
+
+<p>Se não especificar seu próprio nome de release usando <code>--name</code>, o Helm criará um nome aleatório para você.</p>
+
+<p>Podemos pedir ao Helm uma lista de releases neste cluster:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm list
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME            REVISION    UPDATED                     STATUS      CHART                       NAMESPACE
+<span class="highlight">dashboard-demo</span>    1           Wed Aug  8 20:11:11 2018    DEPLOYED    kubernetes-dashboard-0.7.1  default
+</code></pre>
+<p>Agora, podemos usar o <code>kubectl</code> para verificar se um novo serviço foi implantado no cluster:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get services
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                                   TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+<span class="highlight">dashboard-demo-kubernetes-dashboard   ClusterIP   10.32.104.73   &lt;none&gt;        443/TCP   51s</span>
+kubernetes                             ClusterIP   10.32.0.1      &lt;none&gt;        443/TCP   34m
+</code></pre>
+<p>Note que por padrão, o nome de serviço correspondente ao nosso release é uma combinação do nome de release do Helm e o nome do chart.</p>
+
+<p>Agora que implantamos o aplicativo, vamos usar o Helm para alterar sua configuração e atualizar a implantação.</p>
+
+<h2 id="passo-4-—-atualizando-um-release">Passo 4 — Atualizando um release</h2>
+
+<p>O comando <code>helm upgrade</code> pode ser usado para atualizar um release com um chart novo ou atualizado, ou atualizar as suas opções de configuração.</p>
+
+<p>Vamos fazer uma alteração simples no nosso release <code>dashboard-demo</code> para demonstrar o processo de atualização e reversão: atualizaremos o nome do serviço do painel para apenas <code>dashboard,</code> em vez de <code>dashboard-demo-kubernetes-dashboard</code>.</p>
+
+<p>O chart <code>kubernetes-dashboard</code> fornece uma opção de configuração <code>fullnameOverride</code> para controlar o nome do serviço. Vamos executar o <code>helm upgrade</code> com esta opção definida:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm upgrade <span class="highlight">dashboard-demo</span> stable/kubernetes-dashboard <span class="highlight">--set fullnameOverride="dashboard"</span>
+</li></ul></code></pre>
+<p>Você verá um resultado similar ao passo inicial <code>helm install</code>.</p>
+
+<p>Verifique se seus serviços do Kubernetes refletem os valores atualizados:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get services
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+kubernetes             ClusterIP   10.32.0.1       &lt;none&gt;        443/TCP   36m
+<span class="highlight">dashboard</span>              ClusterIP   10.32.198.148   &lt;none&gt;        443/TCP   40s
+</code></pre>
+<p>Nosso nome de serviço foi atualizado para o novo valor.</p>
+
+<span class='note'><p>
+<strong>Nota:</strong> neste ponto, você pode carregar o Painel do Kubernetes no seu navegador e verificá-lo. Para fazer isso, execute primeiro o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl proxy
+</li></ul></code></pre>
+<p>Isso cria um proxy que permite que você acesse recursos de cluster remotos do seu computador local. Baseado nas instruções anteriores, seu serviço de dashboard é chamado <code>kubernetes-dashboard</code> e ele está funcionando no namespace <code>default</code>. Agora, você pode acessar o painel no seguinte URL:</p>
+<pre class="code-pre "><code langs="">http://localhost:8001/api/v1/namespaces/<span class="highlight">default</span>/services/https:<span class="highlight">dashboard</span>:/proxy/
+</code></pre>
+<p>Se necessário, substitua seu próprio nome de serviço e namespace pelas porções destacadas. As instruções para de fato usar o painel estão fora do escopo deste tutorial, mas você pode ler <a href="https://github.com/kubernetes/dashboard/wiki">os docs oficiais do Painel do Kubernetes</a> para mais informações.<br></p></span>
+
+<p>Em seguida, vamos ver a capacidade do Helm para reverter releases.</p>
+
+<h2 id="passo-5-—-revertendo-um-release">Passo 5 — Revertendo um release</h2>
+
+<p>Quando atualizamos nosso release <code><span class="highlight">dashboard-demo</span></code> no passo anterior, criamos uma segunda <em>revisio</em>n do release. O Helm retém todos os detalhes dos release anteriores caso precise reverter para uma configuração ou chart prévia.</p>
+
+<p>Use o <code>helm list</code> para verificar o release novamente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm list
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME            REVISION    UPDATED                     STATUS      CHART                       NAMESPACE
+dashboard-demo  <span class="highlight">2</span>         Wed Aug  8 20:13:15 2018    DEPLOYED    kubernetes-dashboard-0.7.1  default
+</code></pre>
+<p>A coluna <code>REVISION</code> nos diz que essa é agora a segunda revisão.</p>
+
+<p>Use o <code>helm rollback</code> para reverter para a primeira revisão:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm rollback <span class="highlight">dashboard-demo</span> 1
+</li></ul></code></pre>
+<p>Você deve ver o seguinte resultado, indicando que a reversão foi bem sucedida:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Rollback was a success! Happy Helming!
+</code></pre>
+<p>Neste ponto, caso execute o <code>kubectl get services</code> novamente, verá que o nome de serviço mudou para seu valor anterior. O Helm reimplantou o aplicativo com a configuração da revisão 1.</p>
+
+<p>Em seguida, vamos ver como excluir releases com o Helm.</p>
+
+<h2 id="passo-6-—-excluindo-um-release">Passo 6 — Excluindo um release</h2>
+
+<p>Os releases do Helm podem ser excluídos com o comando <code>helm delete</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm delete <span class="highlight">dashboard-demo</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>release "dashboard-demo" deleted
+</code></pre>
+<p>Embora o release tenha sido excluído e o aplicativo do painel não esteja mais em funcionamento, o Helm salva todas as informações de revisão caso queira reimplantar o release. Se você tentasse usar o <code>helm install</code> em um novo release <code>dashboard-demo</code> agora, receberia um erro:</p>
+<pre class="code-pre "><code langs="">Error: a release named dashboard-demo already exists.
+</code></pre>
+<p>Se você usar a flag <code>--deleted</code> para listar seus releases excluídos, verá que o release ainda está presente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm list --deleted
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME            REVISION    UPDATED                     STATUS  CHART                       NAMESPACE
+dashboard-demo  3           Wed Aug  8 20:15:21 2018    DELETED kubernetes-dashboard-0.7.1  default
+</code></pre>
+<p>Para <em>realmente</em> excluir o release e purgar todas as revisões antigas, utilize a flag <code>--purge</code> com o comando <code>helm delete</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm delete dashboard-demo --purge
+</li></ul></code></pre>
+<p>Agora, o release foi realmente excluído e você pode reutilizar seu nome.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste tutorial, instalamos a ferramenta de linha de comando <code>helm</code> e seu serviço companheiro <code>tiller</code>. Também exploramos instalar, atualizar, reverter e excluir charts e releases do Helm.</p>
+
+<p>Para maiores informações sobre o Helm e charts do Helm, consulte <a href="https://docs.helm.sh/">a documentação oficial do Helm</a>.</p>

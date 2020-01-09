@@ -1,0 +1,648 @@
+---
+layout: post
+title: How To Secure a Containerized Node.js Application with Nginx, Let's Encrypt, and Docker Compose
+network: digitalocean
+date: January 09, 2020 at 05:44PM
+url: https://www.digitalocean.com/community/tutorials/how-to-secure-a-containerized-node-js-application-with-nginx-let-s-encrypt-and-docker-compose-pt
+image: https://assets.digitalocean.com/articles/docker_node_image/landing_page.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Existem várias maneiras de melhorar a flexibilidade e segurança do seu aplicativo <a href="https://nodejs.org">Node.js</a>. O uso de um <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#reverse-proxy">proxy reverso</a> como o <a href="https://www.nginx.com/">Nginx</a> oferece a você a capacidade de carregar solicitações de balanceamento de carga, conteúdo de cache estático e de* implementar a Segurança em Camada*s de Transporte (TLS). Ao habilitar o HTTPS criptografado no seu servidor, garante-se que a comunicação para o seu aplicativo e vinda dele permaneça segura.</p>
+
+<p>A implementação de um proxy reverso com TLS/SSL em contêineres envolve um conjunto diferente de procedimentos do trabalho em um sistema operacional de host. Por exemplo, se estivesse obtendo certificados do <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a> para um aplicativo em execução em um servidor, deveria instalar o software necessário diretamente no seu host. Os contêineres permitem que você utilize uma abordagem diferente. Ao usar o <a href="https://docs.docker.com/compose/">Docker Compose</a>, é possível criar contêineres para o seu aplicativo, seu servidor Web e o <a href="https://certbot.eff.org/">cliente Certbot</a> que permite você  de obter seus certificados. Ao seguir estes passos, você pode aproveitar a modularidade e a portabilidade de um fluxo de trabalho em contêiner.</p>
+
+<p>Neste tutorial, será implantado um aplicativo Node.js com um proxy reverso Nginx usando o Docker Compose. Você receberá certificados TLS/SSL para o domínio associados ao seu aplicativo e garantirá que ele receba uma classificação de segurança elevada do <a href="https://www.ssllabs.com/">SSL Labs</a>. Por fim, será configurado um trabalho <a href="https://www.digitalocean.com/community/tutorials/how-to-schedule-routine-tasks-with-cron-and-anacron-on-a-vps"><code>cron</code></a> para renovar seus certificados para que seu domínio permaneça seguro.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para seguir este tutorial, será necessário:</p>
+
+<ul>
+<li>Um servidor Ubuntu 18.04, um usuário não raiz com privilégios <code>sudo</code> e um firewall ativo. Para saber como configurar isso, consulte este <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guia de configuração inicial do servidor</a>.</li>
+<li>O Docker e o Docker Compose instalados no seu servidor. Como orientação na instalação do Docker, siga os Passos 1 e 2 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04">Como instalar e usar o Docker no Ubuntu 18.04</a>. Como orientação na instalação do Compose, siga o Passo 1 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">Como instalar o Docker Compose no Ubuntu 18.04</a>.</li>
+<li>Um nome de domínio registrado. Este tutorial usará o <strong>example.com</strong> do início ao fim. Você pode obter um de graça no <a href="http://www.freenom.com/en/index.html">Freenom</a>, ou usar o registrador de domínios da sua escolha.</li>
+<li><p>Ambos os registros de DNS a seguir serão configurados para o seu servidor. Você pode seguir <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">esta introdução para o DNS da DigitalOcean</a> para mais detalhes sobre como adicioná-los a uma conta DigitalOcean, caso seja o que está usando:</p>
+
+<ul>
+<li>Um registro A com <code><span class="highlight">example.com</span></code> apontando para o endereço IP público do seu servidor.</li>
+<li>Um registro A com <code><span class="highlight">example.com</span></code> apontando para o endereço IP público do seu servidor.</li>
+</ul></li>
+</ul>
+
+<h2 id="passo-1-—-clonando-e-testando-o-aplicativo-node">Passo 1 — Clonando e testando o aplicativo Node</h2>
+
+<p>Como primeiro passo, clonaremos o repositório com o código do aplicativo Node, que inclui o Dockerfile que usaremos na construção da nossa imagem de aplicativo com o Compose. Podemos testar primeiro o aplicativo a partir de sua construção e execução com o <a href="https://docs.docker.com/engine/reference/commandline/run/">comando <code>docker run,</code></a> sem um proxy reverso ou SSL.</p>
+
+<p>No diretório home do seu usuário não raiz, clone o repositório <a href="https://github.com/do-community/nodejs-image-demo"><code>nodejs-image-demo</code></a> da <a href="https://github.com/do-community">conta GitHub da Comunidade DigitalOcean</a>. Este repositório inclui o código da configuração descrito em <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker">Como construir um aplicativo Node.js com o Docker</a>.</p>
+
+<p>Clone o repositório em um diretório chamado <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/do-community/nodejs-image-demo.git <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Vá para o diretório <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd  <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Neste diretório, há um Dockerfile que contém instruções para a construção de um aplicativo Node usando a <a href="https://hub.docker.com/_/node/">imagem do Docker <code>node:10</code></a> e o conteúdo do seu diretório de projeto atual. Você pode olhar o conteúdo do Dockerfile digitando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat Dockerfile
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>FROM node:10-alpine
+
+RUN mkdir -p /home/node/app/node_modules &amp;&amp; chown -R node:node /home/node/app
+
+WORKDIR /home/node/app
+
+COPY package*.json ./
+
+USER node
+
+RUN npm install
+
+COPY --chown=node:node . .
+
+EXPOSE 8080
+
+CMD [ "node", "app.js" ]
+</code></pre>
+<p>Essas instruções constroem uma imagem do Node através da cópia do código do projeto do diretório atual para o contêiner e instalação de dependências com o <code>npm install</code>. Elas também se aproveitam do <a href="https://www.digitalocean.com/community/tutorials/building-optimized-containers-for-kubernetes#managing-container-layers">salvamento em cache e disposição em camadas da imagem</a>. Isso é feito pela separação da cópia do <code>package.json</code> e <code>package-lock.json</code>, que contém as dependências listadas do projeto, da cópia do resto do código do aplicativo. Por fim, as instruções especificam que o contêiner será executado como o usuário <strong>node</strong> não raiz com as permissões apropriadas definidas no código do aplicativo e no diretório <code>node_modules</code>.</p>
+
+<p>Para obter mais informações sobre este Dockerfile e práticas recomendadas da imagem do Node, consulte a discussão completa no <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker#step-3-%E2%80%94-writing-the-dockerfile">Passo 3 de Como construir um aplicativo Node.js com o Docker</a>.</p>
+
+<p>Para testar o aplicativo sem o SSL, construa e identifique a imagem usando o <a href="https://docs.docker.com/engine/reference/commandline/build/"><code>docker build</code></a> e a flag <code>-t</code>. Vamos nomear a imagem <code><span class="highlight">node-demo</span></code>, mas você pode dar a ela o nome que quiser:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker build -t <span class="highlight">node-demo</span> .
+</li></ul></code></pre>
+<p>Assim que o processo de construção for concluído, você pode listar suas imagens com o <a href="https://docs.docker.com/engine/reference/commandline/images/"><code>docker images</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker images
+</li></ul></code></pre>
+<p>Você verá o seguinte resultado, confirmando a compilação da imagem do aplicativo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+<span class="highlight">node-demo</span>           latest              23961524051d        7 seconds ago       73MB
+node                10-alpine           8a752d5af4ce        3 weeks ago         70.7MB
+</code></pre>
+<p>Em seguida, crie o contêiner com o <code>docker run</code>. Vamos incluir três flags com este comando:</p>
+
+<ul>
+<li><code>-p</code>: publica a porta no contêiner e a mapeia para uma porta no nosso host. Usaremos a porta <code>80</code> no host, mas sinta-se a vontade para escolher outra se necessário, caso tenha outro processo em execução naquela porta. Para obter mais informações sobre como isso funciona, veja esta discussão nos documentos do Docker sobre <a href="https://docs.docker.com/v17.09/engine/userguide/networking/default_network/binding/">associação de portas</a>.</li>
+<li><code>-d</code>: executa o contêiner em segundo plano.</li>
+<li><code>--name</code>: permite-nos dar ao contêiner um nome memorável.</li>
+</ul>
+
+<p>Execute o comando a seguir para criar o contêiner:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker run --name <span class="highlight">node-demo</span> -p 80:8080 -d <span class="highlight">node-demo</span>
+</li></ul></code></pre>
+<p>Verifique seus contêineres em execução com o <a href="https://docs.docker.com/engine/reference/commandline/ps/"><code>docker ps</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps
+</li></ul></code></pre>
+<p>Você verá o resultado que confirma que o seu contêiner do aplicativo está funcionando:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS                  NAMES
+4133b72391da        <span class="highlight">node-demo</span>           "node app.js"       17 seconds ago      Up 16 seconds       0.0.0.0:80-&gt;8080/tcp   <span class="highlight">node-demo</span>
+</code></pre>
+<p>Agora, você pode visitar seu domínio para testar sua configuração: <code>http://<span class="highlight">example.com</span></code>. Lembre-se de substituir o <code><span class="highlight">example.com</span></code> pelo seu próprio nome de domínio. Seu aplicativo exibirá a seguinte página de destino:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/landing_page.png" alt="Application Landing Page"></p>
+
+<p>Agora que você testou o aplicativo, pare o contêiner e remova as imagens. Use o <code>docker ps</code> novamente para obter seu <code>CONTAINER ID</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker ps
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS                  NAMES
+<span class="highlight">4133b72391da</span>        <span class="highlight">node-demo</span>           "node app.js"       17 seconds ago      Up 16 seconds       0.0.0.0:80-&gt;8080/tcp   <span class="highlight">node-demo</span>
+</code></pre>
+<p>Pare o contêiner com o <a href="https://docs.docker.com/engine/reference/commandline/stop/"><code>docker stop</code></a>. Certifique-se de substituir o <code>CONTAINER ID</code> listado aqui pelo <code>CONTAINER ID</code> do seu aplicativo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker stop <span class="highlight">4133b72391da</span>
+</li></ul></code></pre>
+<p>Agora, é possível remover o contêiner parado e todas as imagens, incluindo imagens não utilizadas e penduradas, com o <a href="https://docs.docker.com/engine/reference/commandline/system_prune/"><code>docker system prune</code></a> e a flag <code>-a</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker system prune -a
+</li></ul></code></pre>
+<p>Digite <code>y</code> quando solicitado na saída para confirmar que você gostaria de remover o contêiner e imagens parados. Fique ciente de que isso também removerá seu cache de construção.</p>
+
+<p>Com sua imagem de aplicativo testada, siga em frente para a construção do resto da sua configuração com o Docker Compose.</p>
+
+<h2 id="passo-2-—-definindo-as-configurações-do-servidor-web">Passo 2 — Definindo as configurações do servidor Web</h2>
+
+<p>Com nosso aplicativo Dockerfile funcionando, podemos criar um arquivo de configuração para executar nosso contêiner Nginx. Começaremos com uma configuração mínima que incluirá nosso nome de domínio, <a href="https://docs.nginx.com/nginx/admin-guide/web-server/serving-static-content/#root-directory-and-index-files">root do documento</a>, informações de proxy e um bloco de localização para dirigir os pedidos do Certbot ao diretório <code>.well-known</code>. Lá, ele colocará um arquivo temporário para validar que o DNS para nosso domínio resolva para nosso servidor.</p>
+
+<p>Primeiramente, crie um diretório no diretório atual do projeto para o arquivo de configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir nginx-conf
+</li></ul></code></pre>
+<p>Abra o arquivo com o <code>nano</code> ou com o seu editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx-conf/nginx.conf
+</li></ul></code></pre>
+<p>Adicione o seguinte bloco de servidor para servir como proxy para os pedidos de usuário para o contêiner do seu aplicativo Node e redirecionar os pedidos do Certbot ao diretório <code>.well-known</code>. Certifique-se de substituir o <code><span class="highlight">example.com</span></code> pelo seu próprio nome de domínio:</p>
+<div class="code-label " title="~/node_project/nginx-conf/nginx.conf">~/node_project/nginx-conf/nginx.conf</div><pre class="code-pre "><code langs="">server {
+        listen 80;
+        listen [::]:80;
+
+        root /var/www/html;
+        index index.html index.htm index.nginx-debian.html;
+
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        location / {
+                proxy_pass http://nodejs:8080;
+        }
+
+        location ~ /.well-known/acme-challenge {
+                allow all;
+                root /var/www/html;
+        }
+}
+</code></pre>
+<p>Este bloco de servidor nos permitirá iniciar o contêiner Nginx como um proxy reverso, que passará pedidos para nosso contêiner do aplicativo Node. Ele também nos permitirá usar o <a href="https://certbot.eff.org/docs/using.html#webroot">plug-in webroot</a> do Certbot para obter certificados para nosso domínio. Este plug-in depende do <a href="https://tools.ietf.org/html/draft-ietf-acme-acme-03#section-7.2">método de validação HTTP-01</a>, que usa um pedido HTTP para provar que o Certbot pode acessar recursos de um servidor que responde a um dado nome de domínio.</p>
+
+<p>Assim que terminar a edição, salve e feche o arquivo. Para aprender mais sobre o servidor Nginx e os algoritmos de blocos de localização, consulte este artigo <a href="https://www.digitalocean.com/community/tutorials/understanding-nginx-server-and-location-block-selection-algorithms">Entendendo o servidor Nginx e os algoritmos de seleção de blocos de localização</a>.</p>
+
+<p>Com os detalhes de configuração do servidor Web funcionando, podemos seguir em frente para a criação do nosso arquivo <code>docker-compose.yml</code>, que nos permitirá criar nossos serviços de aplicativo e o contêiner do Certbot que usaremos para obter nossos certificados.</p>
+
+<h2 id="passo-3-—-criando-o-arquivo-do-docker-compose">Passo 3 — Criando o arquivo do Docker Compose</h2>
+
+<p>O arquivo <code>docker-compose.yml</code> definirá nossos serviços, incluindo o aplicativo Node e o servidor Web. Ele especificará detalhes como volumes nomeados, que serão críticos para compartilhar credenciais SSL entre contêineres, além de informações de rede e portas. Ele também nos permitirá especificar comandos específicos para serem executados quando nossos contêineres forem criados. Este arquivo é o recurso central que definirá como nossos serviços funcionarão em conjunto.</p>
+
+<p>Abra o arquivo no seu diretório atual:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Primeiro, defina o serviço de aplicativo:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">version: '3'
+
+services:
+  nodejs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nodejs
+    container_name: nodejs
+    restart: unless-stopped
+</code></pre>
+<p>A definição de serviço <code>nodejs</code> inclui o seguinte:</p>
+
+<ul>
+<li><code>build</code>: define as opções de configuração, incluindo o <code>context</code> e <code>dockerfile</code>, que serão aplicadas quando o Compose construir a imagem do aplicativo. Se quisesse usar uma imagem existente de um registro como o <a href="https://hub.docker.com/">Docker Hub</a>, poderia usar como alternativa a <a href="https://docs.docker.com/compose/compose-file/#image">instrução <code>image</code></a>, com informações sobre seu nome de usuário, repositório e tag da imagem.</li>
+<li><code>context</code>: define o contexto de compilação para a compilação de imagem do aplicativo. Neste caso, é o diretório atual do projeto.</li>
+<li><code>dockerfile</code>: especifica o Dockerfile que o Compose usará para a compilação — o Dockerfile que você olhou no <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-a-containerized-node-js-application-with-nginx-let-s-encrypt-and-docker-compose#step-1-%E2%80%94-cloning-and-testing-the-node-application">Passo 1</a>.</li>
+<li><code>image</code>, <code>container_name</code>: aplicam nomes à imagem e contêiner.</li>
+<li><code>restart</code>: define a política de reinício. A padrão é <code>no</code>, mas definimos o contêiner para reiniciar a menos que ele seja interrompido.</li>
+</ul>
+
+<p>Note que não estamos incluindo bind mounts com este serviço, uma vez que nossa configuração está focada na implantação e não no desenvolvimento. Para obter mais informações, consulte a documentação do Docker sobre <a href="https://docs.docker.com/storage/bind-mounts/">bind mounts</a> e <a href="https://docs.docker.com/storage/volumes/">volumes</a>.</p>
+
+<p>Para habilitar a comunicação entre os contêineres do aplicativo e do servidor Web, adicionaremos também uma rede bridge chamada <code>app-network</code> abaixo da definição de reinicialização:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">services:
+  nodejs:
+...
+    <span class="highlight">networks:</span>
+      <span class="highlight">- app-network</span>
+</code></pre>
+<p>Uma rede bridge definida pelo usuário permite a comunicação entre contêineres no mesmo host daemon do Docker. Isso simplifica o tráfego e a comunicação dentro do seu aplicativo, uma vez que todas as portas entre os contêineres na mesma rede bridge são abertas, ao mesmo tempo em que nenhuma porta é exposta ao mundo exterior. Assim, é possível ser seletivo abrindo apenas as portas que você precisar para expor seus serviços front-end.</p>
+
+<p>Em seguida, defina o serviço <code>webserver</code>:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">...
+ webserver:
+    image: nginx:<span class="highlight">mainline-alpine</span>
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - web-root:/var/www/html
+      - ./nginx-conf:/etc/nginx/conf.d
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+    depends_on:
+      - nodejs
+    networks:
+      - app-network
+</code></pre>
+<p>Algumas das configurações que definimos para o serviço <code>nodejs</code> permanecem as mesmas, mas também fizemos as seguintes alterações:</p>
+
+<ul>
+<li><code>image</code>: diz ao Compose para puxar a última <a href="https://hub.docker.com/_/nginx/">imagem Nginx</a> <a href="https://alpinelinux.org/">baseada em Alpine</a> do Docker Hub. Para obter mais informações sobre imagens <code>alpine,</code> consulte o Passo 3 de <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker#step-3-%E2%80%94-writing-the-dockerfile">Como construir um aplicativo Node.js com o Docker</a>.</li>
+<li><code>ports</code>: expõe a porta <code>80</code> para habilitar as opções de configuração que definimos em nossa configuração do Nginx.</li>
+</ul>
+
+<p>Também especificamos os seguintes volumes nomeados e bind mounts:</p>
+
+<ul>
+<li><code>web-root:/var/www/html</code>: adicionará os ativos estáticos do nosso site, copiados para um volume chamado <code>web-root</code>, para o diretório <code>/var/www/html</code> no contêiner.</li>
+<li><code>./nginx-conf:/etc/nginx/conf.d</code>: irá associar a montagem do diretório de configuração Nginx no host ao diretório relevante no contêiner, garantindo que quaisquer alterações que façamos em arquivos no host serão refletidas no contêiner.</li>
+<li><code>certbot-etc:/etc/letsencrypt</code>: irá montar os certificados e chaves relevantes do Let&rsquo;s Encrypt do nosso domínio para o diretório apropriado no contêiner.</li>
+<li><code>certbot-var:/var/lib/letsencrypt</code>: monta o diretório de trabalho padrão do Let&rsquo;s Encrypt para o diretório apropriado no contêiner.</li>
+</ul>
+
+<p>Em seguida, adicione as opções de configuração para o contêiner <code>certbot.</code> Certifique-se de substituir as informações de domínio e e-mail pelo seu próprio nome de domínio e e-mail:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">...
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - web-root:/var/www/html
+    depends_on:
+      - webserver
+    command: certonly --webroot --webroot-path=/var/www/html --email <span class="highlight">sammy@example.com</span> --agree-tos --no-eff-email --staging -d <span class="highlight">example.com</span>  -d www.<span class="highlight">example.com</span>
+</code></pre>
+<p>Esta definição diz ao Compose para puxar a <a href="https://hub.docker.com/r/certbot/certbot/">imagem certbot/certbot</a> do Docker Hub. Ela também usa volumes nomeados para compartilhar recursos com o contêiner do Nginx, incluindo os certificados de domínio e chaves no <code>certbot-etc</code>, o diretório de trabalho do Let&rsquo;s Encrypt no <code>certbot-var</code> e o código do aplicativo no <code>web-root</code>.</p>
+
+<p>Novamente, usamos o <code>depends_on</code> para especificar que o contêiner do <code>certbot</code> deve ser iniciado assim que o serviço <code>webserver</code> estiver funcionando.</p>
+
+<p>Também incluímos uma opção <code>command</code> que especifica o comando a ser executado quando o contêiner for iniciado. Ele inclui o subcomando <code>certonly</code> com as seguintes opções:</p>
+
+<ul>
+<li><code>--webroot</code>: diz ao Certbot para usar o plug-in webroot para colocar arquivos na pasta webroot para autenticação.</li>
+<li><code>--webroot-path</code>: especifica o caminho do diretório webroot.</li>
+<li><code>--email</code>: seu e-mail escolhido para o registro e recuperação.</li>
+<li><code>--agree-tos</code>: especifica que você concorda com o <a href="https://letsencrypt.org/documents/LE-SA-v1.2-November-15-2017.pdf">Acordo de Subscrição do ACME</a>.</li>
+<li><code>--no-eff-email</code>: diz ao Certbot que você não deseja compartilhar seu e-mail com a <a href="https://www.eff.org/">Fundação Electronic Frontier</a> (EFF). Sinta-se à vontade para omitir isso se preferir.</li>
+<li><code>--staging</code>: diz ao Certbot que você gostaria de usar o ambiente de preparo do Let&rsquo;s Encrypt para obter certificados de teste. Usar essa opção permite que você teste suas opções de configuração e evite possíveis limites de solicitação de domínio. Para obter mais informações sobre esses limites, consulte a <a href="https://letsencrypt.org/docs/rate-limits/">documentação sobre limites de taxas</a> do Let&rsquo;s Encrypt.</li>
+<li><code>-d</code>: permite que você especifique nomes de domínio que gostaria de aplicar ao seu pedido. Neste caso, incluímos o <code><span class="highlight">example.com</span></code> e <code>www.<span class="highlight">example.com</span></code>. Certifique-se de substituí-los pelas suas próprias preferências de domínio.</li>
+</ul>
+
+<p>Como passo final, adicione as definições de volume e rede. Certifique-se de substituir o nome de usuário presente aqui pelo seu usuário não raiz:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">...
+volumes:
+  certbot-etc:
+  certbot-var:
+  web-root:
+    driver: local
+    driver_opts:
+      type: none
+      device: /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/views/
+      o: bind
+
+networks:
+  app-network:
+    driver: bridge
+</code></pre>
+<p>Nossos volumes nomeados incluem nosso certificado Certbot e os volumes de diretórios de trabalho, além dos volume para os ativos estáticos do nosso site, o <code>web-root</code>. Na maioria dos casos, o driver padrão para os volumes do Docker é o driver <code>local</code>, que no Linux aceita opções semelhantes ao <a href="http://man7.org/linux/man-pages/man8/mount.8.html">comando <code>mount</code></a>. Graças a isso, é possível especificar uma lista de opções de drivers com o <code>driver_opts</code> que montam o diretório <code>views</code> no host, sendo que estes contém os ativos estáticos do nosso aplicativo, além do volume em tempo de execução. O conteúdo do diretório pode ser, então, compartilhado entre contêineres. Para obter mais informações sobre o conteúdo do diretório <code>views</code>, consulte o <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker#step-2-%E2%80%94-creating-the-application-files">Passo 2 de Como construir um aplicativo Node.js com o Docker</a>.</p>
+
+<p>O arquivo <code>docker-compose.yml</code> se parecerá com isto quando terminar:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">version: '3'
+
+services:
+  nodejs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nodejs
+    container_name: nodejs
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  webserver:
+    image: nginx:<span class="highlight">mainline-alpine</span>
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - web-root:/var/www/html
+      - ./nginx-conf:/etc/nginx/conf.d
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+    depends_on:
+      - nodejs
+    networks:
+      - app-network
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - web-root:/var/www/html
+    depends_on:
+      - webserver
+    command: certonly --webroot --webroot-path=/var/www/html --email <span class="highlight">sammy@example.com</span> --agree-tos --no-eff-email --staging -d <span class="highlight">example.com</span>  -d www.<span class="highlight">example.com</span>
+
+volumes:
+  certbot-etc:
+  certbot-var:
+  web-root:
+    driver: local
+    driver_opts:
+      type: none
+      device: /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/views/
+      o: bind
+
+networks:
+  app-network:
+    driver: bridge  
+</code></pre>
+<p>Com as definições de serviço instaladas, você está pronto para iniciar os contêineres e testar seus pedidos de certificado.</p>
+
+<h2 id="passo-4-—-obtendo-certificados-e-credenciais-ssl">Passo 4 — Obtendo certificados e credenciais SSL</h2>
+
+<p>Podemos iniciar nossos contêineres com o <a href="https://docs.docker.com/compose/reference/up/"><code>docker-compose up</code></a>, que criará e executará nossos contêineres e serviços na ordem que especificamos. Se nossos pedidos de domínio forem bem sucedidos, veremos o status correto de saída no nosso resultado e os certificados corretos montados na pasta <code>/etc/letsencrypt/live</code> no contêiner <code>webserver</code>.</p>
+
+<p>Crie os serviços com o <code>docker-compose up</code> e a flag <code>-d</code>, que executarão os contêineres <code>nodejs</code> e <code>webserver</code> em segundo plano:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Você verá um resultado confirmando que seus serviços foram criados:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Creating nodejs ... <span class="highlight">done</span>
+Creating webserver ... <span class="highlight">done</span>
+Creating certbot   ... <span class="highlight">done</span>
+</code></pre>
+<p>Com o uso do <a href="https://docs.docker.com/compose/reference/ps/"><code>docker-compose ps</code></a>, verifique o status dos seus serviços:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose ps
+</li></ul></code></pre>
+<p>Se tudo ocorreu bem, seus serviços <code>nodejs</code> e <code>webserver</code> devem estar <code>Up</code> e o contêiner <code>certbot</code> terá finalizado com uma mensagem de status <code>0</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>  Name                 Command               State          Ports
+------------------------------------------------------------------------
+certbot     certbot certonly --webroot ...   Exit 0
+nodejs      node app.js                      Up       8080/tcp
+webserver   nginx -g daemon off;             Up       0.0.0.0:80-&gt;80/tcp
+</code></pre>
+<p>Se você ver qualquer outra coisa além de <code>Up</code> na coluna <code>State</code> para os serviços <code>nodejs</code> e <code>webserver</code>, ou um status de saída que não seja <code>0</code> para o contêiner <code>certbot</code>, certifique-se de verificar os registros de serviço com o comando <a href="https://docs.docker.com/compose/reference/logs/"><code>docker-compose logs</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose logs <span class="highlight">service_name</span>
+</li></ul></code></pre>
+<p>Agora, é possível verificar se suas credenciais foram instaladas no contêiner <code>webserver</code> com o <a href="https://docs.docker.com/compose/reference/exec/"><code>docker-compose exec</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec webserver ls -la /etc/letsencrypt/live
+</li></ul></code></pre>
+<p>Se seu pedido foi bem sucedido, você verá um resultado similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>total 16
+drwx------ 3 root root 4096 Dec 23 16:48 .
+drwxr-xr-x 9 root root 4096 Dec 23 16:48 ..
+-rw-r--r-- 1 root root  740 Dec 23 16:48 README
+drwxr-xr-x 2 root root 4096 Dec 23 16:48 <span class="highlight">example.com</span>
+</code></pre>
+<p>Agora que você sabe que seu pedido será bem sucedido, edite a definição do serviço <code>certbot</code> para remover a <code>flag --staging.</code></p>
+
+<p>Abra o <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Encontre a seção do arquivo com a definição de serviço do <code>certbot</code> e substitua a flag <code>--staging</code> na opção <code>command</code> pela flag <code>--force-renewal</code>, que dirá ao Certbot que você quer solicitar um novo certificado com os mesmos domínios de um certificado existente. A definição de serviço do <code>certbot</code> deve agora se parecer com isto:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - web-root:/var/www/html
+    depends_on:
+      - webserver
+    command: certonly --webroot --webroot-path=/var/www/html --email <span class="highlight">sammy@example.com</span> --agree-tos --no-eff-email <span class="highlight">--force-renewal</span> -d <span class="highlight">example.com</span> -d www.<span class="highlight">example.com</span>
+...
+</code></pre>
+<p>Agora, é possível executar o <code>docker-compose up</code> para recriar o contêiner do <code>certbot</code> e seus volumes relevantes. Também vamos incluir a opção <code>--no-deps</code> para dizer ao Compose que ele pode pular a inicialização do serviço <code>webserver</code>, já que ele já está em funcionamento:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up --force-recreate --no-deps certbot
+</li></ul></code></pre>
+<p>Você verá um resultado indicando que seu pedido de certificado foi bem sucedido:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>certbot      | IMPORTANT NOTES:
+certbot      |  - Congratulations! Your certificate and chain have been saved at:
+certbot      |    /etc/letsencrypt/live/<span class="highlight">example.com</span>/fullchain.pem
+certbot      |    Your key file has been saved at:
+certbot      |    /etc/letsencrypt/live/<span class="highlight">example.com</span>/privkey.pem
+certbot      |    Your cert will expire on 2019-03-26. To obtain a new or tweaked
+certbot      |    version of this certificate in the future, simply run certbot
+certbot      |    again. To non-interactively renew *all* of your certificates, run
+certbot      |    "certbot renew"
+certbot      |  - Your account credentials have been saved in your Certbot
+certbot      |    configuration directory at /etc/letsencrypt. You should make a
+certbot      |    secure backup of this folder now. This configuration directory will
+certbot      |    also contain certificates and private keys obtained by Certbot so
+certbot      |    making regular backups of this folder is ideal.
+certbot      |  - If you like Certbot, please consider supporting our work by:
+certbot      |
+certbot      |    Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+certbot      |    Donating to EFF:                    https://eff.org/donate-le
+certbot      |
+certbot exited with code 0
+</code></pre>
+<p>Com seus certificados no lugar, você pode seguir em frente para modificar sua configuração Nginx para incluir o SSL.</p>
+
+<h2 id="passo-5-—-modificando-as-configuração-do-servidor-web-e-da-definição-de-serviço">Passo 5 — Modificando as configuração do servidor Web e da definição de serviço</h2>
+
+<p>Habilitar o SSL na nossa configuração Nginx envolverá a adição de um redirecionamento do HTTP para o HTTPS e a especificação dos nossos certificados e locais de chave SSL. Isso também envolverá especificar nosso grupo Diffie-Hellman, que usaremos para o <a href="https://en.wikipedia.org/wiki/Forward_secrecy">Perfect Forward Secrecy</a>.</p>
+
+<p>Como será recriado o serviço <code>webserver</code> para incluir essas adições, você pode interrompê-lo agora:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose stop webserver
+</li></ul></code></pre>
+<p>Em seguida, crie um diretório no seu diretório atual de projeto para sua chave Diffie-Hellman:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir dhparam
+</li></ul></code></pre>
+<p>Gere sua chave com o <a href="https://www.openssl.org/docs/manmaster/man1/openssl-dhparam.html">comando <code>openssl</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo openssl dhparam -out /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/dhparam/dhparam-2048.pem 2048
+</li></ul></code></pre>
+<p>A chave será gerada após alguns instantes.</p>
+
+<p>Para adicionar as informações relevantes do Diffie-Hellman e SSL na sua configuração do Nginx, remova primeiro o arquivo de configuração do Nginx que você criou mais cedo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rm nginx-conf/nginx.conf
+</li></ul></code></pre>
+<p>Abra outra versão do arquivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx-conf/nginx.conf
+</li></ul></code></pre>
+<p>Adicione o seguinte código ao arquivo para redirecionar o HTTP para o HTTPS e adicione credenciais, protocolos e cabeçalhos de segurança. Lembre-se de substituir o <code><span class="highlight">example.com</span></code> pelo seu próprio domínio:</p>
+<div class="code-label " title="~/node_project/nginx-conf/nginx.conf">~/node_project/nginx-conf/nginx.conf</div><pre class="code-pre "><code langs="">
+server {
+        listen 80;
+        listen [::]:80;
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        location ~ /.well-known/acme-challenge {
+          allow all;
+          root /var/www/html;
+        }
+
+        location / {
+                rewrite ^ https://$host$request_uri? permanent;
+        }
+}
+
+server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        server_tokens off;
+
+        ssl_certificate /etc/letsencrypt/live/<span class="highlight">example.com</span>/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/<span class="highlight">example.com</span>/privkey.pem;
+
+        ssl_buffer_size 8k;
+
+        ssl_dhparam /etc/ssl/certs/dhparam-2048.pem;
+
+        ssl_protocols TLSv1.2 TLSv1.1 TLSv1;
+        ssl_prefer_server_ciphers on;
+
+        ssl_ciphers ECDH+AESGCM:ECDH+AES256:ECDH+AES128:DH+3DES:!ADH:!AECDH:!MD5;
+
+        ssl_ecdh_curve secp384r1;
+        ssl_session_tickets off;
+
+        ssl_stapling on;
+        ssl_stapling_verify on;
+        resolver 8.8.8.8;
+
+        location / {
+                try_files $uri @nodejs;
+        }
+
+        location @nodejs {
+                proxy_pass http://nodejs:8080;
+                add_header X-Frame-Options "SAMEORIGIN" always;
+                add_header X-XSS-Protection "1; mode=block" always;
+                add_header X-Content-Type-Options "nosniff" always;
+                add_header Referrer-Policy "no-referrer-when-downgrade" always;
+                add_header Content-Security-Policy "default-src * data: 'unsafe-eval' 'unsafe-inline'" always;
+                # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+                # enable strict transport security only if you understand the implications
+        }
+
+        root /var/www/html;
+        index index.html index.htm index.nginx-debian.html;
+}
+</code></pre>
+<p>O bloco de servidor HTTP especifica o webroot para pedidos de renovação do Certbot no diretório <code>.well-knowb/acme-challenge</code>. Isso também inclui uma <a href="http://nginx.org/en/docs/http/ngx_http_rewrite_module.html#rewrite">diretriz de reescrita</a>, que direciona pedidos HTTP ao diretório root para o HTTPS.</p>
+
+<p>O bloco de servidor HTTPS habilita o <code>ssl</code> e o <code>http2</code>. Para ler mais sobre como o HTTP/2 itera nos protocolos HTTP e os benefícios que ele pode ter para o desempenho do site, consulte a introdução de <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-nginx-with-http-2-support-on-ubuntu-18-04">Como configurar o Nginx com suporte HTTP/2 no Ubuntu 18.04</a>. Este bloco também inclui uma série de opções para garantir que você esteja usando os protocolos e criptografias SSL mais atualizados e que o grampeamento OSCP esteja ligado. O grampeamento OSCP permite a oferta de uma resposta com a data marcada da sua <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-let-s-encrypt#what-is-a-certificate-authority">autoridade de certificação</a> durante o <a href="https://en.wikipedia.org/wiki/Transport_Layer_Security#TLS_handshake">handshake TLS</a>, o que pode acelerar o processo de autenticação.</p>
+
+<p>O bloco também especifica suas credenciais e locais de chave do SSL e Diffie-Hellman.</p>
+
+<p>Por fim, transferimos as informações de passagem de proxy para este bloco, incluindo um bloco de localização com uma diretriz <a href="http://nginx.org/en/docs/http/ngx_http_core_module.html#try_files"><code>try_files</code></a>, direcionando pedidos para nosso contêiner do aplicativo Node.js de alias, e um bloco de localização para aquele alias, que inclui cabeçalhos de segurança que nos permitirão obter classificações <strong>A</strong> em coisas como os sites de teste de servidor <a href="https://www.ssllabs.com/ssltest/">SSL Labs</a> e <a href="https://securityheaders.com/">Security Headers</a>. Estes cabeçalhos incluem o <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options"><code>X-Frame-Options</code></a>, <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options"><code>X-Content-Type-Options</code></a>, <a href="https://scotthelme.co.uk/a-new-security-header-referrer-policy/"><code>Referrer Policy</code></a>, <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy"><code>Content-Security-Policy</code></a>, e <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection"><code>X-XSS-Protection</code></a>. O cabeçalho <a href="https://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security">HTTP <code>Strict Transport Security</code></a> (HSTS) é retirado do comentário - habilite isso apenas se você entender as implicações e avaliou sua <a href="https://hstspreload.org/">funcionalidade de &ldquo;precarregamento&rdquo;</a>.</p>
+
+<p>Assim que terminar a edição, salve e feche o arquivo.</p>
+
+<p>Antes de recriar o serviço <code>webserver</code>, será necessário adicionar algumas coisas na definição de serviço no seu arquivo <code>docker-compose.yml</code>, incluindo informações relevantes de porta para o HTTPS e uma definição de volume do Diffie-Hellman.</p>
+
+<p>Abra o arquivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Na definição do serviço <code>webserver</code>, adicione o seguinte mapeamento de portas e o volume nomeado <code>dhparam</code>:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">...
+ webserver:
+    image: nginx:latest
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - <span class="highlight">"443:443"</span>
+    volumes:
+      - web-root:/var/www/html
+      - ./nginx-conf:/etc/nginx/conf.d
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - <span class="highlight">dhparam:/etc/ssl/certs</span>
+    depends_on:
+      - nodejs
+    networks:
+      - app-network
+</code></pre>
+<p>Em seguida, adicione o volume <code>dhparam</code> às suas definições de <code>volumes</code>:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre yml"><code langs="">...
+volumes:
+  ...
+  dhparam:
+    driver: local
+    driver_opts:
+      type: none
+      device: /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/dhparam/
+      o: bind
+</code></pre>
+<p>De maneira similar ao volume <code>web-root</code>, o volume <code>dhparam</code> montará a chave Diffie-Hellman armazenada no host para o contêiner <code>webserver</code>.</p>
+
+<p>Salve e feche o arquivo quando você terminar a edição.</p>
+
+<p>Recrie o serviço <code>webserver</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d --force-recreate --no-deps webserver
+</li></ul></code></pre>
+<p>Verifique seus serviços com o <code>docker-compose ps</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose ps
+</li></ul></code></pre>
+<p>Você deve ver um resultado indicando que seus serviços <code>nodejs</code> e <code>webserver</code> estão funcionando:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>  Name                 Command               State                     Ports
+----------------------------------------------------------------------------------------------
+certbot     certbot certonly --webroot ...   Exit 0
+nodejs      node app.js                      Up       8080/tcp
+webserver   nginx -g daemon off;             Up       0.0.0.0:443-&gt;443/tcp, 0.0.0.0:80-&gt;80/tcp
+</code></pre>
+<p>Por fim, visite seu domínio para garantir que tudo está funcionando conforme esperado. Navegue com seu browser até <code>https://<span class="highlight">example.com</span></code>, certificando-se de substituir o <code><span class="highlight">example.com</span></code> pelo seu próprio nome de domínio. Você verá a seguinte página de destino:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/landing_page.png" alt="Application Landing Page"></p>
+
+<p>Você também deve ver o ícone de cadeado no indicador de segurança do seu navegador. Se quiser, navegue até a <a href="https://www.ssllabs.com/ssltest/">página de destino do teste de servidor do SSL Labs</a>, ou a <a href="https://securityheaders.com/">página de destino do teste de servidor do Security Headers</a>. As opções de configuração que incluímos devem garantir ao seu site uma classificação <strong>A</strong> em ambos.</p>
+
+<h2 id="passo-6-—-renovando-certificados">Passo 6 — Renovando certificados</h2>
+
+<p>Os certificados do Let&rsquo;s Encrypt são válidos por 90 dias, então você vai querer configurar um processo de renovação automatizado para garantir que eles não expirem. Uma maneira de fazer isso é criando um trabalho com o utilitário de agendamento <code>cron</code>. Neste caso, vamos agendar uma tarefa do <code>cron</code> usando um script que renovará nossos certificados e recarregará nossa configuração do Nginx.</p>
+
+<p>Abra um script chamado <code>ssl_renew.sh</code> no seu diretório de projeto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ssl_renew.sh
+</li></ul></code></pre>
+<p>Adicione o seguinte código ao script para renovar seus certificados e recarregar a configuração do seu servidor Web:</p>
+<div class="code-label " title="~/node_project/ssl_renew.sh">~/node_project/ssl_renew.sh</div><pre class="code-pre "><code class="code-highlight language-bash">#!/bin/bash
+
+/usr/local/bin/docker-compose -f /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/docker-compose.yml run certbot renew --dry-run \
+&amp;&amp; /usr/local/bin/docker-compose -f /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/docker-compose.yml kill -s SIGHUP webserver
+</code></pre>
+<p>Além de especificar o local do nosso binário <code>docker-compose</code>, também especificamos o local do nosso arquivo <code>docker-compose.yml</code> para que os comandos <code>docker-compose</code> sejam executados. Neste caso, estamos usando o <code>docker-compose run</code> para iniciar um contêiner do <code>certbot</code> e sobrepor o <code>command</code> fornecido na nossa definição de serviço com outro: o subcomando <code>renew</code>, que renova certificados que estão próximos de expirar. Incluímos a opção <code>--dry-run</code> aqui para testar nosso script.</p>
+
+<p>O script usa o <a href="https://docs.docker.com/compose/reference/kill/"><code>docker-compose kill</code></a> para enviar um <a href="https://en.wikipedia.org/wiki/SIGHUP">sinal <code>SIGHUP</code></a> para o contêiner <code>webserver</code> de forma a recarregar a configuração do Nginx. Para obter mais informações sobre o uso deste processo para recarregar sua configuração do Nginx, consulte <a href="https://blog.docker.com/2015/04/tips-for-deploying-nginx-official-image-with-docker/">este post do blog do Docker sobre a implantação da imagem oficial do Nginx com o Docker</a>.</p>
+
+<p>Feche o arquivo quando terminar a edição. Torne-o executável:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod +x ssl_renew.sh
+</li></ul></code></pre>
+<p>Em seguida, abra seu arquivo <strong>root</strong> <code>crontab</code> para executar o script de renovação em um intervalo especificado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo crontab -e
+</li></ul></code></pre>
+<p>Se essa é a primeira vez que você edita esse arquivo, será solicitado que escolha um editor:</p>
+<div class="code-label " title="crontab">crontab</div><pre class="code-pre "><code langs="">no crontab for root - using an empty one
+Select an editor.  To change later, run 'select-editor'.
+  1. /bin/ed
+  2. /bin/nano        &lt;---- easiest
+  3. /usr/bin/vim.basic
+  4. /usr/bin/vim.tiny
+Choose 1-4 [2]:
+...
+</code></pre>
+<p>No final do arquivo, adicione a seguinte linha:</p>
+<div class="code-label " title="crontab">crontab</div><pre class="code-pre "><code langs="">...
+*/5 * * * * /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/ssl_renew.sh &gt;&gt; /var/log/cron.log 2&gt;&amp;1
+</code></pre>
+<p>Isso definirá o intervalo de trabalho para a cada cinco minutos, para que você possa testar se seu pedido de renovação funcionou como previsto ou não. Também criamos um arquivo de registro, <code>cron.log</code>, para gravar o resultado relevante do trabalho.</p>
+
+<p>Após cinco minutos, verifique o <code>cron.log</code> para ver se o pedido de renovação foi bem sucedido ou não:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tail -f /var/log/cron.log
+</li></ul></code></pre>
+<p>Um resultado confirmando uma renovação bem-sucedida deve aparecer:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+** DRY RUN: simulating 'certbot renew' close to cert expiry
+**          (The test certificates below have not been saved.)
+
+Congratulations, all renewals succeeded. The following certs have been renewed:
+  /etc/letsencrypt/live/<span class="highlight">example.com</span>/fullchain.pem (success)
+** DRY RUN: simulating 'certbot renew' close to cert expiry
+**          (The test certificates above have not been saved.)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Killing webserver ... <span class="highlight">done</span>
+</code></pre>
+<p>Agora, é possível modificar o arquivo <code>crontab</code> para definir um intervalo diário. Para executar o script todos os dias ao meio-dia, por exemplo, você modificaria a última linha do arquivo para que se pareça com isto:</p>
+<div class="code-label " title="crontab">crontab</div><pre class="code-pre "><code langs="">...
+0 12 * * * /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/ssl_renew.sh &gt;&gt; /var/log/cron.log 2&gt;&amp;1
+</code></pre>
+<p>Você também vai querer remover a opção <code>--dry-run</code> do seu script <code>ssl_renew.sh</code>:</p>
+<div class="code-label " title="~/node_project/ssl_renew.sh">~/node_project/ssl_renew.sh</div><pre class="code-pre "><code class="code-highlight language-bash">#!/bin/bash
+
+/usr/local/bin/docker-compose -f /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/docker-compose.yml run certbot renew \
+&amp;&amp; /usr/local/bin/docker-compose -f /home/<span class="highlight">sammy</span>/<span class="highlight">node_project</span>/docker-compose.yml kill -s SIGHUP webserver
+</code></pre>
+<p>Seu trabalho <code>cron</code> irá garantir que seus certificados do Let&rsquo;s Encrypt não expirem, através da renovação deles quando forem elegíveis. Você também pode <a href="https://www.digitalocean.com/community/tutorials/how-to-manage-logfiles-with-logrotate-on-ubuntu-16-04">configurar uma rotação de registro com o utilitário Logrotate</a> para rotacionar e comprimir seus arquivos de registro.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Você usou contêineres para configurar e executar um aplicativo Node com um proxy reverso Nginx. Você também utilizou certificados SSL para proteger o domínio do seu aplicativo e configurou um trabalho <code>cron</code> para renovar esses certificados quando necessário.</p>
+
+<p>Se estiver interessado em aprender mais sobre plug-ins do Let&rsquo;s Encrypt, consulte nossos artigos sobre o uso do <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04">plug-in Nginx</a> ou do <a href="https://www.digitalocean.com/community/tutorials/how-to-use-certbot-standalone-mode-to-retrieve-let-s-encrypt-ssl-certificates-on-ubuntu-1804">plug-in standalone</a>.</p>
+
+<p>Você também pode aprender mais sobre o Docker Compose consultando os seguintes recursos:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">Como instalar o Docker Compose no Ubuntu 18.04</a>.</li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-configure-a-continuous-integration-testing-environment-with-docker-and-docker-compose-on-ubuntu-16-04">Como configurar um ambiente de teste de integração contínua com o Docker e o Docker Compose no Ubuntu 16.04</a>.</li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-laravel-nginx-and-mysql-with-docker-compose">Como configurar o Laravel, Nginx e MySQL com o Docker Compose</a>.</li>
+</ul>
+
+<p>A <a href="https://docs.docker.com/compose/">documentação do Compose</a> também é um ótimo recurso para aprender mais sobre aplicativos multi-contêiner.</p>

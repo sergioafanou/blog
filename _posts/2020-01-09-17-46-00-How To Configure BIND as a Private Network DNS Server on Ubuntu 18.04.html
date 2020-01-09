@@ -1,0 +1,657 @@
+---
+layout: post
+title: How To Configure BIND as a Private Network DNS Server on Ubuntu 18.04
+network: digitalocean
+date: January 09, 2020 at 05:46PM
+url: https://www.digitalocean.com/community/tutorials/how-to-configure-bind-as-a-private-network-dns-server-on-ubuntu-18-04-pt
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>Uma parte importante do gerenciamento da configuração e infraestrutura de servidores inclui a manutenção de maneira fácil de verificar as interfaces de rede e endereços IP por nome, através da configuração de um Sistema de Nome de Domínio (DNS). Ao usar os nomes de domínio totalmente qualificados (FQDNs), ao invés de endereços IP para especificar os endereços de rede, facilita-se a configuração de serviços e aplicativos e aumenta-se a capacidade de manutenção dos arquivos de configuração. Configurar seu próprio DNS para sua rede privada é uma ótima maneira de melhorar o gerenciamento dos seus servidores.</p>
+
+<p>Neste tutorial, veremos como configurar um servidor DNS interno usando o software de servidor de nomes BIND (BIND9) no Ubuntu 18.04, que pode ser usado pelos seus servidores para resolver nomes de host e endereços IP privados. Isso fornece uma maneira central de gerenciamento dos seus nomes de host e endereços IP privados internos, o que é indispensável quando seu ambiente se expande para mais de alguns poucos hosts.</p>
+
+<p>A versão CentOS deste tutorial pode ser encontrada <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-bind-as-a-private-network-dns-server-on-centos-7">aqui</a>.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para completar este tutorial, você precisará das seguinte infraestrutura. Crie cada servidor <strong>no mesmo datacenter</strong> com o modo de <strong><a href="https://www.digitalocean.com/docs/networking/private-networking/quickstart/">rede privada habilitado</a></strong>:</p>
+
+<ul>
+<li>Um servidor Ubuntu 18.04 para servir como o servidor DNS primário, o <strong>ns1</strong></li>
+<li>(Recomendado) Um segundo servidor Ubuntu 18.04 para servir como um servidor DNS secundário, o <strong>ns2</strong></li>
+<li>Servidores adicionais no mesmo datacenter que usarão seus servidores DNS</li>
+</ul>
+
+<p>Em cada um desses servidores, configure o acesso administrativo por um usuário <code>sudo</code> e um firewall seguindo nosso <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guia de configuração inicial do servidor Ubuntu 18.04</a>.</p>
+
+<p>Se você não estiver familiarizado com os conceitos do DNS, é recomendável que você leia pelo menos as três primeiras partes da nossa <a href="https://www.digitalocean.com/community/tutorial_series/an-introduction-to-managing-dns">Introdução ao gerenciamento do DNS</a>.</p>
+
+<h3 id="exemplo-de-infraestrutura-e-objetivos">Exemplo de infraestrutura e objetivos</h3>
+
+<p>Para os fins deste artigo, vamos assumir o seguinte:</p>
+
+<ul>
+<li>Temos dois servidores que serão designados como nossos servidores de nome DNS. Vamos nos referir a eles como <strong>ns1</strong> e <strong>ns2</strong> neste guia.</li>
+<li>Temos dois servidores de cliente adicionais que irão usar a infraestrutura DNS que criamos. Vamos chamá-los <strong>host1</strong> e <strong>host2</strong> neste guia. Você pode adicionar quantos quiser para sua infraestrutura.</li>
+<li>Todos esses servidores existem no mesmo datacenter. Vamos assumir que este datacenter chama-se <strong>nyc3</strong>.</li>
+<li>Todos esses servidores têm o modo de rede privada habilitado (e estão na sub-rede <code>10.128.0.0/16</code>. É provável que você tenha que ajustar isso para seus servidores).</li>
+<li>Todos os servidores estão conectados a um projeto executado em &ldquo;example.com&rdquo;. Como nosso sistema DNS será totalmente interno e privado, você não precisa comprar um nome de domínio. No entanto, usar um domínio que você possui pode ajudar a evitar conflitos com domínios de encaminhamento público.</li>
+</ul>
+
+<p>Com essas suposições, decidimos que é sensato usar um esquema de nomeação que usa &ldquo;nyc3.example.com&rdquo; para se referir à nossa sub-rede ou zona privada. Portanto, o Nome de domínio totalmente qualificado (FQDN) privado do <strong>host1</strong> será <strong>host1.nyc3.example.com</strong>. Consulte a tabela a seguir com os detalhes relevantes:</p>
+
+<table><thead>
+<tr>
+<th>Host</th>
+<th>Função</th>
+<th>FQDN privado</th>
+<th>Endereço IP privado</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>ns1</td>
+<td>Servidor DNS primário</td>
+<td>ns1.nyc3.example.com</td>
+<td>10.128.10.11</td>
+</tr>
+<tr>
+<td>ns2</td>
+<td>Servidor DNS secundário</td>
+<td>n2.nyc3.example.com</td>
+<td>10.128.20.12</td>
+</tr>
+<tr>
+<td>host1</td>
+<td>Host genérico 1</td>
+<td>host1.nyc3.example.com</td>
+<td>10.128.100.101</td>
+</tr>
+<tr>
+<td>host2</td>
+<td>Host genérico 2</td>
+<td>host2.nyc3.example.com</td>
+<td>10.128.200.102</td>
+</tr>
+</tbody></table>
+
+<p><span class='note'><strong>Nota:</strong> A sua configuração existente será diferente, mas os nomes dos exemplos e endereços IP serão usados para demonstrar como configurar um servidor DNS para fornecer um DNS interno funcional. Você consegue adaptar essa configuração ao seu ambiente com facilidade, pela substituição dos nomes de host e endereços IP privados pelos seus. Não é necessário usar o nome regional do datacenter no seu esquema de nomeação, mas usamos ele aqui para denotar que esses hosts pertencem a uma rede privada de um datacenter particular. Se você usar vários datacenters, é possível configurar um DNS interno dentro de cada datacenter respectivo.<br></span></p>
+
+<p>Ao final deste tutorial, teremos um servidor DNS primário, <strong>ns1</strong>, e opcionalmente um servidor DNS secundário, <strong>ns2</strong>, que servirá como backup.</p>
+
+<p>Vamos começar pela instalação do nosso servidor DNS primário, o ns1.</p>
+
+<h2 id="como-instalar-o-bind-nos-servidores-dns">Como instalar o BIND nos servidores DNS</h2>
+
+<p><span class='note'><strong>Nota:</strong> As passagens que estiverem destacadas em <span class="highlight">vermelho</span> são importantes! Normalmente, elas serão usadas para denotar algo que precisa ser substituído pelas suas próprias configurações ou que deve ser modificado ou adicionado a um arquivo de configuração. Por exemplo, se você ver algo como <code><span class="highlight">host1.nyc3.example.com</span></code>, substitua-o pelo FQDN do seu próprio servidor. De forma similar, se você ver <code><span class="highlight">host1_private_IP</span></code>, substitua-o pelo endereço IP privado do seu próprio servidor.<br></span></p>
+
+<p>Em ambos os servidores DNS, <strong>ns1</strong> e <strong>ns2</strong>, atualize o cache de pacotes <code>apt</code> digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="ns$">sudo apt-get update
+</li></ul></code></pre>
+<p>Agora, instale o BIND:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="ns$">sudo apt-get install bind9 bind9utils bind9-doc
+</li></ul></code></pre>
+<h3 id="como-configurar-o-bind-para-o-modo-ipv4">Como configurar o Bind para o modo IPv4</h3>
+
+<p>Antes de continuar, vamos colocar o BIND no modo IPv4, já que nossa rede privada usa exclusivamente o IPv4. Nos dois servidores, edite o arquivo de configuração padrão <code>bind9</code> digitando:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="ns$">sudo nano /etc/default/bind9
+</li></ul></code></pre>
+<p>Adicione &ldquo;-4&rdquo; ao final do parâmetro <code>OPTIONS</code>. Ele deve se parecer com o seguinte:</p>
+<div class="code-label " title="/etc/default/bind9">/etc/default/bind9</div><pre class="code-pre "><code langs="">. . .
+OPTIONS="-u bind <span class="highlight">-4</span>"
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<p>Reinicie o BIND para implementar as alterações:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="ns$">sudo systemctl restart bind9
+</li></ul></code></pre>
+<p>Agora que o BIND está instalado, vamos configurar o servidor DNS primário.</p>
+
+<h2 id="como-configurar-o-servidor-dns-primário">Como configurar o servidor DNS primário</h2>
+
+<p>A configuração do BIND consiste em vários arquivos, que estão incluídos no arquivo de configuração principal, o <code>named.conf</code>. Estes nomes de arquivos começam com <code>named</code> porque este é o nome do processo que o BIND executa (abreviação de &ldquo;domain name daemon&rdquo;). Vamos começar configurando o arquivo de opções.</p>
+
+<h3 id="como-configurar-o-arquivo-de-opções">Como configurar o arquivo de opções</h3>
+
+<p>No <strong>ns1</strong>, abra o arquivo <code>named.conf.options</code> para edição:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo nano /etc/bind/named.conf.options
+</li></ul></code></pre>
+<p>Acima do bloco <code>options</code> existente, crie um bloco ALC (lista de controle de acesso) <em>new</em> chamado &ldquo;confiáveis&rdquo;. É aqui que vamos definir uma lista de clientes para os quais consultas recursivas DNS serão permitidas (ou seja, seus servidores que estão no mesmo datacenter que o <strong>ns1</strong>). Usando nosso exemplo de endereço IP privado, serão adicionados o <strong>ns1</strong>, <strong>ns2</strong>, <strong>host1</strong> e <strong>host2</strong> à nossa lista de clientes confiáveis:</p>
+<div class="code-label " title="/etc/bind/named.conf.options — 1 of 3">/etc/bind/named.conf.options — 1 of 3</div><pre class="code-pre  second-environment"><code langs="">acl "trusted" {
+        <span class="highlight">10.128.10.11</span>;    # ns1 - can be set to localhost
+        <span class="highlight">10.128.20.12</span>;    # ns2
+        <span class="highlight">10.128.100.101</span>;  # host1
+        <span class="highlight">10.128.200.102</span>;  # host2
+};
+
+options {
+
+        . . .
+</code></pre>
+<p>Agora que temos nossa lista de clientes DNS confiáveis, queremos editar o bloco <code>options</code>. Atualmente, o início do bloco se parece com o seguinte:</p>
+<div class="code-label " title="/etc/bind/named.conf.options — 2 of 3">/etc/bind/named.conf.options — 2 of 3</div><pre class="code-pre  second-environment"><code langs="">        . . .
+};
+
+options {
+        directory "/var/cache/bind";
+        . . .
+}
+</code></pre>
+<p>Abaixo da diretriz <code>directory</code>, adicione as linhas de configuração destacadas (e substitua no endereço IP do <strong>ns1</strong> apropriado) para que fique dessa forma:</p>
+<div class="code-label " title="/etc/bind/named.conf.options — 3 of 3">/etc/bind/named.conf.options — 3 of 3</div><pre class="code-pre  second-environment"><code langs="">        . . .
+
+};
+
+options {
+        directory "/var/cache/bind";
+
+        <span class="highlight">recursion yes;</span>                 # enables resursive queries
+        <span class="highlight">allow-recursion { trusted; };</span>  # allows recursive queries from "trusted" clients
+        <span class="highlight">listen-on { 10.128.10.11; };</span>   # ns1 private IP address - listen on private network only
+        <span class="highlight">allow-transfer { none; };</span>      # disable zone transfers by default
+
+        <span class="highlight">forwarders {</span>
+                <span class="highlight">8.8.8.8;</span>
+                <span class="highlight">8.8.4.4;</span>
+        <span class="highlight">};</span>
+
+        . . .
+};
+</code></pre>
+<p>Quando você terminar, salve e feche o arquivo <code>named.conf.options</code>. A configuração acima especifica que apenas seus próprios servidores (os &ldquo;confiáveis&rdquo;) poderão consultar seu servidor DNS para domínios externos.</p>
+
+<p>Em seguida, vamos configurar o arquivo local para especificar nossas zonas de DNS.</p>
+
+<h3 id="como-configurar-o-arquivo-local">Como configurar o arquivo local</h3>
+
+<p>No <strong>ns1</strong>, abra o arquivo <code>named.conf.local</code> para edição:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo nano /etc/bind/named.conf.local
+</li></ul></code></pre>
+<p>Com exceção de alguns comentários, o arquivo deve estar vazio. Aqui, vamos especificar nossa zona de encaminhamento e nossa zona inversa. As <strong>zonas de DNS</strong> designam um escopo específico para o gerenciamento e definição dos registros de DNS. Como todos nossos domínios estarão dentro do sub-domínio &ldquo;nyc3.example.com&rdquo;, usaremos ele como nossa zona de encaminhamento. Como os endereços IP privados dos nossos servidores estão no espaço de IP <code>10.128.0.0/16</code>, uma zona inversa será configurada para que possamos definir pesquisas inversas dentro desse intervalo.</p>
+
+<p>Adicione a zona de encaminhamento com as linhas a seguir, substituindo o nome da zona pelo seu próprio e o <strong>endereço IP privado do servidor DNS secundário</strong> na diretriz <code>allow-transfer</code>:</p>
+<div class="code-label " title="/etc/bind/named.conf.local — 1 of 2">/etc/bind/named.conf.local — 1 of 2</div><pre class="code-pre  second-environment"><code langs="">zone "<span class="highlight">nyc3.example.com</span>" {
+    type master;
+    file "/etc/bind/zones/db.<span class="highlight">nyc3.example.com</span>"; # zone file path
+    allow-transfer { <span class="highlight">10.128.20.12</span>; };           # ns2 private IP address - secondary
+};
+</code></pre>
+<p>Supondo que nossa sub-rede privada seja <code>10.128.0.0/16</code>, adicione a zona reversa com as linhas a seguir (<strong>note que nosso nome da zona reversa inicia com &ldquo;128.10&rdquo;, que é a reversão do octeto reverso de &ldquo;10.128&rdquo;</strong>):</p>
+<div class="code-label " title="/etc/bind/named.conf.local — 2 of 2">/etc/bind/named.conf.local — 2 of 2</div><pre class="code-pre  second-environment"><code langs="">    . . .
+};
+
+zone "<span class="highlight">128.10</span>.in-addr.arpa" {
+    type master;
+    file "/etc/bind/zones/db.<span class="highlight">10.128</span>";  # 10.128.0.0/16 subnet
+    allow-transfer { <span class="highlight">10.128.20.12</span>; };  # ns2 private IP address - secondary
+};
+</code></pre>
+<p>Se seus servidores se estendem por várias sub-redes privadas mas estão no mesmo datacenter, certifique-se de especificar uma zona adicional e um arquivo de zona para cada sub-rede distinta. Quando terminar de adicionar todas as suas zonas desejadas, salve e saia do arquivo <code>named.conf.local</code>.</p>
+
+<p>Agora que nossas zonas estão especificadas em BIND, precisamos criar os arquivos correspondentes da zona de encaminhamento e da zona reversa.</p>
+
+<h3 id="como-criar-o-arquivo-da-zona-de-encaminhamento">Como criar o arquivo da zona de encaminhamento</h3>
+
+<p>O arquivo da zona de encaminhamento está onde definimos os registros DNS para pesquisas de encaminhamentos de DNS. Isso é, quando o DNS receber um nome de consulta, &ldquo;host1.nyc3.example.com&rdquo;, por exemplo, ele olhará no arquivo da zona de encaminhamento para resolver o endereço IP privado correspondente do <strong>host1.</strong></p>
+
+<p>Vamos criar o diretório onde nossos arquivos de zona irão permanecer. De acordo com nossa configuração <strong>named.conf.local</strong>, esse local deve ser o <code>/etc/bind/zones</code>:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo mkdir /etc/bind/zones
+</li></ul></code></pre>
+<p>Vamos basear nosso arquivo da zona de encaminhamento no arquivo de zona amostral <code>db.local</code>. Copie-o para o local correto com os seguintes comandos:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo cp /etc/bind/db.local /etc/bind/zones/db.<span class="highlight">nyc3.example.com</span>
+</li></ul></code></pre>
+<p>Agora, vamos editar nosso arquivo da zona de encaminhamento:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo nano /etc/bind/zones/db.<span class="highlight">nyc3.example.com</span>
+</li></ul></code></pre>
+<p>Inicialmente, ele se parecerá com o seguinte:</p>
+<div class="code-label " title="/etc/bind/zones/db.nyc3.example.com — original">/etc/bind/zones/db.nyc3.example.com — original</div><pre class="code-pre  second-environment"><code langs="">$TTL    604800
+@       IN      SOA     localhost. root.localhost. (
+                              2         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+@       IN      NS      localhost.      ; delete this line
+@       IN      A       127.0.0.1       ; delete this line
+@       IN      AAAA    ::1             ; delete this line
+</code></pre>
+<p>Primeiro, vamos editar o registro do SOA. Substitua o primeiro &ldquo;localhost&rdquo; pelo FQDN do <strong>ns1</strong> e então substitua &ldquo;root.localhost&rdquo; por &ldquo;admin.nyc3.example.com&rdquo;. Toda vez que você editar um arquivo de zona, será necessário aumentar o valor <strong>serial</strong> antes de reiniciar o processo <code>named</code>. Vamos incrementá-lo para &ldquo;3&rdquo;. Agora, ele deve se parecer com isso:</p>
+<div class="code-label " title="/etc/bind/zones/db.nyc3.example.com — updated 1 of 3">/etc/bind/zones/db.nyc3.example.com — updated 1 of 3</div><pre class="code-pre  second-environment"><code langs="">@       IN      SOA     <span class="highlight">ns1.nyc3.example.com</span>. <span class="highlight">admin</span>.<span class="highlight">nyc3.example.com</span>. (
+                              <span class="highlight">3</span>         ; Serial
+
+                              . . .
+</code></pre>
+<p>Em seguida, delete os três registros ao final do arquivo (depois do registro do SOA). Se não tiver certeza sobre quais linhas excluir, elas estão marcadas acima com um comentário &ldquo;delete this line&rdquo;.</p>
+
+<p>Ao final do arquivo, adicione os registros do servidor do seu nome com as linhas a seguir (substitua os nomes pelos seus próprios). Note que a segunda coluna especifica que esses registros são &ldquo;NS&rdquo;:</p>
+<div class="code-label " title="/etc/bind/zones/db.nyc3.example.com — updated 2 of 3">/etc/bind/zones/db.nyc3.example.com — updated 2 of 3</div><pre class="code-pre  second-environment"><code langs="">. . .
+
+; name servers - NS records
+    IN      NS      ns1.<span class="highlight">nyc3.example.com</span>.
+    IN      NS      ns2.<span class="highlight">nyc3.example.com</span>.
+</code></pre>
+<p>Agora, adicione os registros A para seus hosts que pertencem a esta zona. Isso inclui qualquer servidor cujo nome queremos que termine com &ldquo;.nyc3.example.com&rdquo; (substitua os nomes e endereços IP privados). Usando nossos nomes de exemplo e endereços IP privados, vamos adicionar registros A para o <strong>ns1</strong>, <strong>ns2</strong>, <strong>host1</strong> e <strong>host2</strong> desta forma:</p>
+<div class="code-label " title="/etc/bind/zones/db.nyc3.example.com — updated 3 of 3">/etc/bind/zones/db.nyc3.example.com — updated 3 of 3</div><pre class="code-pre  second-environment"><code langs="">. . .
+
+; name servers - A records
+ns1.<span class="highlight">nyc3.example.com</span>.          IN      A       <span class="highlight">10.128.10.11</span>
+ns2.<span class="highlight">nyc3.example.com</span>.          IN      A       <span class="highlight">10.128.20.12</span>
+
+; 10.128.0.0/16 - A records
+<span class="highlight">host1.nyc3.example.com</span>.        IN      A      <span class="highlight">10.128.100.101</span>
+<span class="highlight">host2.nyc3.example.com</span>.        IN      A      <span class="highlight">10.128.200.102</span>
+</code></pre>
+<p>Salve e feche o arquivo <code>db.nyc3.example.com</code>.</p>
+
+<p>Nosso arquivo de exemplo final da zona de encaminhamento se parece com o seguinte:</p>
+<div class="code-label " title="/etc/bind/zones/db.nyc3.example.com — updated">/etc/bind/zones/db.nyc3.example.com — updated</div><pre class="code-pre  second-environment"><code langs="">$TTL    604800
+@       IN      SOA     <span class="highlight">ns1.nyc3.example.com</span>. admin.<span class="highlight">nyc3.example.com</span>. (
+                  <span class="highlight">3</span>     ; Serial
+             604800     ; Refresh
+              86400     ; Retry
+            2419200     ; Expire
+             604800 )   ; Negative Cache TTL
+;
+; name servers - NS records
+     IN      NS      ns1.<span class="highlight">nyc3.example.com</span>.
+     IN      NS      ns2.<span class="highlight">nyc3.example.com</span>.
+
+; name servers - A records
+ns1.<span class="highlight">nyc3.example.com</span>.          IN      A       <span class="highlight">10.128.10.11</span>
+ns2.<span class="highlight">nyc3.example.com</span>.          IN      A       <span class="highlight">10.128.20.12</span>
+
+; 10.128.0.0/16 - A records
+<span class="highlight">host1.nyc3.example.com</span>.        IN      A      <span class="highlight">10.128.100.101</span>
+<span class="highlight">host2.nyc3.example.com</span>.        IN      A      <span class="highlight">10.128.200.102</span>
+</code></pre>
+<p>Agora, vamos seguir para o(s) arquivo(s) da zona reversa.</p>
+
+<h3 id="como-criar-o-s-arquivo-s-da-zona-reversa">Como criar o(s) arquivo(s) da zona reversa</h3>
+
+<p>Os arquivos da zona reverso estão onde definimos os registros DNS PTR para pesquisas de DNS reverso. Isso é, quando o DNS recebe uma consulta pelo endereço IP, &ldquo;10.128.100.101&rdquo;, por exemplo, ele olhará no(s) arquivo(s) da zona reversa para resolver o FQDN correspondente, sendo ele, o &ldquo;host1.nyc3.example.com&rdquo; neste caso.</p>
+
+<p>No <strong>ns1</strong>, para cada zona reversa especificada no arquivo <code>named.conf.local</code>, crie um arquivo de zona reversa. Vamos basear nosso(s) arquivo(s) de zona reversa no arquivo de zona amostral <code>db.127</code>. Copie-o para o local correto com os seguintes comandos (subtituindo o nome do arquivo de destino para que ele corresponda à definição da sua zona reversa):</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo cp /etc/bind/db.127 /etc/bind/zones/db.<span class="highlight">10.128</span>
+</li></ul></code></pre>
+<p>Edite o arquivo de zona reversa que corresponde à(s) zona(s) reversa(s) definida(s) em <code>named.conf.local</code>:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo nano /etc/bind/zones/db.<span class="highlight">10.128</span>
+</li></ul></code></pre>
+<p>Inicialmente, ele se parecerá com o seguinte:</p>
+<div class="code-label " title="/etc/bind/zones/db.10.128 — original">/etc/bind/zones/db.10.128 — original</div><pre class="code-pre  second-environment"><code langs="">$TTL    604800
+@       IN      SOA     localhost. root.localhost. (
+                              1         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+@       IN      NS      localhost.      ; delete this line
+1.0.0   IN      PTR     localhost.      ; delete this line
+</code></pre>
+<p>De maneira similar ao arquivo de zona de encaminhamento, edite o registro do SOA e aumente o valor <strong>serial</strong>. Ela deve se parecer com isto:</p>
+<div class="code-label " title="/etc/bind/zones/db.10.128 — updated 1 of 3">/etc/bind/zones/db.10.128 — updated 1 of 3</div><pre class="code-pre  second-environment"><code langs="">@       IN      SOA     <span class="highlight">ns1.nyc3.example.com</span>. <span class="highlight">admin</span>.<span class="highlight">nyc3.example.com</span>. (
+                              <span class="highlight">3</span>         ; Serial
+
+                              . . .
+</code></pre>
+<p>Agora, delete os dois registros ao final do arquivo (depois do registro do SOA). Se não tiver certeza sobre quais linhas excluir, elas estão marcadas acima com um comentário &ldquo;delete this line&rdquo;.</p>
+
+<p>Ao final do arquivo, adicione os registros do servidor do seu nome com as linhas a seguir (substitua os nomes pelos seus próprios). Note que a segunda coluna especifica que esses registros são &ldquo;NS&rdquo;:</p>
+<div class="code-label " title="/etc/bind/zones/db.10.128 — updated 2 of 3">/etc/bind/zones/db.10.128 — updated 2 of 3</div><pre class="code-pre  second-environment"><code langs="">. . .
+
+; name servers - NS records
+      IN      NS      ns1.<span class="highlight">nyc3.example.com</span>.
+      IN      NS      ns2.<span class="highlight">nyc3.example.com</span>.
+</code></pre>
+<p>Então, adicione os registros <code>PTR</code> para todos os seus servidores cujos endereços IP estão na sub-rede do arquivo de zona que está editando. No nosso exemplo, isso inclui todos os nossos hosts porque eles estão todos na sub-rede <code>10.128.0.0/16</code>. Note que a primeira coluna consiste nos dois últimos octetos dos endereços IP privados dos seus servidores em <strong>reversed order</strong>. Certifique-se de substituir os nomes e endereços IP privados para corresponder aos seus servidores:</p>
+<div class="code-label " title="/etc/bind/zones/db.10.128 — updated 3 of 3">/etc/bind/zones/db.10.128 — updated 3 of 3</div><pre class="code-pre  second-environment"><code langs="">. . .
+
+; PTR Records
+<span class="highlight">11.10</span>   IN      PTR     ns1.<span class="highlight">nyc3.example.com</span>.    ; 10.128.10.11
+<span class="highlight">12.20</span>   IN      PTR     ns2.<span class="highlight">nyc3.example.com</span>.    ; 10.128.20.12
+<span class="highlight">101.100</span> IN      PTR     <span class="highlight">host1.nyc3.example.com</span>.  ; 10.128.100.101
+<span class="highlight">102.200</span> IN      PTR     <span class="highlight">host2.nyc3.example.com</span>.  ; 10.128.200.102
+</code></pre>
+<p>Salve e feche o arquivo de zona reversa (repita essa seção caso precise adicionar mais arquivos de zona reversa).</p>
+
+<p>Nosso arquivo de exemplo final de zona reversa se parece com o seguinte:</p>
+<div class="code-label " title="/etc/bind/zones/db.10.128 — updated">/etc/bind/zones/db.10.128 — updated</div><pre class="code-pre  second-environment"><code langs="">$TTL    604800
+@       IN      SOA     <span class="highlight">nyc3.example.com</span>. admin.nyc3.example.com. (
+                              <span class="highlight">3</span>         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+; name servers
+      IN      NS      ns1.<span class="highlight">nyc3.example.com</span>.
+      IN      NS      ns2.<span class="highlight">nyc3.example.com</span>.
+
+; PTR Records
+<span class="highlight">11.10</span>   IN      PTR     ns1.<span class="highlight">nyc3.example.com</span>.    ; 10.128.10.11
+<span class="highlight">12.20</span>   IN      PTR     ns2.<span class="highlight">nyc3.example.com</span>.    ; 10.128.20.12
+<span class="highlight">101.100</span> IN      PTR     <span class="highlight">host1.nyc3.example.com</span>.  ; 10.128.100.101
+<span class="highlight">102.200</span> IN      PTR     <span class="highlight">host2.nyc3.example.com</span>.  ; 10.128.200.102
+</code></pre>
+<p>Agora que terminamos de editar nossos arquivos, podemos verificá-los à procura de erros.</p>
+
+<h3 id="verificando-a-sintaxe-de-configuração-do-bind">Verificando a sintaxe de configuração do BIND</h3>
+
+<p>Execute o comando a seguir para verificar a sintaxe dos arquivos <code>named.conf*</code>:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo named-checkconf
+</li></ul></code></pre>
+<p>Se seus arquivos de configuração nomeados não tiverem erros de sintaxe, você retornará ao seu prompt do shell e não verá nenhuma mensagem de erro. Se houver problemas com seus arquivos de configuração, reveja a mensagem de erro e a seção &ldquo;Como configurar o servidor DNS primário&rdquo;, e então tente o <code>named-checkconf</code> novamente.</p>
+
+<p>O comando <code>named-checkzone</code> pode ser usado para verificar a correção dos arquivos da sua zona. Seu primeiro argumento especifica um nome de zona e o segundo especifica o arquivo da zona correspondente, sendo que ambos estão definidos em <code>named.conf.local</code>.</p>
+
+<p>Por exemplo, para verificar a configuração da zona de encaminhamento &ldquo;<span class="highlight">nyc3.example.com</span>&rdquo;, execute o seguinte comando (mude os nomes para que correspondam à sua zona de encaminhamento e arquivo):</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo named-checkzone <span class="highlight">nyc3.example.com</span> db.<span class="highlight">nyc3.example.com</span>
+</li></ul></code></pre>
+<p>E para verificar a configuração da zona reversa &ldquo;<span class="highlight">128.10</span>.in-addr.arpa&rdquo;, execute o seguinte comando (mude os números para que correspondam à sua zona reversa e arquivo):</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo named-checkzone <span class="highlight">128.10</span>.in-addr.arpa /etc/bind/zones/db.<span class="highlight">10.128</span>
+</li></ul></code></pre>
+<p>Quando todos os arquivos de configuração e zona estiverem livres de erros, você está pronto para reiniciar o serviço BIND.</p>
+
+<h3 id="reiniciando-o-bind">Reiniciando o BIND</h3>
+
+<p>Reinicie o BIND:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo systemctl restart bind9
+</li></ul></code></pre>
+<p>Se você tiver o firewall UFW configurado, libere o acesso para o BIND digitando:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns1$">sudo ufw allow Bind9
+</li></ul></code></pre>
+<p>Seu servidor de DNS primário agora está configurado e pronto para responder às consultas do DNS. Vamos seguir em frente para a criação do servidor DNS secundário.</p>
+
+<h2 id="configurando-o-servidor-dns-secundário">Configurando o servidor DNS secundário</h2>
+
+<p>Na maioria dos ambientes, é uma boa ideia configurar um servidor DNS secundário que responda aos pedidos caso o primário fique indisponível. Felizmente, o servidor DNS secundário é muito mais fácil de configurar.</p>
+
+<p>No <strong>ns2</strong>, edite o arquivo <code>named.conf.options</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns2$">sudo nano /etc/bind/named.conf.options
+</li></ul></code></pre>
+<p>Ao topo do arquivo, adicione o ACL com os endereços IP privados de todos os seus servidores confiáveis:</p>
+<div class="code-label " title="/etc/bind/named.conf.options — updated 1 of 2 (secondary)">/etc/bind/named.conf.options — updated 1 of 2 (secondary)</div><pre class="code-pre  third-environment"><code langs="">acl "trusted" {
+        <span class="highlight">10.128.10.11</span>;   # ns1
+        <span class="highlight">10.128.20.12</span>;   # ns2 - can be set to localhost
+        <span class="highlight">10.128.100.101</span>;  # host1
+        <span class="highlight">10.128.200.102</span>;  # host2
+};
+
+options {
+
+        . . .
+</code></pre>
+<p>Abaixo da diretriz <code>directory</code>, adicione as seguintes linhas:</p>
+<div class="code-label " title="/etc/bind/named.conf.options — updated 2 of 2 (secondary)">/etc/bind/named.conf.options — updated 2 of 2 (secondary)</div><pre class="code-pre  third-environment"><code langs="">        recursion yes;
+        allow-recursion { trusted; };
+        listen-on { <span class="highlight">10.128.20.12</span>; };      # ns2 private IP address
+        allow-transfer { none; };          # disable zone transfers by default
+
+        forwarders {
+                8.8.8.8;
+                8.8.4.4;
+        };
+</code></pre>
+<p>Salve e feche o arquivo <code>named.conf.options</code>. Este arquivo deve se parecer exatamente com o arquivo <code>named.conf.options</code> do <strong>ns1</strong>, exceto por precisar ser configurado para escutar o endereço IP privado do <strong>ns2</strong>.</p>
+
+<p>Agora, edite o arquivo <code>named.conf.local</code>:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns2$">sudo nano /etc/bind/named.conf.local
+</li></ul></code></pre>
+<p>Definas as zonas subordinadas que correspondam às zonas mestras no servidor DNS primário. Note que como o tipo é &ldquo;subordinado&rdquo;, o arquivo não contém um caminho e há uma diretriz <code>masters</code> que deve ser configurada para o endereço IP privado do servidor DNS primário. Se você definiu várias zonas inversas no servidor DNS primário, certifique-se de adicionar todas elas aqui:</p>
+<div class="code-label " title="/etc/bind/named.conf.local — updated (secondary)">/etc/bind/named.conf.local — updated (secondary)</div><pre class="code-pre  third-environment"><code langs="">zone "<span class="highlight">nyc3.example.com</span>" {
+    type slave;
+    file "db.<span class="highlight">nyc3.example.com</span>";
+    masters { <span class="highlight">10.128.10.11</span>; };  # ns1 private IP
+};
+
+zone "<span class="highlight">128.10</span>.in-addr.arpa" {
+    type slave;
+    file "db.<span class="highlight">10.128</span>";
+    masters { <span class="highlight">10.128.10.11</span>; };  # ns1 private IP
+};
+</code></pre>
+<p>Agora salve e feche o arquivo <code>named.conf.local</code>.</p>
+
+<p>Execute o comando a seguir para verificar a validade dos seus arquivos de configuração:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns2$">sudo named-checkconf
+</li></ul></code></pre>
+<p>Assim que for aprovado, reinicie o BIND:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns2$">sudo systemctl restart bind9
+</li></ul></code></pre>
+<p>Permita conexões DNS ao servidor pela alteração das regras do firewall UFW:</p>
+<pre class="code-pre custom_prefix third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="ns2$">sudo ufw allow Bind9
+</li></ul></code></pre>
+<p>Agora você tem servidores DNS primários e secundários para resoluções de nome e endereço IP da rede privada. Agora, você precisa configurar os seus servidores de cliente para usar os seus servidores DNS privados.</p>
+
+<h2 id="configurando-os-clientes-dns">Configurando os clientes DNS</h2>
+
+<p>Antes que todos os seus servidores ACL &ldquo;confiáveis&rdquo; possam consultar seus servidores DNS, você precisa configurar cada um deles para usar o <strong>ns1</strong> e o <strong>ns2</strong> como servidores de nomes. Este processo varia dependendo do SO, mas para a maioria das distribuições do Linux, envolve a adição dos seus servidores de nomes ao arquivo <code>/etc/resolv.conf</code>.</p>
+
+<h3 id="clientes-ubuntu-18-04">Clientes Ubuntu 18.04</h3>
+
+<p>No Ubuntu 18.04, a rede é configurada com o Netplan, uma abstração que permite que você escreva configurações padronizadas de rede e aplique-as para softwares backend de rede incompatíveis. Para configurar o DNS, precisamos escrever um arquivo de configuração do Netplan.</p>
+
+<p>Primeiramente, encontre o dispositivo associado à sua rede privada consultando a sub-rede privada com o comando <code>ip address</code>:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip address show to <span class="highlight">10.128.0.0/16</span>
+</li></ul></code></pre><pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>3: <span class="highlight">eth1</span>: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    inet 10.128.100.101/16 brd 10.128.255.255 scope global eth1
+           valid_lft forever preferred_lft forever
+</code></pre>
+<p>Neste exemplo, a interface privada é a <code>eth1</code>.</p>
+
+<p>Em seguida, crie um novo arquivo em <code>/etc/netplan</code> chamado <code>00-private-nameservers.yaml</code>:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/netplan/00-private-nameservers.yaml
+</li></ul></code></pre>
+<p>Cole lá dentro o seguinte conteúdo. Será necessário modificar a interface da rede privada, os endereços dos seus servidores DNS <strong>ns1</strong> e <strong>ns2</strong> e da zona do DNS:</p>
+
+<p><span class='note'><strong>Nota:</strong> o Netplan usa o <a href="http://yaml.org/">formato de serialização de dados YAML</a> para seus arquivos de configuração. Como o YAML usa recuos e espaços em branco para definir sua estrutura de dados, certifique-se de que sua definição utilize recuos consistentes para evitar erros.<br></span></p>
+<div class="code-label " title="/etc/netplan 00-private-nameservers.yaml">/etc/netplan 00-private-nameservers.yaml</div><pre class="code-pre  fourth-environment"><code langs="">network:
+    version: 2
+    ethernets:
+        <span class="highlight">eth1</span>:                                 # Private network interface
+            nameservers:
+                addresses:
+                - <span class="highlight">10.128.10.11</span>                # Private IP for ns1
+                - <span class="highlight">10.132.20.12</span>                # Private IP for ns2
+                search: [ <span class="highlight">nyc3.example.com</span> ]  # DNS zone
+
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<p>Em seguida, faça o Netplan tentar usar o novo arquivo de configuração utilizando o <code>netplan try</code>. Se houver problemas que causem uma perda de rede, o Netplan irá retroceder automaticamente as mudanças após um tempo limite:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo netplan try
+</li></ul></code></pre><pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Warning: Stopping systemd-networkd.service, but it can still be activated by:
+  systemd-networkd.socket
+Do you want to keep these settings?
+
+
+Press ENTER before the timeout to accept the new configuration
+
+
+Changes will revert in 120 seconds
+</code></pre>
+<p>Se a contagem regressiva estiver atualizando corretamente ao fim, a nova configuração é, ao menos, funcional o suficiente para não interromper sua conexão via protocolo SSH. Pressione <strong>ENTER</strong> para aceitar a nova configuração.</p>
+
+<p>Agora, verifique o resolvedor DNS do sistema para determinar se sua configuração de DNS foi aplicada:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemd-resolve --status
+</li></ul></code></pre>
+<p>Role para baixo até ver a seção da sua interface de rede privada. Você deve ver os endereços IP privados dos seus servidores DNS listados primeiro, seguidos de alguns valores de retorno. Seu domínio deve estar no &ldquo;DNS Domain&rdquo;:</p>
+<pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+Link 3 (eth1)
+      Current Scopes: DNS
+       LLMNR setting: yes
+MulticastDNS setting: no
+      DNSSEC setting: no
+    DNSSEC supported: no
+         DNS Servers: <span class="highlight">10.128.10.11</span>
+                      <span class="highlight">10.128.20.12</span>
+                      67.207.67.2
+                      67.207.67.3
+          DNS Domain: <span class="highlight">nyc3.example.com</span>
+. . .
+</code></pre>
+<p>Seu cliente agora deve estar configurado para usar seus servidores DNS internos.</p>
+
+<h3 id="clientes-ubuntu-16-04-e-debian">Clientes Ubuntu 16.04 e Debian</h3>
+
+<p>Nos servidores Linux Ubuntu 16.04 e Debian, você pode editar o arquivo <code>/etc/network/interfaces</code>:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/network/interfaces
+</li></ul></code></pre>
+<p>Encontre lá dentro a linha <code>dns-nameservers</code> e anexe no início os seus próprios servidores de nomes na frente da lista que atualmente está lá. Abaixo dessa linha, adicione uma opção <code>dns-search</code> apontada para o domínio base da sua infraestrutura. No nosso caso, seria &ldquo;nyc3.example.com&rdquo;:</p>
+<div class="code-label " title="/etc/network/interfaces">/etc/network/interfaces</div><pre class="code-pre  fourth-environment"><code langs="">    . . .
+
+    dns-nameservers <span class="highlight">10.128.10.11</span> <span class="highlight">10.128.20.12</span> 8.8.8.8
+    <span class="highlight">dns-search nyc3.example.com</span>
+
+    . . .
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<p>Agora, reinicie seus serviços de rede, aplicando as novas mudanças com os comandos a seguir. Certifique-se de substituir o <code>eth0</code> pelo nome da sua interface de rede:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ifdown --force <span class="highlight">eth0</span> &amp;&amp; sudo ip addr flush dev <span class="highlight">eth0</span> &amp;&amp; sudo ifup --force <span class="highlight">eth0</span>
+</li></ul></code></pre>
+<p>Isso deve reiniciar sua rede sem interromper sua conexão atual. Se funcionou corretamente, você verá algo similar a isto:</p>
+<pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>RTNETLINK answers: No such process
+Waiting for DAD... Done
+</code></pre>
+<p>Verifique novamente se suas configurações foram aplicadas digitando:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /etc/resolv.conf
+</li></ul></code></pre>
+<p>Você deve ver seus servidores de nomes no arquivo <code>/etc/resolv.conf</code>, além do seu domínio de busca:</p>
+<pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div># Dynamic resolv.conf(5) file for glibc resolver(3) generated by resolvconf(8)
+#     DO NOT EDIT THIS FILE BY HAND -- YOUR CHANGES WILL BE OVERWRITTEN
+nameserver 10.128.10.11
+nameserver 10.128.20.12
+nameserver 8.8.8.8
+search nyc3.example.com
+</code></pre>
+<p>Seu cliente agora está configurado para usar seus servidores DNS.</p>
+
+<h3 id="clientes-centos">Clientes CentOS</h3>
+
+<p>No CentOS, RedHat, e Fedora Linux, edite o arquivo <code>/etc/sysconfig/network-scripts/ifcfg-<span class="highlight">eth0</span></code>. Pode ser que você precise substituir o <code>eth0</code> pelo nome da sua interface de rede primária:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysconfig/network-scripts/ifcfg-<span class="highlight">eth0</span>
+</li></ul></code></pre>
+<p>Procure as opções <code>DNS1</code> e <code>DNS2</code> e defina-as para os endereços IP privados dos seus servidores de nomes primários e secundários. Adicione um parâmetro <code>DOMAIN</code> junto com o domínio base da sua infraestrutura. Neste guia, seria &ldquo;nyc3.example.com&rdquo;:</p>
+<div class="code-label " title="/etc/sysconfig/network-scripts/ifcfg-eth0">/etc/sysconfig/network-scripts/ifcfg-eth0</div><pre class="code-pre  fourth-environment"><code langs="">. . .
+DNS1=<span class="highlight">10.128.10.11</span>
+DNS2=<span class="highlight">10.128.20.12</span>
+<span class="highlight">DOMAIN='nyc3.example.com'</span>
+. . .
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<p>Agora, reinicie o serviço de rede digitando:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart network
+</li></ul></code></pre>
+<p>O comando pode ficar suspenso por alguns segundos, mas deve retornar você para o prompt em breve.</p>
+
+<p>Verifique se suas alterações foram aplicadas digitando:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cat /etc/resolv.conf
+</li></ul></code></pre>
+<p>Você deve ver seus servidores de nomes e domínio de busca na lista:</p>
+<div class="code-label " title="/etc/resolv.conf">/etc/resolv.conf</div><pre class="code-pre  fourth-environment"><code langs="">nameserver 10.128.10.11
+nameserver 10.128.20.12
+search nyc3.example.com
+</code></pre>
+<p>Seu cliente agora deve conseguir se conectar aos seus servidores DNS e utilizá-los.</p>
+
+<h2 id="testando-os-clientes">Testando os clientes</h2>
+
+<p>Use o <code>nslookup</code> para testar se seus clientes podem consultar seus servidores de nomes. Você deve conseguir fazer isso em todos os clientes que configurou e que estão no ACL &ldquo;confiáveis&rdquo;.</p>
+
+<p>Para clientes CentOS, pode ser necessário instalar o utilitário com:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo yum install bind-utils
+</li></ul></code></pre>
+<p>Podemos começar executando uma pesquisa direta.</p>
+
+<h3 id="pesquisa-direta">Pesquisa direta</h3>
+
+<p>Por exemplo, é possível executar uma pesquisa direta para recuperar o endereço IP do <strong>host1.nyc3.example.com</strong> executando o seguinte comando:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nslookup host1
+</li></ul></code></pre>
+<p>A consulta do &ldquo;host1&rdquo; expande-se para o &ldquo;host1.nyc3.example.com&rdquo; pelo fato da opção <code>search</code> estar configurada para o seu sub-domínio privado e as consultas de DNS tentarão procurar naquele sub-domínio antes de procurar o host em outro lugar. O resultado do comando acima se pareceria com o seguinte:</p>
+<pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>Server:     127.0.0.53
+Address:    127.0.0.53#53
+
+Non-authoritative answer:
+Name:   host1.nyc3.example.com
+Address: 10.128.100.101
+</code></pre>
+<p>Em seguida, podemos verificar as pesquisas inversas.</p>
+
+<h3 id="pesquisa-inversa">Pesquisa inversa</h3>
+
+<p>Para testar a pesquisa inversa, consulte o servidor DNS com o endereço IP privado do <strong>host1</strong>:</p>
+<pre class="code-pre command fourth-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nslookup 10.128.100.101
+</li></ul></code></pre>
+<p>Deverá ver um resultado que se parece com o seguinte:</p>
+<pre class="code-pre  fourth-environment"><code langs=""><div class="secondary-code-label " title="Output">Output</div>11.10.128.10.in-addr.arpa   name = host1.nyc3.example.com.
+
+Authoritative answers can be found from:
+</code></pre>
+<p>Se todos os nomes e endereços IP resolverem os valores corretos, seus arquivos de zona estão configurados corretamente. Se receber valores inesperados, certifique-se de rever os arquivos de zona no seu servidor DNS primário (por exemplo, <code>db.nyc3.example.com</code> e <code>db.10.128</code>).</p>
+
+<p>Parabéns! Seus servidores DNS internos agora estão configurados corretamente! Agora, vamos falar sobre a manutenção dos seus registros de zona.</p>
+
+<h2 id="conservando-os-registros-dns">Conservando os registros DNS</h2>
+
+<p>Agora que você tem um DNS interno funcionando, é preciso conservar seus registros DNS para que eles reflitam com precisão o ambiente do seu servidor.</p>
+
+<h3 id="como-adicionar-um-host-ao-dns">Como adicionar um Host ao DNS</h3>
+
+<p>Sempre que adicionar um host ao seu ambiente (no mesmo datacenter), adicione-o ao DNS. Aqui está uma lista de passos que você precisa seguir:</p>
+
+<h4 id="servidor-de-nomes-primário">Servidor de nomes primário</h4>
+
+<ul>
+<li>Arquivo de zona de encaminhamento: adicione um registro &ldquo;A&rdquo; para o novo host, incrementando o valor de &ldquo;Serial&rdquo;</li>
+<li>Arquivo de zona inversa: adicione um registro &ldquo;PTR&rdquo; para o novo host, incrementando o valor de &ldquo;Serial&rdquo;</li>
+<li>Adicione o endereço IP privado do seu novo host ao ACL &ldquo;confiáveis&rdquo; (<code>named.conf.options</code>)</li>
+</ul>
+
+<p>Teste os seus arquivos de configuração:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo named-checkconf
+</li><li class="line" prefix="$">sudo named-checkzone <span class="highlight">nyc3.example.com</span> db.<span class="highlight">nyc3.example.com</span>
+</li><li class="line" prefix="$">sudo named-checkzone <span class="highlight">128.10</span>.in-addr.arpa /etc/bind/zones/db.<span class="highlight">10.128</span>
+</li></ul></code></pre>
+<p>Então, recarregue o BIND:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload bind9
+</li></ul></code></pre>
+<p>Seu servidor primário deve estar agora configurado para o novo host.</p>
+
+<h4 id="servidor-de-nomes-secundário">Servidor de nomes secundário</h4>
+
+<ul>
+<li>Adicione o endereço IP privado do seu novo host ao ACL &ldquo;confiáveis&rdquo; (<code>named.conf.options</code>)</li>
+</ul>
+
+<p>Verifique a sintaxe de configuração:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo named-checkconf
+</li></ul></code></pre>
+<p>Então, recarregue o BIND:</p>
+<pre class="code-pre command third-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload bind9
+</li></ul></code></pre>
+<p>Seu servidor secundário agora aceitará conexões do novo host.</p>
+
+<h4 id="configure-o-novo-host-para-usar-o-seu-dns">Configure o novo host para usar o seu DNS</h4>
+
+<ul>
+<li>Configure o <code>/etc/resolv.conf</code> para que use seus servidores DNS</li>
+<li>Teste utilizando o <code>nslookup</code></li>
+</ul>
+
+<h3 id="removendo-o-host-do-dns">Removendo o host do DNS</h3>
+
+<p>Se você remover um host do seu ambiente ou quiser simplesmente removê-lo do DNS, remova todas as coisas que foram adicionadas quando adicionou o servidor ao DNS (ou seja, o inverso dos passos acima).</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora, é possível consultar as interfaces de rede privadas dos seus servidores por nome ao invés de endereço IP. Isso torna mais fácil a configuração dos serviços e aplicativos porque você já não precisa se lembrar dos endereços IP privados e os arquivos serão mais fáceis de ler e entender. Além disso, é possível agora alterar suas configurações para que apontem para um novo servidor em um único lugar, o seu servidor DNS, ao invés de precisar editar uma variedade de arquivos de configuração distribuídos, facilitando a manutenção.</p>
+
+<p>Assim que tiver seu DNS interno configurado, e os seus arquivos de configuração estiverem usando FQDNs privados para especificar conexões de rede, é <strong>fundamental</strong> que seus servidores DNS estejam devidamente conservados. Se ambos ficarem indisponíveis, seus serviços e aplicativos que dependem deles deixam de funcionar corretamente. É por isso que é recomendável configurar o seu DNS com pelo menos um servidor secundário, além de manter backups funcionais de todos eles.</p>

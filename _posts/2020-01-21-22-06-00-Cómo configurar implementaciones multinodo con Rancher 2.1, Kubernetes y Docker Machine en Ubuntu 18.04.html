@@ -1,0 +1,170 @@
+---
+layout: post
+title: Cómo configurar implementaciones multinodo con Rancher 2.1, Kubernetes y Docker Machine en Ubuntu 18.04
+network: digitalocean
+date: January 21, 2020 at 10:06PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-multi-node-deployments-with-rancher-2-1-kubernetes-and-docker-machine-on-ubuntu-18-04-es
+image: https://assets.digitalocean.com/articles/multirancher_1804/step1a.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>El autor seleccionó a <a href="https://www.brightfunds.org/organizations/code-org">Code Org</a> para recibir una donación como parte del programa <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="introducción">Introducción</h3>
+
+<p><a href="https://rancher.com/">Rancher</a> es una popular plataforma de administración de contenedores de código abierto. Rancher 2.X , lanzada a principios del 2018,  funciona en <a href="https://kubernetes.io/">Kubernetes</a> y ha incorporado nuevas herramientas, como la administración multiclúster y canales de integración continua (CI) incorporados. Además de la seguridad mejorada, la escalabilidad y las herramientas de implementación fáciles de usar ya disponibles en Kubernetes, Rancher ofrece una interfaz gráfica de usuario (GUI) que facilita más la administración de los contenedores. A través dela GUI de Rancher, los usuarios pueden administrar secretos, gestionar funciones y permisos de forma segura, escalar nodos y pods, y configurar equilibradores de carga y volúmenes sin necesidad de una herramienta de línea de comandos ni de archivos YAML complejos.</p>
+
+<p>A través de este tutorial, implementará un servidor multinodo de Rancher 2.1 usando Docker Machine en Ubuntu 18.04. Al final del tutorial, podrá suministrar nuevos Droplets y pods de contenedor de DigitalOcean a través de la UI de Rancher para expandir o reducir su entorno de alojamiento.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de comenzar este tutorial, <a href="https://cloud.digitalocean.com/registrations/new">deberá contar con una cuenta de DigitalOcean</a> y con lo siguiente:</p>
+
+<ul>
+<li><p>Un token de acceso personal de DigitalOcean, que puede crear siguiendo las instrucciones de <a href="https://www.digitalocean.com/community/tutorials/how-to-use-the-digitalocean-api-v2#how-to-generate-a-personal-access-token">este tutorial</a>. Este token permitirá que Rancher tenga acceso de API a su cuenta de DigitalOcean.</p></li>
+<li><p>Un nombre de dominio completamente registrado con un registro A que apunte a la dirección IP del Droplet que creó en el paso 1. Puede aprender a apuntar dominios a los Droplets de DigitalOcean leyendo la <a href="https://www.digitalocean.com/docs/networking/dns/">documentación sobre dominios y DNS</a> de DigitalOcean. A lo largo de este tutorial, sustituya su dominio por <code><span class="highlight">example.com</span></code>.</p></li>
+</ul>
+
+<h2 id="paso-1-crear-un-droplet-con-docker-instalado">Paso 1: Crear un droplet con Docker instalado</h2>
+
+<p>Para iniciar y configurar Rancher, deberá crear un nuevo droplet con Docker instalado. Para conseguir esto, puede usar la imagen de Docker de DigitalOcean.</p>
+
+<p>Primero, inicie sesión en su cuenta de DigitalOcean y seleccione <strong>Crear Droplet</strong>. A continuación, en la sección <strong>Choose an image</strong>, seleccione la pestaña <strong>Marketplace</strong>. Elija <strong>Docker 18.06.1~ce~~3 en 18.04</strong>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step1a.png" alt="Seleccione la imagen de Docker 18.06 del menú One-click Apps"></p>
+
+<p>A continuación, seleccione un droplet que no tenga un tamaño inferior a <strong>2 GB</strong> y una región de centro de datos para este.</p>
+
+<p>Finalmente, añada sus claves SSH, proporcione un hombre de host para su droplet y pulse el botón <strong>Create</strong>.</p>
+
+<p>Serán necesarios unos minutos para que el servidor se abastezca y Docker se descargue. Una vez que el droplet se implemente correctamente, estará listo para iniciar Rancher en un nuevo contenedor de Docker.</p>
+
+<h2 id="paso-2-iniciar-y-configurar-rancher">Paso 2: Iniciar y configurar Rancher</h2>
+
+<p>El droplet que creó en el paso 1 ejecutará Rancher en un contenedor de Docker. En este paso, iniciará el contenedor de Rancher y se asegurará de que cuente con un certificado <a href="https://letsencrypt.org/">SSL de Let&rsquo;s Encrypt</a> para que pueda acceder de forma segura al panel de administración de Rancher. Let´s Encrypt es una autoridad de certificación automática de código de código abierto que permite a los desarrolladores proporcionar certificados SSL por 90 días gratis.</p>
+
+<p>Inicie sesión en su nuevo droplet:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh root@<span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>Para asegurarse de que Docker esté en ejecución, introduzca lo siguiente:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">docker -v
+</li></ul></code></pre>
+<p>Compruebe que la versión de Docker listada sea la que espera. Puede iniciar Rancher con un <a href="https://rancher.com/docs/rancher/v2.x/en/installation/single-node/#2-choose-an-ssl-option-and-install-rancher">certificado de Let&rsquo;s Encrypt que ya esté instalado ejecutando</a> el siguiente comando:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">docker run -d --restart=unless-stopped -p 80:80 -p 443:443 -v /host/rancher:/var/lib/rancher rancher/rancher --acme-domain <span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>La opción <code>--acme-domain</code> instala un certificado SSL de Let&rsquo;s Encrypt para garantizar que su administrador Rancher se presente en HTTPS: Esta secuencia de comandos también indica al droplet que busque la <a href="https://hub.docker.com/r/rancher/rancher/">imagen de Docker <code>rancher/rancher</code></a> e inicie una instancia de Rancher en un contenedor que se reiniciará automáticamente si se desconecta de forma accidental. Para facilitar la recuperación en caso de pérdida de datos, la secuencia de comandos monta un volumen en la máquina host (en <code>/host/rancher</code>) que contiene los datos de host.</p>
+
+<p>Para ver todos los contenedores en ejecución, introduzca lo siguiente:</p>
+<pre class="code-pre super_user"><code langs=""><ul class="prefixed"><li class="line" prefix="#">docker ps
+</li></ul></code></pre>
+<p>Verá un resultado similar al siguiente (con un ID y nombre de contenedor únicos):</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS                                      NAMES
+<span class="highlight">7b2afed0a599</span>        rancher/rancher     "entrypoint.sh"     12 seconds ago      Up 11 seconds       0.0.0.0:80-&gt;80/tcp, 0.0.0.0:443-&gt;443/tcp   <span class="highlight">wizardly_fermat</span>
+</code></pre>
+<p>Si el contenedor no está en ejecución, puede ejecutar el comando <code>docker run</code> nuevamente.</p>
+
+<p>Para poder acceder al panel de administración de Rancher, deberá configurar su contraseña de administrador y la URL del servidor de Rancher. La interfaz de administrador de Rancher le brindará acceso a todos sus nodos en ejecución, pods y secretos. Por ello, es importante que utilice una contraseña segura para ello.</p>
+
+<p>Vaya al nombre de dominio que apunta a su nuevo droplet en su navegador web. La primera vez que visite esta dirección, Rancher le permitirá establecer una contraseña:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step3a.png" alt="Establezca su contraseña de Rancher usando la línea de comandos"></p>
+
+<p>Cuando se solicite su <strong>URL del servidor de Rancher</strong>, utilice el nombre de dominio orientado a su droplet.</p>
+
+<p>Con esto, habrá completado la configuración del servidor de Rancher y verá la pantalla de inicio de administración de Rancher:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step3b.png" alt="Pantalla de inicio de administración de Rancher"></p>
+
+<p>Está listo para continuar con la configuración del clúster de Rancher.</p>
+
+<h2 id="paso-3-configurar-un-clúster-con-un-nodo-único">Paso 3: Configurar un clúster con un nodo único</h2>
+
+<p>Para usar Rancher, deberá crear un <em>clúster</em> que tenga al menos un <em>nodo</em>. Un clúster es un grupo de uno o más nodos. <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-kubernetes">Esta guía</a> le proporcionará más información sobre la arquitectura de Kubernetes. En este tutorial, los nodos se corresponden con los droplets que Rancher administrará. Los <em>pods</em> representan un grupo de contenedores de Docker en ejecución en el droplet. Cada nodo puede ejecutar muchos pods. Usando la UI de Rancher, puede configurar clústeres y nodos en un entorno subyacente de Kubernetes.</p>
+
+<p>Al final de este paso, habrá configurado un clúster con un único nodo listo para ejecutar su primer pod.</p>
+
+<p>En Rancher, haga clic en <strong>Add Cluster</strong> y seleccione <strong>DigitalOcean com</strong>o <strong>proveedor de infraestructura</strong>.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step4a.png" alt="Seleccione DigitalOcean en la lista de proveedores de infraestructura">.</p>
+
+<p>Introduzca un nombre en <strong>Cluster Name *<em>y desplácese hasta la sección *</em>Node Pools</strong>. Introduzca un prefijo en <strong>Name Prefix</strong>, deje <strong>Count</strong> en el valor <strong>1</strong> por el momento y seleccione <strong>etcd</strong>, <strong>Control Plane</strong> y <strong>Worker</strong>.</p>
+
+<ul>
+<li><strong><a href="https://kubernetes.io/docs/concepts/overview/components/#etcd">etcd</a></strong> es un sistema de almacenamiento de valores de claves de Kubernetes pensado para mantener todo el estado del entorno. A fin de preservar una alta disponibilidad, debería ejecutar tres o cinco nodos etcd para que, si uno se desactiva, siga siendo posible administrar su entorno.</li>
+<li><strong><a href="https://kubernetes.io/docs/concepts/#kubernetes-control-plane">Control Plane</a></strong> verifica todos los objetos de Kubernetes, como los pods, en su entorno y los mantiene actualizados con la configuración que proporcione en la interfaz de administración de Rancher.</li>
+<li><strong><a href="https://kubernetes.io/docs/concepts/architecture/nodes/">Workers</a></strong> ejecutará las cargas de trabajo reales y los agentes de monitorización para garantizar que sus contenedores continúen en ejecución y en red. Los nodos de trabajo se encuentran donde sus pods ejecutarán el software que implemente.</li>
+</ul>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step4b.png" alt="Cree un grupo de nodos con un único nodo"></p>
+
+<p>Antes de crear el clúster, haga clic en <strong>Add Node Template</strong> a fin de configurar las opciones específicas para su nuevo nodo.</p>
+
+<p>Introduzca su Token de acceso personal de DigitalOcean en el cuadro de entrada <strong>Access Token</strong> y haga clic en <strong>Next: Configure Droplet</strong>.</p>
+
+<p>A continuación, seleccione los mismos valores para <strong>Region</strong> y <strong>Droplet Size</strong> que en el paso 1. En el caso de <strong>Image</strong>, asegúrese de seleccionar <strong>Ubuntu 16.04.5 x64</strong>, ya que actualmente existe <a href="https://github.com/rancher/rancher/issues/13888">un problema de compatibilidad entre Rancher y Ubuntu 18.04</a>. Pulse <strong>Create</strong> para guardar la plantilla.</p>
+
+<p>Finalmente, haga clic en <strong>Crear</strong> en la página <strong>Add Cluster</strong> para iniciar el proceso de aprovisionamiento. Rancher tardará unos minutos en completar este paso, pero verá un nuevo Droplet en su <a href="https://cloud.digitalocean.com/droplets">panel de control de droplets de DigitalOcean</a> cuando esto suceda.</p>
+
+<p>A lo largo de este paso, creó un nuevo clúster y nodo en los cuales implementará una carga de trabajo en la siguiente sección.</p>
+
+<h2 id="paso-4-implementar-una-carga-de-trabajo-de-aplicación-web">Paso 4: Implementar una carga de trabajo de aplicación web</h2>
+
+<p>Una vez que el clúster y el nodo nuevos estén listos, puede implementar su primer <em>pod</em> en una <em>carga de trabajo</em>. Un <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-overview/">pod de Kubernetes</a> es la unidad de trabajo más pequeña disponible para Kubernetes y, por extensión, para Rancher. Las cargas de trabajo describen un grupo único de pods que implementa juntos. Por ejemplo, puede ejecutar varios pods de su servidor web en una única carga de trabajo para garantizar que si un pod se ralentiza con una solicitud concreta otras instancias puedan gestionar las solicitudes entrantes. En esta sección, implementará una <a href="https://hub.docker.com/r/nginxdemos/hello/">imagen de Nginx Hello World</a> en un único pod.</p>
+
+<p>Posicione el cursor sobre <strong>Global</strong> en el encabezado y seleccione <strong>Defaul</strong>t. Con esto, accederá al panel de control de proyecto <strong>Default</strong>. Se centrará en implementar un único proyecto en este tutorial, pero desde este panel de control también puede crear varios para conseguir entornos de alojamiento de contenedores aislados.</p>
+
+<p>Para comenzar a configurar su primer pod, haga clic en <strong>Deploy</strong>.</p>
+
+<p>Introduzca un nombre en <strong>Name</strong> y <code>nginxdemos/hello</code> en el campo <strong>Docker Image</strong>. A continuación, asigne el puerto <strong>80</strong> del contenedor al puerto <strong>30000 *<em>de los nodos host. Esto garantizará que los pods que implemente estén disponibles en cada nodo en el puerto 30000. Puede dejar el valor *</em>TCP</strong> para <strong>Protocol</strong> y <strong>NodePort</strong> en el siguiente elemento desplegable.</p>
+
+<p><span class='note'><strong>Nota:</strong> Aunque este método para ejecutar el pod en cada puerto del nodo es más sencillo para comenzar, Rancher también  incluye <a href="https://rancher.com/docs/rancher/v2.x/en/k8s-in-rancher/load-balancers-and-ingress/ingress/">Ingress</a> a fin de proporcionar equilibrio de carga y terminación SSL para el uso en producción.<br></span></p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step5b.png" alt="Formulario de entrada para implementar una carga de trabajo"></p>
+
+<p>Para iniciar el pod, desplácese hasta la parte inferior y haga clic en <strong>Launch</strong>.</p>
+
+<p>Rancher lo direccionará a la página de inicio del proyecto predeterminado, y en unos segundos su pod estará listo. Haga clic en el enlace <strong>30000/tcp</strong> justo debajo del nombre de la carga de trabajo. Rancher abrirá una nueva pestaña con información sobre el entorno del contenedor en ejecución.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step5c.png" alt="Dirección del servidor, nombre del servidor y otros resultados del contenedor de NGINX en ejecución"></p>
+
+<p>Los** valores de Server add**ess y de puerto que ve en esta página son los de la red interna de Docker. No pertenecen a la dirección IP pública que ve en su navegador. Esto significa que Rancher funciona y dirige el tráfico de <code>http://<span class="highlight">first_node_ip</span>:30000/</code> a la carga de trabajo, como se espera.</p>
+
+<p>En este punto, habrá implementado correctamente su primera carga de trabajo de un pod en un nodo único de Rancher. A continuación, verá cómo escalar su entorno Rancher.</p>
+
+<h2 id="paso-5-escalar-nodos-y-pods">Paso 5: Escalar nodos y pods</h2>
+
+<p>Rancher le proporciona dos formas de escalar sus recursos de alojamiento: aumentar el número de pods de su carga de trabajo o aumentar el número de nodos de su clúster.</p>
+
+<p>Añadir pods a su carga de trabajo le proporcionará a su aplicación más procesos en ejecución. Esto le permitirá gestionar más tráfico y habilitar implementaciones sin tiempo de inactividad, pero cada nodo solo puede gestionar un número finito de pods. Una vez que todos sus nodos hayan alcanzado su límite de pods, deberá aumentar el número de nodos si desea continuar con la expansión.</p>
+
+<p>Otro aspecto que se debe tener en cuenta es que, si bien el aumento de pods es normalmente gratuito, tendrá que pagar por cada nodo que añada a su entorno. A lo largo de este paso, escalará ambos nodos y pods, y añadirá otro nodo a su clúster de Rancher.</p>
+
+<p><span class='note'><strong>Nota:</strong> En esta parte del tutorial, se proporcionará un nuevo droplet de DigitalOcean automáticamente a través de la API. Por lo tanto, tenga en cuenta que deberá afrontar costos adicionales mientras el segundo nodo esté en ejecución.<br></span></p>
+
+<p>Diríjase a la página de inicio del clúster de su instalación de Rancher seleccionando <strong>Cluster: <span class="highlight">nombre-de-su-clúster</span></strong> en la barra de navegación superior. A continuación, haga clic en <strong>Nodes</strong> en la barra de navegación superior.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step6a.png" alt="Utilice el elemento desplegable de la barra de navegación superior para seleccionar su clúster"></p>
+
+<p>En esta página se muestra que actualmente dispone de un nodo en ejecución en el clúster. Para añadir nodos, haga clic en Edit <strong>Cluster</strong> y desplácese hasta la sección <strong>Node Pools</strong> en la parte inferior de la página. Haga clic en <strong>Add Node Pool</strong>, introduzca un prefijo y seleccione la casilla <strong>Worker</strong>. Haga clic en <strong>Save</strong> para actualizar el clúster.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step6b.png" alt="Agregar un grupo de nodos únicamente como trabajador"></p>
+
+<p>En un plazo de dos a cinco minutos, Rancher proporcionará un segundo droplet y marcará el nodo con la indicación <strong>Active</strong> en el panel de control del clúster. Este segundo nodo es solo un trabajador, lo cual significa que no ejecutará los contenedores de etcd o Control Plane de Rancher. Esto brinda al trabajador más capacidad para ejecutar cargas de trabajo.</p>
+
+<p><span class='note'><strong>Nota:</strong> Disponer de un número desigual de nodos de etcd garantizará que estos siempre puedan alcanzar un cuórum (o consenso). Si solo dispone de un nodo de etcd, correrá el riesgo de que no sea posible alcanzar su clúster si ese nodo se desactiva. En un entorno de producción, es mejor ejecutar tres o cinco nodos de etcd.<br></span></p>
+
+<p>Cuando el segundo nodo esté listo, podrá ver la carga de trabajo que implementó en el paso anterior en este nodo visitando <code>http://<span class="highlight">segundo_node_ip</span>:30000/</code> en su navegador.</p>
+
+<p>La expansión de nodos le proporciona más droplets para distribuir sus cargas de trabajo, pero es posible que también desee ejecutar más instancias de cada pod en una carga de trabajo. Para añadir más pods, vuelva a la página del proyecto con el valor <strong>default</strong>, pulse la flecha a la izquierda de su carga de trabajo <code><span class="highlight">hello-world</span></code> y haga clic en <strong>+</strong> dos veces para añdir dos pods más.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/multirancher_1804/step6c.png" alt="Ejecutar tres pods de Hello World en una carga de trabajo"></p>
+
+<p>Rancher implementará de forma automática más pods y distribuirá los contenedores en ejecución a cada nodo, según dónde haya disponibilidad.</p>
+
+<p>Ahora, podrá escalar sus nodos y pods para satisfacer los requisitos de su aplicación.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>De esta manera, habrá configurado implementaciones multinodo usando Rancher 2.1 en Ubuntu 18.04 y habrá aplicado una expansión a dos nodos en ejecución y varios pods en una carga de trabajo. Puede usar esta estrategia para alojar y escalar cualquier tipo de contenedor de Docker que deba ejecutar en su aplicación, y usar el panel de control y las alertas de Rancher para maximizar el rendimiento de sus cargas de trabajo y nodos en cada clúster.</p>

@@ -1,0 +1,823 @@
+---
+layout: post
+title: Como instalar o WordPress com o Docker Compose
+network: digitalocean
+date: January 21, 2020 at 10:07PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-wordpress-with-docker-compose-pt
+image: https://assets.digitalocean.com/articles/docker-wordpress/wp_language_select.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introdução">Introdução</h3>
+
+<p>O <a href="https://wordpress.org/">WordPress</a> é um <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#content-management-system">Sistema de gerenciamento de conteúdo (CMS)</a> de código aberto e gratuito, construído em um banco de dados <a href="https://www.mysql.com/">MySQL</a> com o processamento de <a href="https://www.php.net/">PHP</a>. Graças a sua arquitetura de plug-in extensível, o sistema de criação de modelos e o fato de que pode ser administrado quase que totalmente através de uma interface Web, o Wordpress é uma escolha popular na criação de diferentes tipos de websites, de blogs a páginas de produtos e sites de eCommerce.</p>
+
+<p>Executar o WordPress normalmente envolve a instalação de uma pilha <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#lamp">LAMP</a> (Linux, Apache, MySQL e PHP) ou <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#lemp">LEMP</a> (Linux, Nginx, MySQL e PHP), o que pode demorar um pouco. No entanto, ao utilizar as ferramentas como <a href="https://www.docker.com/">o Docker</a> e o <a href="https://docs.docker.com/compose/">Docker Compose</a>,você simplifica o processo de configuração de sua pilha preferida assim como o processo de instalação do WordPress. Em vez de instalar componentes individuais manualmente, você pode usar <em>images</em> que padronizemam coisas como bibliotecas, arquivos de configuração e variáveis de ambiente e executar essas imagens em <em>containers</em> - processos isolados que são executados em um sistema operacional compartilhado. Além disso, usando o Compose você pode coordenar vários contêineres — por exemplo, um aplicativo e um banco de dados — para se comunicarem uns com os outros.</p>
+
+<p>Neste tutorial, você construirá uma instalação do WordPress com vários contêineres. Seus contêineres incluirão um banco de dados MySQL, um servidor Web Nginx e o próprio WordPress. Você também irá proteger sua instalação, obtendo certificados TLS/SSL com o <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a> para o domínio que quiser que seja associado ao seu site. Por fim, você irá configurar um trabalho <a href="https://www.digitalocean.com/community/tutorials/how-to-schedule-routine-tasks-with-cron-and-anacron-on-a-vps"><code>cron</code></a> para renovar seus certificados para que seu domínio permaneça seguro.</p>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para seguir este tutorial, será necessário:</p>
+
+<ul>
+<li>Um servidor executando o Ubuntu 18.04, junto com um usuário não raiz com privilégios <code>sudo</code> e um firewall ativo. Para saber como configurar isso, consulte este <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guia de Configuração inicial do servidor</a>.</li>
+<li>O Docker instalado no seu servidor, seguindo os Passos 1 e 2 do artigo sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04">Como instalar e usar o Docker no Ubuntu 18.04</a>.</li>
+<li>O Docker Compose instalado no seu servidor, seguindo o Passo 1 do artigo sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">Como instalar o Docker Compose no Ubuntu 18.04</a>.</li>
+<li>Um nome de domínio registrado. Este tutorial usará o <strong>example.com</strong> do início ao fim. Você pode obter um domínio gratuitamente através do <a href="http://www.freenom.com/en/index.html">Freenom</a>, ou usar o registrador de domínios de sua escolha.</li>
+<li><p>Ambos os registros de DNS a seguir serão configurados para o seu servidor. Você pode seguir <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-digitalocean-dns">esta introdução para o DNS da DigitalOcean</a> para obter mais detalhes sobre como adicioná-los a uma conta da DigitalOcean, caso seja o que estiver usando:</p>
+
+<ul>
+<li>Um registro A com <code><span class="highlight">example.com</span></code> apontando para o endereço de IP público do seu servidor.</li>
+<li>Um registro A com <code>www.<span class="highlight">example.com</span></code> apontando para o endereço de IP público do seu servidor.</li>
+</ul></li>
+</ul>
+
+<h2 id="passo-1-—-definindo-as-configurações-do-servidor-web">Passo 1 — Definindo as configurações do servidor Web</h2>
+
+<p>Antes de executar quaisquer contêineres, nosso primeiro passo será definir a configuração do nosso servidor Web Nginx. Nosso arquivo de configuração incluirá alguns blocos de localização específicos do WordPress, junto com um bloco de localização para pedidos de verificação diretos do Let&rsquo;s Encrypt para o cliente Certbot para a renovação automatizada de certificados.</p>
+
+<p>Primeiro, crie um diretório de projeto para sua configuração do WordPress chamada <code><span class="highlight">wordpress</span></code> e navegue até ele:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir <span class="highlight">wordpress</span> &amp;&amp; cd <span class="highlight">wordpress</span>
+</li></ul></code></pre>
+<p>Em seguida, crie um diretório para o arquivo de configuração:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir nginx-conf
+</li></ul></code></pre>
+<p>Abra o arquivo com o <code>nano</code> ou com o seu editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx-conf/nginx.conf
+</li></ul></code></pre>
+<p>Neste arquivo, iremos adicionar um bloco de servidor com diretivas relacionadas ao nome do servidor e à raiz do documento, além de blocos de localização para direcionar os pedidos do cliente Certbot para os certificados, processamento de PHP e pedidos de ativos estáticos.</p>
+
+<p>Cole o seguinte código no arquivo. Certifique-se de substituir o <code><span class="highlight">example.com</span></code> pelo seu próprio nome de domínio:</p>
+<div class="code-label " title="~/wordpress/nginx-conf/nginx.conf">~/wordpress/nginx-conf/nginx.conf</div><pre class="code-pre "><code langs="">server {
+        listen 80;
+        listen [::]:80;
+
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        index <span class="highlight">index.php</span> index.html index.htm;
+
+        root /var/www/html;
+
+        location ~ /.well-known/acme-challenge {
+                allow all;
+                root /var/www/html;
+        }
+
+        location / {
+                try_files $uri $uri/ /index.php$is_args$args;
+        }
+
+        location ~ \.php$ {
+                try_files $uri =404;
+                fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                fastcgi_pass <span class="highlight">wordpress</span>:9000;
+                fastcgi_index index.php;
+                include fastcgi_params;
+                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+                fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+
+        location ~ /\.ht {
+                deny all;
+        }
+
+        location = /favicon.ico {
+                log_not_found off; access_log off;
+        }
+        location = /robots.txt {
+                log_not_found off; access_log off; allow all;
+        }
+        location ~* \.(css|gif|ico|jpeg|jpg|js|png)$ {
+                expires max;
+                log_not_found off;
+        }
+}
+</code></pre>
+<p>Nosso bloco de servidor inclui as seguintes informações:</p>
+
+<p><strong>Directives:</strong></p>
+
+<ul>
+<li><code>listen</code>: diz ao Nginx para escutar na porta <code>80</code>, que nos permitirá usar o <a href="https://certbot.eff.org/docs/using.html#webroot">plug-in webroot</a> do Certbot para nossos pedidos de certificados. Note que ainda <em>não</em> estamos incluindo a porta <code>443</code> — atualizaremos nossa configuração para incluir o SSL assim que tivermos tido sucesso na obtenção dos nossos certificados.</li>
+<li><code>server_name</code>: define seu nome do servidor e o bloco de servidor que devem ser usados para os pedidos feitos para o seu servidor. Certifique-se de substituir o <code><span class="highlight">example.com</span></code> nesta linha com seu próprio nome de domínio.</li>
+<li><code>index</code>: a diretriz <code>index</code> define os arquivos que serão usados como índices durante o processamento dos pedidos para o seu servidor. Aqui, nós modificamos a ordem padrão de prioridade, passando o <code>index.php</code> na frente do <code>index.html</code>, para que o Nginx priorize os arquivos chamados <code>index.php</code> quando possível.</li>
+<li><code>root</code>: nossa diretiva para <code>root</code> designa o diretório raiz para pedidos feitos ao nosso servidor. O diretório <code>/var/www/html</code> é <a href="https://github.com/docker-library/wordpress/blob/07958d19ed465fb7fe50626be740d88a2c2260a7/php7.2/fpm-alpine/Dockerfile#L53">criado como um ponto de montagem</a> no momento da compilação através de instruções no nosso <a href="https://github.com/docker-library/wordpress/blob/07958d19ed465fb7fe50626be740d88a2c2260a7/php7.2/fpm-alpine/Dockerfile">Dockerfile do WordPress</a>. Essas instruções do Dockerfile também garantem que os arquivos da versão do WordPress estejam montados neste volume.</li>
+</ul>
+
+<p><strong>Blocos de localização:</strong></p>
+
+<ul>
+<li><code>location ~ /.well-known/acme-challenge</code>: este bloco de localização irá lidar com pedidos para feitos para o diretório <code>.well-known</code>, no qual o Certbot irá colocar um arquivo temporário para confirmar que o DNS do nosso domínio resolva para nosso servidor. Com essa configuração feita, poderemos usar o plug-in webroot do Certbot para obter certificados para o nosso domínio.</li>
+<li><code>location /</code>: neste bloco de localização, usaremos uma diretriz <code>try_files</code> para verificar se há arquivos que correspondam os pedidos de URI individuais. Entretanto, em vez de retornar o status 404 <code>Not Found</code> como padrão, vamos passar o controle para o arquivo <code>index.php</code> do WordPress com os argumentos do pedido.</li>
+<li><code>location ~ \.php$</code>: este bloco de localização irá lidar com o processamento e o proxy do PHP desses pedidos para o nosso contêiner do <code>wordpress</code>. Como nossa imagem do WordPress Docker se baseará na <a href="https://github.com/docker-library/php/blob/e63194a0006848edb13b7eff5a7f9d790d679428/7.2/alpine3.9/fpm/Dockerfile">imagem <code>php:fpm</code></a>, também vamos incluir opções de configuração que são específicas para o <a href="https://en.wikipedia.org/wiki/FastCGI">protocolo FastCGI</a> neste bloco. O Nginx exige um processador de PHP independente para os pedidos PHP: no nosso caso, esses pedidos serão tratados pelo processador <code>php-fpm</code>, que está incluído na imagem <code>php:fpm</code>. Além disso, este bloco de localização inclui diretivas específicas do FastCGI, variáveis e opções que irão fazer pedidos de proxy para o aplicativo do WordPress em execução no nosso contêiner do <code>wordpress</code>, ajuste do índice preferido em relação aos pedidos de URI analisados e analise os pedidos de URI.</li>
+<li><code>location ~ /\.ht</code>: este bloco irá lidar com arquivos <code>.htaccess</code> já que o Nginx não os atenderá. A diretriz <code>deny_all</code> garante que os arquivos <code>.htaccess</code> nunca sejam atendidos em relação aos usuários.</li>
+<li><code>location = /favicon.ico</code>, <code>location =/robots.txt</code>: esses blocos garantem que os pedidos para o <code>/favicon.ico</code> e <code>/robots.txt</code> não serão registrados.</li>
+<li><code>location ~* \.(css|gif|ico|jpeg|jpg|js|png)$</code>: este bloco desativa o registro dos pedidos de ativos estáticos e garante que esses ativos permaneçam altamente armazenáveis em cache, uma vez que são normalmente dispendiosos de servir.</li>
+</ul>
+
+<p>Para obter mais informações sobre o FastCGI em proxy, consulte o artigo <a href="https://www.digitalocean.com/community/tutorials/understanding-and-implementing-fastcgi-proxying-in-nginx">Entendendo e implementando o uso de proxy com a FastCGI no Nginx</a>. Para obter informações sobre servidor e blocos de localização, consulte o artigo <a href="https://www.digitalocean.com/community/tutorials/understanding-nginx-server-and-location-block-selection-algorithms">Entendendo o servidor Nginx e os algoritmos de seleção de blocos de localização</a>.</p>
+
+<p>Salve e feche o arquivo quando você terminar a edição. Se usou o <code>nano</code>, salve e feche o arquivo, pressionando as teclas <code>CTRL+X</code>, <code>Y</code> e, depois <code>ENTER</code>.</p>
+
+<p>Com sua configuração do Nginx definida, podemos prosseguir e partir para a criação das variáveis de ambiente para passar para o seu aplicativo e para os contêineres de banco de dados no tempo de execução.</p>
+
+<h2 id="passo-2-—-definindo-as-variáveis-de-ambiente">Passo 2 — Definindo as variáveis de ambiente</h2>
+
+<p>O seu banco de dados e os contêineres do aplicativo do WordPress precisarão de acesso a certas variáveis de ambiente no tempo de execução, para que seus dados do aplicativo persistam e estejam acessíveis para o seu aplicativo. Essas variáveis incluem tanto informações confidenciais quanto não confidenciais: valores confidenciais relacionados à senha** raiz **do seu MySQL, o usuário e senha do banco de dados do aplicativo e as informações não confidenciais do nome e do host do banco de dados do seu aplicativo</p>
+
+<p>Em vez de definir todos esses valores no nosso arquivo Docker Compose — o arquivo principal que contém informações sobre como nossos contêineres irão executar — podemos definir os valores confidenciais em um arquivo <code>.env</code> e restringir sua circulação. Isso impedirá esses valores de serem copiados para os repositórios do nosso projeto e de ficarem expostos publicamente.</p>
+
+<p>No diretório principal do seu projeto, <code>~/<span class="highlight">wordpress</span></code>, abra um arquivo chamado <code>.env</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .env
+</li></ul></code></pre>
+<p>Os valores confidenciais que vamos definir neste arquivo incluem uma senha para nosso usuário <strong>raiz</strong> do MySQL e um nome de usuário e senha que o WordPress usará para acessar o banco de dados.</p>
+
+<p>Adicione os seguintes nomes de variáveis e valores ao arquivo. Lembre-se de fornecer <strong>seus próprios valores</strong> aqui em relação a cada variável:</p>
+<div class="code-label " title="~/wordpress/.env">~/wordpress/.env</div><pre class="code-pre "><code langs="">MYSQL_ROOT_PASSWORD=<span class="highlight">your_root_password</span>
+MYSQL_USER=<span class="highlight">your_wordpress_database_user</span>
+MYSQL_PASSWORD=<span class="highlight">your_wordpress_database_password</span>
+</code></pre>
+<p>Nós incluímos uma senha para a conta administrativa <strong>raiz</strong>, assim como nosso nome de usuário e senha escolhidos para nosso banco de dados do aplicativo.</p>
+
+<p>Salve e feche o arquivo quando você terminar a edição.</p>
+
+<p>Como seu arquivo <code>.env</code> contém informações confidenciais, você irá querer garantir que ele seja incluído nos arquivos <code>.gitignore</code> e <code>.dockerignore</code>, os quais dizem ao <a href="https://www.digitalocean.com/community/tutorials/how-to-use-git-a-reference-guide">Git</a> e ao Docker quais arquivos *<em>não *</em>copiar para os seus repositórios Git e imagens do Docker, respectivamente.</p>
+
+<p>Se você planeja trabalhar com o Git para controle de versão, <a href="https://www.digitalocean.com/community/tutorials/how-to-use-git-a-reference-guide#set-up-and-initialization">inicialize o seu diretório de trabalho atual como um repositório</a> com o <code>git init</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git init
+</li></ul></code></pre>
+<p>Depois, abra um arquivo <code>.gitignore</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .gitignore
+</li></ul></code></pre>
+<p>Adicione o <code>.env</code> ao arquivo:</p>
+<div class="code-label " title="~/wordpress/.gitignore">~/wordpress/.gitignore</div><pre class="code-pre "><code langs="">.env
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar a edição.</p>
+
+<p>De igual modo, como boa medida de precaução, adicione <code>.env</code> em um arquivo <code>.dockerignore</code>, para que ele não acabe nos seus contêineres quando estiver usando esse diretório como seu contexto de compilação.</p>
+
+<p>Abra o arquivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .dockerignore
+</li></ul></code></pre>
+<p>Adicione o <code>.env</code> ao arquivo:</p>
+<div class="code-label " title="~/wordpress/.dockerignore">~/wordpress/.dockerignore</div><pre class="code-pre "><code langs="">.env
+</code></pre>
+<p>Opcionalmente, abaixo disso você pode adicionar arquivos e diretórios associados ao desenvolvimento do seu aplicativo:</p>
+<div class="code-label " title="~/wordpress/.dockerignore">~/wordpress/.dockerignore</div><pre class="code-pre "><code langs="">.env
+.git
+docker-compose.yml
+.dockerignore
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar.</p>
+
+<p>Com suas informações confidenciais prontas, agora você já pode passar a definir seus serviços em um arquivo <code>docker-compose.yml</code>.</p>
+
+<h2 id="passo-3-—-definindo-serviços-com-o-docker-compose">Passo 3 — Definindo serviços com o Docker Compose</h2>
+
+<p>Seu arquivo <code>docker-compose.yml</code> irá conter as definições de serviço para sua configuração. Um <em>serviço</em> no Compose é um contêiner em execução e as definições de serviço especificam informações sobre como cada contêiner irá executar.</p>
+
+<p>Ao usar o Compose, você pode definir serviços diferentes para executar aplicativos multicontêiners, já que o Compose permite que você vincule esses serviços através de redes e volumes compartilhados. Isso será útil para nossa configuração atual, já que vamos criar contêineres diferentes para o nosso banco de dados, aplicativo do WordPress e servidor Web. Também vamos criar um contêiner para executar o <a href="https://certbot.eff.org/">cliente Certbot</a> para obter certificados para o nosso webserver.</p>
+
+<p>Para começar, abra o arquivo <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Adicione o seguinte código para definir sua versão do arquivo Compose e o serviço de banco de dados <code>db</code>:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">version: '3'
+
+services:
+  db:
+    image: mysql:<span class="highlight">8.0</span>
+    container_name: db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MYSQL_DATABASE=<span class="highlight">wordpress</span>
+    volumes:
+      - dbdata:/var/lib/mysql
+    command: '--default-authentication-plugin=mysql_native_password'
+    networks:
+      - app-network
+</code></pre>
+<p>A definição de serviço do <code>db</code> contém as seguintes opções:</p>
+
+<ul>
+<li><code>image</code>: diz ao Compose qual imagem puxar para criar o contêiner. Estamos anexando a <a href="https://github.com/docker-library/mysql/blob/130bd8e46a3da1adfc1732a08c70673e20aa5977/8.0/Dockerfile">imagem <code>mysql:<span class="highlight">8.0</span></code></a> para evitar conflitos futuros uma vez que a imagem <code>mysql:latest</code> continua a ser atualizada. Para obter mais informações sobre a anexação de versão e evitar conflitos de dependência, consulte a documentação do Docker sobre <a href="https://docs.docker.com/develop/develop-images/dockerfile_best-practices/">As melhores práticas do Dockerfile</a>.</li>
+<li><code>container_name</code>: especifica um nome para o contêiner.</li>
+<li><code>restart</code>: define a política de reinício do contêiner. A padrão é <code>no</code>, mas definimos o contêiner para reiniciar, a menos que ele seja interrompido manualmente.</li>
+<li><code>env_file</code>: diz ao Compose que queremos adicionar as variáveis de ambiente de um arquivo chamado <code>.env</code>, localizado em nosso contexto de compilação. Neste caso, o contexto de compilação é o nosso diretório atual.</li>
+<li><code>environment</code>: permite que você adicione outras variáveis de ambiente, além das definidas no seu arquivo <code>.env</code>. Vamos definir a variável como <code>MYSQL_DATABASE</code> igual a <code><span class="highlight">wordpress</span></code> para fornecer um nome para o banco de dados do nosso aplicativo. Como essa informação não é confidencial, podemos incluí-la diretamente no arquivo <code>docker-compose</code>.yml.</li>
+<li><code>volumes</code>: aqui, estamos montando um <a href="https://docs.docker.com/storage/volumes/">volume</a> chamado de <code>dbdata</code> para o diretório <code>/var/lib/mysql</code> no contêiner. Esse é o diretório de dados padrão para o MySQL na maioria das distribuições.</li>
+<li><code>comando</code>: esta opção especifica um comando para substituir as <a href="https://docs.docker.com/engine/reference/builder/#cmd">instruções de CMD</a> padrão pela imagem. No nosso caso, adicionaremos uma opção ao <a href="https://dev.mysql.com/doc/refman/8.0/en/mysqld.html">comando padrão <code>mysqld</code></a>da imagem do Docker, a qual inicia o servidor MySQL no contêiner. Esta opção, <code>--default-authentication-plugin=mysql_native_password</code>, define a variável do sistema <code>--default-authentication-plugin</code> como <code>mysql_native_password</code>, especificando qual mecanismo de autenticação deve controlar os novos pedidos de autenticação feitos para o servidor. Como o PHP e, portanto,nossa imagem do WordPress <a href="https://github.com/docker-library/wordpress/issues/313">não oferecerão suporte ao</a> <a href="https://mysqlserverteam.com/upgrading-to-mysql-8-0-default-authentication-plugin-considerations/">padrão de autenticação mais recente do MySQL</a>, devemos fazer esse ajuste para autenticar o usuário do  banco de dados do nosso aplicativo.</li>
+<li><code>networks</code>: especifica que nosso serviço de aplicativo irá juntar-se à rede <code>app-network</code> que vamos definir no final do arquivo.</li>
+</ul>
+
+<p>Em seguida, abaixo de sua definição de serviço <code>db</code>, adicione a definição para seu serviço de aplicativo do <code>wordpress</code>:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+  wordpress:
+    depends_on:
+      - db
+    image: wordpress:<span class="highlight">5.1.1</span>-fpm-alpine
+    container_name: wordpress
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - WORDPRESS_DB_HOST=db:3306
+      - WORDPRESS_DB_USER=$MYSQL_USER
+      - WORDPRESS_DB_PASSWORD=$MYSQL_PASSWORD
+      - WORDPRESS_DB_NAME=<span class="highlight">wordpress</span>
+    volumes:
+      - wordpress:/var/www/html
+    networks:
+      - app-network
+</code></pre>
+<p>Nessa definição de serviço, estamos nomeando nosso contêiner e definindo uma política de reinício, como fizemos com o serviço <code>db</code>. Também estamos adicionando algumas opções específicas para este contêiner:</p>
+
+<ul>
+<li><code>depends_on</code>: garante que nossos contêineres irão iniciar por ordem de dependência, com o contêiner do <code>wordpress</code> inciando após o contêiner do <code>db</code>. Nosso aplicativo do WordPress conta com a existência do banco de dados de nosso aplicativo e com o usuário; assim, expressar essa ordem de dependência permitirá que nosso aplicativo seja iniciado corretamente.</li>
+<li><code>image</code>: para essa configuração, estamos usando a <a href="https://github.com/docker-library/wordpress/blob/07958d19ed465fb7fe50626be740d88a2c2260a7/php7.2/fpm-alpine/Dockerfile">imagem do WordPress <code><span class="highlight">5.1.1</span>-fpm-alpine</code></a>. Como discutido no <a href="https://www.digitalocean.com/community/tutorials/how-to-install-wordpress-with-docker-compose#step-1-%E2%80%94-defining-the-web-server-configuration">Passo 1</a>, usar essa imagem garante que o nosso aplicativo terá o processador <code>php-fpm</code> que o Nginx exige para lidar com o processamento do PHP. Esta também é uma imagem <code>alpine</code>, derivada do <a href="https://alpinelinux.org/">projeto Linux Alpine</a>, que ajudará a manter a dimensão geral de nossa imagem reduzida. Para obter mais informações sobre os benefícios e os problemas de se usar imagens <code>alpine</code> e se isso faz sentido ou não para o seu aplicativo, consulte a discussão completa sob a seção de** Image Variants** da <a href="https://hub.docker.com/_/wordpress">página de imagens do Docker Hub WordPress</a>.</li>
+<li><code>env_file</code>: novamente, especificamos que queremos extrair valores do nosso arquivo <code>.env</code>, já que é aqui que definimos o usuário do banco de dados do nosso aplicativo e a senha.</li>
+<li><code>environment</code>: aqui, estamos usando os valores que definimos no nosso arquivo <code>.env</code>, mas estamos atribuindo-os aos nomes da variável que a imagem do WordPress espera: o <code>WORDPRESS_DB_USER</code> e o <code>WORDPRESS_DB_PASSWORD</code>. Também estamos definindo uma variável <code>WORDPRESS_DB_HOST</code>, que será o servidor MySQL executando no contêiner do <code>db</code>, que pode ser acessado na porta padrão do MySQL, <code>3306</code>. Nosso <code>WORDPRESS_DB_NAME</code> terá o mesmo valor que especificamos na definição de serviço do MySQL para nosso <code>MYSQL_DATABASE</code>: <code><span class="highlight">wordpress</span></code>.</li>
+<li><code>volumes</code>: estamos montando um volume chamado <code>wordpress</code> no ponto de montagem <code>/var/www/html</code> <a href="https://github.com/docker-library/wordpress/blob/07958d19ed465fb7fe50626be740d88a2c2260a7/php7.2/fpm-alpine/Dockerfile#L53">criado pela imagem do WordPress</a>. Usar um volume nomeado dessa maneira nos permitirá compartilhar o código do nosso aplicativo com outros contêineres.</li>
+<li><code>networks</code>: também estamos adicionando o contêiner <code>wordpress</code> na rede <code>app-network</code>.</li>
+</ul>
+
+<p>Em seguida, abaixo da definição do serviço de aplicativo do <code>wordpress</code>, adicione a seguinte definição para seu serviço do Nginx <code>webserver</code>:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+  webserver:
+    depends_on:
+      - wordpress
+    image: nginx:<span class="highlight">1.15.12</span>-alpine
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - wordpress:/var/www/html
+      - ./nginx-conf:/etc/nginx/conf.d
+      - certbot-etc:/etc/letsencrypt
+    networks:
+      - app-network
+</code></pre>
+<p>Novamente, estamos nomeando nosso contêiner e tornando-o dependente do contêiner <code>wordpress</code> por ordem de inicialização. Também estamos usando uma imagem <code>alpine</code> — a <a href="https://github.com/nginxinc/docker-nginx/blob/e5123eea0d29c8d13df17d782f15679458ff899e/mainline/stretch/Dockerfile">imagem Nginx <code><span class="highlight">1.15.12</span>-alpine</code></a>.</p>
+
+<p>Essa definição de serviço também inclui as seguintes opções:</p>
+
+<ul>
+<li><code>ports</code>: expõe a porta <code>80</code> para habilitar as opções de configuração que definimos no nosso arquivo <code>nginx.conf</code> no <a href="">Passo 1</a>.</li>
+<li><code>volumes</code>: aqui, estamos definindo uma combinação de volumes nomeados e <a href="https://docs.docker.com/storage/bind-mounts/">montagens associadas</a>:
+
+<ul>
+<li><code>wordpress:/var/www/html</code>: irá montar o código de nosso aplicativo WordPress no diretório <code>/var/www/html</code> - o diretório que definimos como <code>raiz</code> no bloco de nosso servidor Nginx.</li>
+<li><code>./nginx-conf:/etc/nginx/conf.d</code>: irá associar a montagem do diretório de configuração do Nginx no host ao diretório relevante no contêiner, garantindo que quaisquer alterações que façamos em arquivos no host serão refletidas no contêiner.</li>
+<li><code>certbot-etc:/etc/letsencrypt</code>: irá montar os certificados e chaves relevantes do Let&rsquo;s Encrypt do nosso domínio para o diretório apropriado no contêiner.</li>
+</ul></li>
+</ul>
+
+<p>Novamente, adicionamos esse contêiner à rede <code>app-network</code>.</p>
+
+<p>Por fim, abaixo da definição de seu <code>webserver</code>, adicione sua última definição de serviço para o serviço do <code>certbot</code>. Certifique-se de substituir o endereço de e-mail e os nomes de domínio listados aqui por suas próprias informações:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">  certbot:
+    depends_on:
+      - webserver
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - wordpress:/var/www/html
+    command: certonly --webroot --webroot-path=/var/www/html --email <span class="highlight">sammy@example.com</span> --agree-tos --no-eff-email --staging -d <span class="highlight">example.com</span> -d www.<span class="highlight">example.com</span>
+</code></pre>
+<p>Essa definição diz ao Compose para obter a <a href="https://hub.docker.com/r/certbot/certbot/">imagem <code>certbot/certbot</code></a> do Docker Hub. Ela também usa volumes nomeados para compartilhar recursos com o contêiner do Nginx, incluindo certificados de domínio e chave no <code>certbot-etc</code> e o código do aplicativo no <code>wordpress</code>.</p>
+
+<p>Novamente, usamos o <code>depends_on</code> para especificar que o contêiner do <code>certbot</code> deve ser iniciado assim que o serviço do <code>webserver</code> estiver em execução.</p>
+
+<p>Também incluímos uma opção de <code>command</code> que especifica um subcomando para executar com o comando <code>certbot</code> padrão do contêiner. O <a href="https://certbot.eff.org/docs/using.html#certbot-command-line-options">subcomando <code>certonly</code></a> obterá um certificado com as seguintes opções:</p>
+
+<ul>
+<li><code>--webroot</code>: diz ao Certbot para usar o plug-in webroot para colocar arquivos na pasta webroot para autenticação. Esse plug-in depende do <a href="https://tools.ietf.org/html/draft-ietf-acme-acme-03#section-7.2">método de validação HTTP-01</a>, o qual usa um pedido de HTTP para provar que o Certbot pode acessar recursos de um servidor que responde a um dado nome de domínio.</li>
+<li><code>--webroot-path</code>: especifica o caminho do diretório webroot.</li>
+<li><code>--email</code>: seu e-mail escolhido para o registro e recuperação.</li>
+<li><code>--agree-tos</code>: especifica que você concorda com os termos do <a href="https://letsencrypt.org/documents/LE-SA-v1.2-November-15-2017.pdf">Acordo do Assinante do protocolo ACME</a>.</li>
+<li><code>--no-eff-email</code>: diz ao Certbot que você não deseja compartilhar seu e-mail com a <a href="https://www.eff.org/">Electronic Frontier Foundation</a> (EFF). Sinta-se à vontade para omitir isso se preferir.</li>
+<li><code>--staging</code>: diz ao Certbot que você deseja usar o ambiente de preparo do Let&rsquo;s Encrypt para obter certificados de teste. Usar essa opção permite que você teste suas opções de configuração e evite possíveis limites de solicitação de domínio. Para obter mais informações sobre esses limites, consulte a <a href="https://letsencrypt.org/docs/rate-limits/">documentação sobre limites de taxa</a> do Let&rsquo;s Encrypt.</li>
+<li><code>-d</code>: permite que você especifique os nomes de domínio que gostaria de aplicar ao seu pedido. Neste caso, incluímos o <code><span class="highlight">example.com</span></code> e <code>www.<span class="highlight">example.com</span></code>. Certifique-se de substituí-los pelo seu domínio.</li>
+</ul>
+
+<p>Abaixo da definição do serviço do <code>certbot</code>, adicione sua rede e definições de volume:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+volumes:
+  certbot-etc:
+  wordpress:
+  dbdata:
+
+networks:
+  app-network:
+    driver: bridge  
+</code></pre>
+<p>Nossa chave de <code>volumes</code> de nível superior define os volumes <code>certbot-etc</code>, <code>wordpress</code> e <code>dbdata</code>. Quando o Docker cria volumes, o conteúdo do volume é armazenado em um diretório do sistema de arquivos do host, <code>/var/lib/docker/volumes/</code>, que é gerenciado pelo Docker. O conteúdo de cada volume é então montado deste diretório para qualquer contêiner que utilize o volume. Dessa forma, é possível compartilhar códigos e dados entre os contêineres.</p>
+
+<p>A rede bridge <code>app-network</code> definida pelo usuário posibilita a comunicação entre os nossos contêineres, uma vez que eles estão no mesmo host daemon do Docker. Isso otimiza o tráfego e a comunicação dentro do aplicativo, uma vez que abre todas as portas entre os contêineres na mesma rede bridge, sem expor nenhuma das portas ao mundo exterior. Assim, nossos contêineres <code>db</code>, <code>wordpress</code> e <code>webserver</code> podem se comunicar uns com os outros e precisamos apenas expor a porta <code>80</code> para o acesso de front-end ao aplicativo.</p>
+
+<p>O arquivo final <code>docker-compose.yml</code> ficará parecido com o seguinte:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">version: '3'
+
+services:
+  db:
+    image: mysql:<span class="highlight">8.0</span>
+    container_name: db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MYSQL_DATABASE=<span class="highlight">wordpress</span>
+    volumes:
+      - dbdata:/var/lib/mysql
+    command: '--default-authentication-plugin=mysql_native_password'
+    networks:
+      - app-network
+
+  wordpress:
+    depends_on:
+      - db
+    image: wordpress:<span class="highlight">5.1.1</span>-fpm-alpine
+    container_name: wordpress
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - WORDPRESS_DB_HOST=db:3306
+      - WORDPRESS_DB_USER=$MYSQL_USER
+      - WORDPRESS_DB_PASSWORD=$MYSQL_PASSWORD
+      - WORDPRESS_DB_NAME=<span class="highlight">wordpress</span>
+    volumes:
+      - wordpress:/var/www/html
+    networks:
+      - app-network
+
+  webserver:
+    depends_on:
+      - wordpress
+    image: nginx:<span class="highlight">1.15.12</span>-alpine
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - wordpress:/var/www/html
+      - ./nginx-conf:/etc/nginx/conf.d
+      - certbot-etc:/etc/letsencrypt
+    networks:
+      - app-network
+
+  certbot:
+    depends_on:
+      - webserver
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - wordpress:/var/www/html
+    command: certonly --webroot --webroot-path=/var/www/html --email <span class="highlight">sammy@example.com</span> --agree-tos --no-eff-email --staging -d <span class="highlight">example.com</span> -d www.<span class="highlight">example.com</span>
+
+volumes:
+  certbot-etc:
+  wordpress:
+  dbdata:
+
+networks:
+  app-network:
+    driver: bridge  
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar a edição.</p>
+
+<p>Com suas definições de serviço instaladas, você está pronto para iniciar os contêineres e testar seus pedidos de certificado.</p>
+
+<h2 id="passo-4-—-obtendo-certificados-e-credenciais-ssl">Passo 4 — Obtendo certificados e credenciais SSL</h2>
+
+<p>Podemos iniciar nossos contêineres com o comando <a href="https://docs.docker.com/compose/reference/up/"><code>docker-compose up</code></a>, que criará e executará nossos contêineres na ordem que especificamos. Se nossos pedidos de domínio forem bem sucedidos, veremos o status correto da saída no nosso resultado e os certificados corretos montados na pasta <code>/etc/letsencrypt/live</code> no contêiner do <code>webserver</code>.</p>
+
+<p>Crie os contêineres com o <a href="https://docs.docker.com/compose/reference/up/"><code>docker-compose up</code></a> e o sinalizador <code>-d</code>, os quais executarão os contêineres <code>db</code>, <code>wordpress</code> e <code>webserver</code> em segundo plano:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Você verá um resultado confirmando que os serviços foram criados:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Creating db ... done
+Creating wordpress ... done
+Creating webserver ... done
+Creating certbot   ... done
+</code></pre>
+<p>Com o uso do <a href="https://docs.docker.com/compose/reference/ps/"><code>docker-compose ps</code></a>, verifique o status dos seus serviços:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose ps
+</li></ul></code></pre>
+<p>Se tudo ocorreu bem, seus serviços <code>db</code>, <code>wordpress</code> e <code>webserver</code> devem estar <code>Up</code> e o contêiner <code>certbot</code> terá fechado com uma mensagem de status <code>0</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>  Name                 Command               State           Ports       
+-------------------------------------------------------------------------
+certbot     certbot certonly --webroot ...   Exit 0                      
+db          docker-entrypoint.sh --def ...   Up       3306/tcp, 33060/tcp
+webserver   nginx -g daemon off;             Up       0.0.0.0:80-&gt;80/tcp
+wordpress   docker-entrypoint.sh php-fpm     Up       9000/tcp           
+</code></pre>
+<p>Se você ver qualquer outra coisa além de <code>Up</code> na coluna <code>State</code> em relação aos serviços <code>db</code>, <code>wordpress</code> ou <code>webserver</code> ou um status de fechamento que não seja <code>0</code> em relação ao contêiner <code>certbot</code>, certifique-se de verificar os registros de serviço com o comando <a href="https://docs.docker.com/compose/reference/logs/"><code>docker-compose logs</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose logs <span class="highlight">service_name</span>
+</li></ul></code></pre>
+<p>Agora, é possível verificar se seus certificados foram instalados no contêiner <code>webserver</code> com o <a href="https://docs.docker.com/compose/reference/exec/"><code>docker-compose exec</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose exec webserver ls -la /etc/letsencrypt/live
+</li></ul></code></pre>
+<p>Se os seus pedidos de certificado tiverem sido bem-sucedidos, verá um resultado como este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>total 16
+drwx------    3 root     root          4096 May 10 15:45 .
+drwxr-xr-x    9 root     root          4096 May 10 15:45 ..
+-rw-r--r--    1 root     root           740 May 10 15:45 README
+drwxr-xr-x    2 root     root          4096 May 10 15:45 <span class="highlight">example.com</span>
+</code></pre>
+<p>Agora que você sabe que seu pedido será bem sucedido, você pode editar a definição do serviço <code>certbot</code> para remover o sinalizador <code>--staging</code>.</p>
+
+<p>Abra o <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Encontre a seção do arquivo com a definição de serviço do <code>certbot</code> e substitua o sinalizador <code>--staging</code> na opção <code>command</code> pelo sinalizador <code>--force-renewal</code>, o qual dirá ao Certbot que você quer solicitar um novo certificado com os mesmos domínios de um certificado existente. A definição de serviço do <code>certbot</code> se parecerá com isto agora:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+  certbot:
+    depends_on:
+      - webserver
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - wordpress:/var/www/html
+    command: certonly --webroot --webroot-path=/var/www/html --email <span class="highlight">sammy@example.com</span> --agree-tos --no-eff-email <span class="highlight">--force-renewal</span> -d <span class="highlight">example.com</span> -d www.<span class="highlight">example.com</span>
+...
+</code></pre>
+<p>Agora, é possível executar o <code>docker-compose up</code> para recriar o contêiner <code>certbot</code>. Também vamos incluir a opção <code>--no-deps</code> para dizer ao Compose que ele pode ignorar a inicialização do serviço <code>webserver</code>, já que ele já está em execução:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up --force-recreate --no-deps certbot
+</li></ul></code></pre>
+<p>Você verá o resultado indicando que o seu pedido de certificado foi bem-sucedido:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Recreating certbot ... done
+Attaching to certbot
+certbot      | Saving debug log to /var/log/letsencrypt/letsencrypt.log
+certbot      | Plugins selected: Authenticator webroot, Installer None
+certbot      | Renewing an existing certificate
+certbot      | Performing the following challenges:
+certbot      | http-01 challenge for <span class="highlight">example.com</span>
+certbot      | http-01 challenge for www.<span class="highlight">example.com</span>
+certbot      | Using the webroot path /var/www/html for all unmatched domains.
+certbot      | Waiting for verification...
+certbot      | Cleaning up challenges
+certbot      | IMPORTANT NOTES:
+certbot      |  - Congratulations! Your certificate and chain have been saved at:
+certbot      |    /etc/letsencrypt/live/<span class="highlight">example.com</span>/fullchain.pem
+certbot      |    Your key file has been saved at:
+certbot      |    /etc/letsencrypt/live/<span class="highlight">example.com</span>/privkey.pem
+certbot      |    Your cert will expire on 2019-08-08. To obtain a new or tweaked
+certbot      |    version of this certificate in the future, simply run certbot
+certbot      |    again. To non-interactively renew *all* of your certificates, run
+certbot      |    "certbot renew"
+certbot      |  - Your account credentials have been saved in your Certbot
+certbot      |    configuration directory at /etc/letsencrypt. You should make a
+certbot      |    secure backup of this folder now. This configuration directory will
+certbot      |    also contain certificates and private keys obtained by Certbot so
+certbot      |    making regular backups of this folder is ideal.
+certbot      |  - If you like Certbot, please consider supporting our work by:
+certbot      |
+certbot      |    Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+certbot      |    Donating to EFF:                    https://eff.org/donate-le
+certbot      |
+certbot exited with code 0
+</code></pre>
+<p>Com seus certificados instalados, você pode seguir em frente para modificar sua configuração do Nginx para incluir o SSL.</p>
+
+<h2 id="passo-5-—-modificando-a-configuração-do-servidor-web-e-da-definição-de-serviço">Passo 5 — Modificando a configuração do servidor Web e da definição de serviço</h2>
+
+<p>Habilitar o SSL em nossa configuração do Nginx envolverá a adição de um redirecionamento do HTTP para o HTTPS, especificando nosso certificado e locais-chave do SSL e adicionando parâmetros de segurança e cabeçalhos.</p>
+
+<p>Como você vai recriar o serviço <code>webserver</code> para incluir essas adições, você pode interrompê-lo agora:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose stop webserver
+</li></ul></code></pre>
+<p>Antes de modificarmos o arquivo de configuração propriamente dito, primeiro iremos obter os <a href="https://github.com/certbot/certbot/blob/master/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf">parâmetros de segurança recomendados para o Nginx</a> a partir do Certbot usando o <code>curl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -sSLo nginx-conf/options-ssl-nginx.conf https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf
+</li></ul></code></pre>
+<p>Este comando salvará esses parâmetros em um arquivo chamado <code>options-ssl-nginx.conf</code>, localizado no diretório <code>nginx-conf</code>.</p>
+
+<p>Em seguida, remova o arquivo de configuração do Nginx criado anteriormente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">rm nginx-conf/nginx.conf
+</li></ul></code></pre>
+<p>Abra outra versão do arquivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano nginx-conf/nginx.conf
+</li></ul></code></pre>
+<p>Adicione o seguinte código ao arquivo para redirecionar o HTTP para o HTTPS e adicione credenciais, protocolos e cabeçalhos de segurança do protocolo SSL. Lembre-se de substituir o <code><span class="highlight">example.com</span></code> pelo seu próprio domínio:</p>
+<div class="code-label " title="~/wordpress/nginx-conf/nginx.conf">~/wordpress/nginx-conf/nginx.conf</div><pre class="code-pre "><code langs="">server {
+        listen 80;
+        listen [::]:80;
+
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        location ~ /.well-known/acme-challenge {
+                allow all;
+                root /var/www/html;
+        }
+
+        location / {
+                rewrite ^ https://$host$request_uri? permanent;
+        }
+}
+
+server {
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        index index.php index.html index.htm;
+
+        root /var/www/html;
+
+        server_tokens off;
+
+        ssl_certificate /etc/letsencrypt/live/<span class="highlight">example.com</span>/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/<span class="highlight">example.com</span>/privkey.pem;
+
+        include /etc/nginx/conf.d/options-ssl-nginx.conf;
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer-when-downgrade" always;
+        add_header Content-Security-Policy "default-src * data: 'unsafe-eval' 'unsafe-inline'" always;
+        # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+        # enable strict transport security only if you understand the implications
+
+        location / {
+                try_files $uri $uri/ /index.php$is_args$args;
+        }
+
+        location ~ \.php$ {
+                try_files $uri =404;
+                fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                fastcgi_pass <span class="highlight">wordpress</span>:9000;
+                fastcgi_index index.php;
+                include fastcgi_params;
+                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+                fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+
+        location ~ /\.ht {
+                deny all;
+        }
+
+        location = /favicon.ico {
+                log_not_found off; access_log off;
+        }
+        location = /robots.txt {
+                log_not_found off; access_log off; allow all;
+        }
+        location ~* \.(css|gif|ico|jpeg|jpg|js|png)$ {
+                expires max;
+                log_not_found off;
+        }
+}
+</code></pre>
+<p>O bloco de servidor HTTP especifica o webroot dos pedidos de renovação do Certbot para o diretório <code>.well-known/acme-challenge</code>. Isso também inclui uma <a href="http://nginx.org/en/docs/http/ngx_http_rewrite_module.html#rewrite">diretriz de reescrita</a>, que direciona os pedidos do HTTP para o diretório raiz para o HTTPS.</p>
+
+<p>O bloco de servidor HTTPS habilita o <code>ssl</code> e o <code>http2</code>. Para ler mais sobre como o HTTP/2 faz a iteração nos protocolos HTTP e os benefícios que ele pode ter para o desempenho do site, consulte a introdução sobre <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-nginx-with-http-2-support-on-ubuntu-18-04">Como configurar o Nginx com suporte do HTTP/2 no Ubuntu 18.04</a>.</p>
+
+<p>Este bloco também inclui nosso certificado de SSL e locais de chave, junto com os parâmetros de segurança recomendados do Certbot que salvamos no <code>nginx-conf/options-ssl-nginx.conf</code>.</p>
+
+<p>Além disso, incluímos alguns cabeçalhos de segurança que nos permitirão obter classificações <strong>A</strong> em coisas como os sites de teste do servidor <a href="https://www.ssllabs.com/ssltest/">SSL Labs</a> e <a href="https://securityheaders.com/">Security Headers</a>. Estes cabeçalhos incluem o <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options"><code>X-Frame-Options</code></a>, <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options"><code>X-Content-Type-Options</code></a>, <a href="https://scotthelme.co.uk/a-new-security-header-referrer-policy/"><code>Referrer Policy</code></a>, <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy"><code>Content-Security-Policy</code></a> e <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection"><code>X-XSS-Protection</code></a>. O cabeçalho <a href="https://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security">HTTP <code>Strict Transport Security</code></a> (HSTS) é retirado do comentário - habilite esta opção somente se você entender as implicações e tiver avaliado sua <a href="https://hstspreload.org/">funcionalidade de &ldquo;precarregamento&rdquo;</a>.</p>
+
+<p>Nossas diretrizes <code>root</code> e <code>index</code> também estão localizadas neste bloco, assim como o resto dos blocos de localização específicos do WordPress discutidos no <a href="https://www.digitalocean.com/community/tutorials/how-to-install-wordpress-with-docker-compose#step-1-%E2%80%94-defining-the-web-server-configuration">Passo 1</a>.</p>
+
+<p>Assim que terminar a edição, salve e feche o arquivo.</p>
+
+<p>Antes de recriar o serviço <code>webserver</code>, será necessário adicionar um mapeamento da porta <code>443</code> para sua definição de serviço <code>webserver</code>.</p>
+
+<p>Abra seu arquivo <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Na definição do serviço <code>webserver</code>, adicione o seguinte mapeamento de porta:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+  webserver:
+    depends_on:
+      - wordpress
+    image: nginx:<span class="highlight">1.15.12</span>-alpine
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - <span class="highlight">"443:443"</span>
+    volumes:
+      - wordpress:/var/www/html
+      - ./nginx-conf:/etc/nginx/conf.d
+      - certbot-etc:/etc/letsencrypt
+    networks:
+      - app-network
+</code></pre>
+<p>O arquivo <code>docker-compose.yml</code> ficará com a seguinte aparência quando estiver terminado:</p>
+<div class="code-label " title="~/wordpress/docker-compose.yml">~/wordpress/docker-compose.yml</div><pre class="code-pre "><code langs="">version: '3'
+
+services:
+  db:
+    image: mysql:<span class="highlight">8.0</span>
+    container_name: db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MYSQL_DATABASE=wordpress
+    volumes:
+      - dbdata:/var/lib/mysql
+    command: '--default-authentication-plugin=mysql_native_password'
+    networks:
+      - app-network
+
+  wordpress:
+    depends_on:
+      - db
+    image: wordpress:<span class="highlight">5.1.1</span>-fpm-alpine
+    container_name: wordpress
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - WORDPRESS_DB_HOST=db:3306
+      - WORDPRESS_DB_USER=$MYSQL_USER
+      - WORDPRESS_DB_PASSWORD=$MYSQL_PASSWORD
+      - WORDPRESS_DB_NAME=wordpress
+    volumes:
+      - wordpress:/var/www/html
+    networks:
+      - app-network
+
+  webserver:
+    depends_on:
+      - wordpress
+    image: nginx:<span class="highlight">1.15.12</span>-alpine
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - wordpress:/var/www/html
+      - ./nginx-conf:/etc/nginx/conf.d
+      - certbot-etc:/etc/letsencrypt
+    networks:
+      - app-network
+
+  certbot:
+    depends_on:
+      - webserver
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - wordpress:/var/www/html
+    command: certonly --webroot --webroot-path=/var/www/html --email <span class="highlight">sammy@example.com</span> --agree-tos --no-eff-email --force-renewal -d <span class="highlight">example.com</span> -d www.<span class="highlight">example.com</span>
+
+volumes:
+  certbot-etc:
+  wordpress:
+  dbdata:
+
+networks:
+  app-network:
+    driver: bridge  
+</code></pre>
+<p>Salve e feche o arquivo quando você terminar a edição.</p>
+
+<p>Recrie o serviço <code>webserver</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d --force-recreate --no-deps webserver
+</li></ul></code></pre>
+<p>Verifique seus serviços com o <code>docker-compose ps</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose ps
+</li></ul></code></pre>
+<p>Você deve ver um resultado indicando que seus serviços <code>db</code>, <code>wordpress</code> e <code>webserver</code> estão em execução:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>  Name                 Command               State                     Ports                  
+----------------------------------------------------------------------------------------------
+certbot     certbot certonly --webroot ...   Exit 0                                           
+db          docker-entrypoint.sh --def ...   Up       3306/tcp, 33060/tcp                     
+webserver   nginx -g daemon off;             Up       0.0.0.0:443-&gt;443/tcp, 0.0.0.0:80-&gt;80/tcp
+wordpress   docker-entrypoint.sh php-fpm     Up       9000/tcp    
+</code></pre>
+<p>Com seus contêineres em execução, termine sua instalação do WordPress através da interface Web.</p>
+
+<h2 id="passo-6-—-concluindo-a-instalação-através-da-interface-com-a-web">Passo 6 — Concluindo a instalação através da Interface com a Web</h2>
+
+<p>Com nossos contêineres em execução, podemos concluir a instalação através da interface Web do WordPress.</p>
+
+<p>No seu navegador Web, navegue até o domínio do seu servidor. Lembre-se de substituir o <code><span class="highlight">example.com</span></code> aqui com seu próprio nome de domínio:</p>
+<pre class="code-pre "><code langs="">https://<span class="highlight">example.com</span>
+</code></pre>
+<p>Selecione o idioma que deseja usar:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker-wordpress/wp_language_select.png" alt="Seletor de Idiomas do WordPress"></p>
+
+<p>Após clicar em <strong>Continuar</strong>, você irá parar na página de configuração principal, na qual você terá que escolher um nome para o seu site e um nome de usuário. Neste ponto, é uma boa ideia escolher um nome de usuário fácil de lembrar (em vez de &ldquo;admin&rdquo;) e uma senha forte. Você pode usar a senha que o WordPress gera automaticamente ou criar a sua própria.</p>
+
+<p>Por fim, será necessário digitar seu endereço de e-mail e decidir se quer ou não evitar que os motores de busca de fazer a indexação do seu site:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker-wordpress/wp_main_setup.png" alt="Página Principal de Configuração do WordPress"></p>
+
+<p>Clicar em <strong>Install WordPress</strong> no final da página levará você para um prompt de login:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker-wordpress/wp_login.png" alt="Tela de Log-in do WordPress"></p>
+
+<p>Uma vez logado, você terá acesso ao painel de administração do WordPress:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker-wordpress/wp_main_dash.png" alt="Painel Principal de Administração do WordPress"></p>
+
+<p>Com sua instalação do WordPress concluída, tome medidas para garantir que seus certificados SSL serão renovados automaticamente.</p>
+
+<h2 id="passo-7-—-renovando-certificados">Passo 7 — Renovando certificados</h2>
+
+<p>Os certificados do Let&rsquo;s Encrypt são válidos por 90 dias, de modo que você vai querer configurar um processo de renovação automatizado para garantir que eles não expirem. Uma maneira de fazer isso é criando um trabalho com o utilitário de agendamento <code>cron</code>. Neste caso, vamos criar uma tarefa do <code>cron</code> para executar periodicamente um script que renovará nossos certificados e recarregará nossa configuração do Nginx.</p>
+
+<p>Primeiro, abra um script chamado <code>ssl_renew.sh</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano ssl_renew.sh
+</li></ul></code></pre>
+<p>Adicione o seguinte código ao script para renovar seus certificados e recarregar a configuração do seu servidor Web. Lembre-se de substituir o nome de usuário deste exemplo pelo nome do seu usuário não raiz:</p>
+<div class="code-label " title="~/wordpress/ssl_renew.sh">~/wordpress/ssl_renew.sh</div><pre class="code-pre "><code class="code-highlight language-bash">#!/bin/bash
+
+COMPOSE="/usr/local/bin/docker-compose --no-ansi"
+DOCKER="/usr/bin/docker"
+
+cd /home/<span class="highlight">sammy</span>/wordpress/
+$COMPOSE run certbot renew --dry-run &amp;&amp; $COMPOSE kill -s SIGHUP webserver
+$DOCKER system prune -af
+</code></pre>
+<p>Primeiro, este script atribui o binário <code>docker-compose</code> a uma variável chamada <code>COMPOSE</code> e especifica a opção <code>--no-ansi</code>, a qual executará os comandos do <code>docker-compose</code> sem os <a href="https://vt100.net/docs/vt510-rm/chapter4.html">caracteres de controle do ANSI</a>. Em seguida, ele faz o mesmo com o binário <code>docker</code>. Então, ele muda para o diretório do projeto <code>~/wordpress</code> e executa os seguintes comandos <code>docker-compose</code>:</p>
+
+<ul>
+<li><code>docker-compose run</code>: iniciará um contêiner <code>certbot</code> e substituirá o <code>comando</code> fornecido em nossa definição de serviço <code>certbot</code>. Em vez de usar o subcomando <code>certonly</code> vamos usar o subcomando <code>renew</code> aqui, o qual renovará os certificados que estão próximos de expirar. Incluímos a opção <code>--dry-run</code> aqui para testar nosso script.</li>
+<li><a href="https://docs.docker.com/compose/reference/kill/"><code>docker-compose kill</code></a>: enviará um <a href="https://en.wikipedia.org/wiki/SIGHUP">sinal <code>SIGHUP</code></a> para o contêiner <code>webserver</code> recarregar a configuração do Nginx. Para obter mais informações sobre o uso deste processo para recarregar sua configuração do Nginx, consulte <a href="https://blog.docker.com/2015/04/tips-for-deploying-nginx-official-image-with-docker/">este post do blog do Docker sobre a implantação da imagem oficial do Nginx com o Docker</a>.</li>
+</ul>
+
+<p>Na sequência, ele executa <a href="https://docs.docker.com/engine/reference/commandline/system_prune/"><code>o docker system prune</code></a> para remover todos os contêineres e imagens não utilizados.</p>
+
+<p>Feche o arquivo quando terminar a edição. Torne-o executável:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod +x ssl_renew.sh
+</li></ul></code></pre>
+<p>Em seguida, abra seu arquivo <strong>root</strong> <code>crontab</code> para executar o script de renovação em um intervalo especificado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo crontab -e
+</li></ul></code></pre>
+<p>Se esta for a primeira vez que você edita esse arquivo, será solicitado que escolha um editor:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>no crontab for root - using an empty one
+
+Select an editor.  To change later, run 'select-editor'.
+  1. /bin/nano        &lt;---- easiest
+  2. /usr/bin/vim.basic
+  3. /usr/bin/vim.tiny
+  4. /bin/ed
+
+Choose 1-4 [1]:
+...
+</code></pre>
+<p>No final do arquivo, adicione a seguinte linha:</p>
+<div class="code-label " title="crontab">crontab</div><pre class="code-pre "><code langs="">...
+*/5 * * * * /home/<span class="highlight">sammy</span>/wordpress/ssl_renew.sh &gt;&gt; /var/log/cron.log 2&gt;&amp;1
+</code></pre>
+<p>Isso definirá intervalos de trabalho de cinco minutos cada, para que você possa testar se o seu pedido de renovação funcionou como o previsto. Também criamos um arquivo de registro, <code>cron.log</code>, para gravar o resultado relevante do trabalho.</p>
+
+<p>Após cinco minutos, verifique o <code>cron.log</code> para ver se o pedido de renovação foi bem-sucedido:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tail -f /var/log/cron.log
+</li></ul></code></pre>
+<p>Um resultado confirmando uma renovação bem-sucedida deve aparecer:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+** DRY RUN: simulating 'certbot renew' close to cert expiry
+**          (The test certificates below have not been saved.)
+
+Congratulations, all renewals succeeded. The following certs have been renewed:
+  /etc/letsencrypt/live/<span class="highlight">example.com</span>/fullchain.pem (success)
+** DRY RUN: simulating 'certbot renew' close to cert expiry
+**          (The test certificates above have not been saved.)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+</code></pre>
+<p>Agora, é possível modificar o arquivo <code>crontab</code> para definir um intervalo diário. Para executar o script todos os dias ao meio-dia, por exemplo, você modificaria a última linha do arquivo para que fique com a seguinte aparência:</p>
+<div class="code-label " title="crontab">crontab</div><pre class="code-pre "><code langs="">...
+0 12 * * * /home/<span class="highlight">sammy</span>/wordpress/ssl_renew.sh &gt;&gt; /var/log/cron.log 2&gt;&amp;1
+</code></pre>
+<p>Você também vai querer remover a opção <code>--dry-run</code> do seu script <code>ssl_renew.sh</code>:</p>
+<div class="code-label " title="~/wordpress/ssl_renew.sh">~/wordpress/ssl_renew.sh</div><pre class="code-pre "><code class="code-highlight language-bash">#!/bin/bash
+
+COMPOSE="/usr/local/bin/docker-compose --no-ansi"
+DOCKER="/usr/bin/docker"
+
+cd /home/<span class="highlight">sammy</span>/wordpress/
+$COMPOSE run certbot renew &amp;&amp; $COMPOSE kill -s SIGHUP webserver
+$DOCKER system prune -af
+</code></pre>
+<p>Seu trabalho <code>cron</code> irá garantir que seus certificados do Let&rsquo;s Encrypt não expirem, renovando-os quando forem elegíveis para tanto. Você também pode <a href="https://www.digitalocean.com/community/tutorials/how-to-manage-logfiles-with-logrotate-on-ubuntu-16-04">configurar um rodízio de registros com o utilitário Logrotate</a> para rodiziar e comprimir seus arquivos de registro.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Neste tutorial, você usou o Docker Compose para criar uma instalação do WordPress com um servidor Web Nginx. Como parte deste fluxo de trabalho, você obteve certificados de TLS/SSL para o domínio que quis associado com seu site do WordPress. Além disso, criou uma tarefa <code>cron</code> para renovar esses certificados quando necessário.</p>
+
+<p>Como passos adicionais para melhorar o desempenho e a redundância do site, consulte os seguintes artigos sobre a entrega e backup dos ativos do WordPress:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-speed-up-wordpress-asset-delivery-using-digitalocean-spaces-cdn">Como agilizar a entrega dos ativos do WordPress usando o DigitalOcean Spaces CND</a>.</li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-back-up-a-wordpress-site-to-spaces">Como fazer backup de um site WordPress para Spaces</a>.</li>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-store-wordpress-assets-on-digitalocean-spaces">Como armazenar ativos do WordPress no DigitalOcean Spaces</a>.</li>
+</ul>
+
+<p>Se estiver interessado em explorar um fluxo de trabalho em contêiner com o Kubernetes, veja:</p>
+
+<ul>
+<li><a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-wordpress-with-mysql-on-kubernetes-using-helm">Como configurar o WordPress com o MySQL no Kubernetes usando o Helm</a>.</li>
+</ul>

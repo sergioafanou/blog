@@ -1,0 +1,106 @@
+---
+layout: post
+title: Usar una CDN para acelerar la entrega de contenido
+network: digitalocean
+date: January 21, 2020 at 10:07PM
+url: https://www.digitalocean.com/community/tutorials/using-a-cdn-to-speed-up-static-content-delivery-es
+image: http://assets.digitalocean.com/articles/CDN/without-CDN.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Las aplicaciones y los sitios web modernos deben a menudo proporcionar un volumen considerable de contenido estático a los usuarios finales. Este contenido incluye imágenes, hojas de estilos, JavaScript y video. A medida que aumentan la cantidad y el tamaño de estos recursos estáticos, lo mismo sucede con el uso del ancho de banda y los tiempos de carga de la página. Esto genera perjuicios en la experiencia de navegación de los usuarios y reduce la capacidad disponible en sus servidores.</p>
+
+<p>Para reducir drásticamente los tiempos de carga de la página, mejorar el rendimiento y recortar sus costos de ancho de banda e infraestructura, puede implementar una CDN, o <strong>red</strong> de <strong>entrega</strong> de <strong>contenido</strong>, para almacenar en caché estos recursos en un conjunto de servidores distribuidos geográficamente.</p>
+
+<p>En este tutorial, ofrecemos una descripción de alto nivel de las CDN, su funcionamiento y los beneficios que ofrecen para sus aplicaciones web.</p>
+
+<h2 id="¿qué-es-una-cdn">¿Qué es una CDN?</h2>
+
+<p>Una red de entrega de contenido es un grupo de servidores distribuidos geográficamente y optimizados para proporcionar contenido estático a los usuarios finales. Este contenido estático corresponder a casi cualquier tipo de datos, pero las CDN se utilizan sobre todo para entregar páginas web y sus archivos relacionados, y transmitir vídeo y audio además de grandes paquetes de software.</p>
+
+<p><img src="http://assets.digitalocean.com/articles/CDN/without-CDN.png" alt="Diagrama de entrega de contenido sin una CDN"></p>
+
+<p>Una CDN consta de varios <em>puntos de presencia</em> (PoP) en varias ubicaciones, y cada uno de ellos consta de numerosos servidores <em>perimetrales</em> que almacenan en caché recursos de su <em>origen</em> o servidor host. Cuando un usuario visita su sitio web y solicita recursos estáticos, como imágenes o archivos de JavaScript, la CDN redirecciona sus solicitudes al servidor perimetral más cercano, desde el cual se proporciona el contenido. Si los recursos no están almacenados en caché en el servidor perimetral, o si los recursos almacenados en caché caducaron, la CDN buscará y almacenará en caché la versión más reciente desde otro servidor perimetral de CDN cercano o desde sus servidores de origen. Si la CDN perimetral no tiene una entrada almacenada en caché para sus recursos (lo cual sucede en la mayoría de los casos si su sitio web recibe una cantidad moderada de tráfico), mostrará la copia en caché al usuario final.</p>
+
+<p><img src="http://assets.digitalocean.com/articles/CDN/CDN.png" alt="Diagrama de la red de entrega de contenido (CDN)"></p>
+
+<p>Esto permite que los usuarios dispersos geográficamente reduzcan al mínimo el número de saltos necesarios para recibir contenido estático y buscar el contenido directamente en la caché de un servidor perimetral cercano. Como resultado, se reducen considerablemente las latencias y la pérdida de paquetes, se acelera la carga de páginas y disminuye de forma drástica la carga para su infraestructura de origen.</p>
+
+<p>Por un costo adicional, los proveedores de CDN a menudo ofrecen funciones adicionales, como la mitigación de <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#ddos-attack">DDoS</a> y limitación de velocidad, los análisis de usuarios y las optimizaciones para casos de uso de transmisión o plataformas móviles.</p>
+
+<h2 id="¿cómo-funciona-una-cdn">¿Cómo funciona una CDN?</h2>
+
+<p>Cuando un usuario visita su sitio web, primero recibe una respuesta de un servidor DNS que contiene la dirección IP de su servidor web host. Su navegador luego solicita el contenido de la página web, que a menudo consiste en una variedad de archivos estáticos, como páginas HTML, hojas de estilos CSS, código JavaScript e imágenes.</p>
+
+<p>Una vez que implementa una CDN y descarga estos recursos estáticos en servidores CDN, ya sea “forzándolos” manualmente o haciendo que la CDN “extraiga” los recursos automáticamente (ambos mecanismos se explican en <a href="https://www.digitalocean.com/community/tutorials/using-a-cdn-to-speed-up-static-content-delivery#push-vs-pull-zones">la sección siguien</a>te), indicará a su servidor web que reescriba los enlaces al contenido estático de modo que apunten a los archivos alojados por la CDN. Si está usa un CMS como WordPress, esta reescritura puede implementarse usando un complemento externo, como <a href="https://wordpress.org/plugins/cdn-enabler/">CDN Enabler</a>.</p>
+
+<p>Muchas CDN ofrecen soporte para dominios personalizados, lo que le permite crear un registro CNAME en su dominio apuntando a un extremo de la CDN. Una vez que la CDN recibe una solicitud de usuario en este extremo (ubicado en el servidor perimetral, mucho más cerca del usuario que sus servidores de backend), dirige la solicitud al punto de presencia (PoP) ubicado más cerca del usuario. Este PoP a menudo consta de uno o más servidores perimetrales de CDN, localizados de forma conjunta en un punto de intercambio de Internet (IxP), que es básicamente un centro de datos que los proveedores de servicios de Internet (ISP) utilizan para interconectar sus redes. El equilibrador de carga interna de la CDN dirige la solicitud a un servidor perimetral ubicado en este PoP, que luego proporciona el contenido al usuario.</p>
+
+<p>Los mecanismos de almacenamiento en caché varían según el proveedor de la CDN, pero generalmente funcionan de la siguiente manera:</p>
+
+<ol>
+<li>Cuando la CDN recibe una primera solicitud de un recurso estático, como una imagen PNG, no dispone del archivo en caché y debe obtener una copia del recurso desde un servidor edge CDN cercano o desde el servidor de origen. Esto se conoce como “miss.” de la memoria caché y normalmente se puede detectar inspeccionando el encabezado de la respuesta HTTP, que contiene <code>X-Cache: MISS</code>. Esta solicitud inicial será más lenta que las solicitudes futura,debido a que, tras completarla, el recurso quedará almacenado en la memoria caché del servidor perimetral.</li>
+<li>Las solicitudes futuras de este recurso (“aciertos” de caché) dirigidas a esta ubicación perimetral ahora se proporcionarán desde la memoria caché hasta su vencimiento (normalmente configurado en los encabezados HTTP). Estas respuestas serán considerablemente más rápidas que la solicitud inicial, lo que reducirá de forma notable las latencias para los usuarios y descargará tráfico web a la red CDN. Puede verificar que la respuesta se proporcionó desde la caché de la CDN inspeccionando el encabezado de la respuesta HTTP, que ahora debería contener <code>X-Cache: HIT</code>.</li>
+</ol>
+
+<p>Para obtener más información sobre cómo funciona y cómo se implementó una CDN específica, consulte la documentación su proveedor de CDN.</p>
+
+<p>En la siguiente sección, se presentarán los dos tipos populares de CDN: <strong>push</strong> y <strong>pull</strong>.</p>
+
+<h2 id="zonas-de-incorporación-vs-zonas-de-obtención">Zonas de incorporación vs. zonas de obtención</h2>
+
+<p>La mayoría de los proveedores de CDN ofrecen dos alternativas para almacenar sus datos en caché: las zonas de obtención y las de incorporación.</p>
+
+<p>En el caso de las <strong>zonas de obtención</strong> se debe introducir la dirección de su servidor de origen y permitir que la CDN busque y almacene en caché de forma automática todos los recursos estáticos disponibles en su sitio. Estas zonas normalmente se utilizan para proporcionar recursos web que se actualizan con frecuencia y tienen tamaños entre reducidos y medianos, como los HTML, CSS y los de Java Script. Una vez que se proporciona a la CDN la dirección de su servidor de origen, el siguiente paso es normalmente reescribir los enlaces a los recursos estáticos, de modo que apunten a la URL proporcionada por la CDN. A partir de ese momento, la CDN gestionará las solicitudes de recursos entrantes de sus usuarios y proporcionará contenido desde sus cachés distribuidas geográficamente y desde su origen, según corresponda.</p>
+
+<p>Para usar una <strong>zona de in</strong>corporación, se suben los datos a una ubicación de almacenamiento o un depósito designados que luego la CDN introduce en memorias caché de su flota de servidores perimetrales distribuidos. Las zonas push se usan normalmente para archivos más grandes que apenas cambian, como los que se encuentran en ficheros, paquetes de software, PDF, videos y audio.</p>
+
+<h2 id="beneficios-del-uso-de-una-cdn">Beneficios del uso de una CDN</h2>
+
+<p>Casi cualquier sitio puede aprovechar los beneficios obtenidos al implementar una CDN, pero generalmente el motivo principal por el cual se implementa tiene que ver con la descarga ancho de banda de sus servidores de origen a los servidores de la CDN y la reducción de la latencia para los usuarios distribuidos geográficamente.</p>
+
+<p>A continuación, repasaremos estas y otras ventajas principales del uso de una CDN.</p>
+
+<h3 id="generar-descarga">Generar descarga</h3>
+
+<p>Si está cerca de utilizar la capacidad de ancho de banda de sus servidores, la descarga de recursos estáticos como imágenes, videos, CSS y archivos de JavaScript reducirá drásticamente el uso de ancho de banda por parte de sus servidores. Las redes de entrega de contenido se diseñan y optimizan para proporcionar contenido estático, y las solicitudes de clientes para este contenido se dirigirán a servidores perimetrales de CDN y se proporcionarán en ellos. Esto tiene el beneficio adicional de reducir la carga en sus servidores de origen, ya que proporcionan estos datos a una frecuencia mucho más baja.</p>
+
+<h3 id="reducir-la-latencia-para-mejorar-la-experiencia-del-usuario">Reducir la latencia para mejorar la experiencia del usuario</h3>
+
+<p>Si su base de usuarios está dispersa geográficamente y una parte de su tráfico que no es poco representativa proviene de una zona geográfica distante, una CDN puede disminuir la latencia almacenando en caché los recursos estáticos en servidores perimetrales más cercanos a sus usuarios. Al reducir la distancia entre sus usuarios y el contenido estático, puede entregar contenido de forma más rápida a sus usuarios y mejorar su experiencia aumentando las velocidades de carga de la página.</p>
+
+<p>Estos beneficios se acentúan en el caso de los sitios web que proporcionan principalmente contenido de video que exige mucho ancho de banda, en los cuales las altas latencias y los tiempos de carga prolongados tienen un impacto más directo sobre la experiencia del usuario y el compromiso con el contenido.</p>
+
+<h3 id="gestionar-picos-de-tráfico-y-evitar-tiempo-de-inactividad">Gestionar picos de tráfico y evitar tiempo de inactividad</h3>
+
+<p>Las CDN le permiten gestionar grandes picos y aumentos de tráfico al equilibrar la carga de las solicitudes en una red grande y distribuida de servidores perimetrales. Al descargar y almacenar contenido estático en una red de entrega, puede acomodar un número mayor de usuarios simultáneos con su infraestructura existente.</p>
+
+<p>Para los sitios web que usen un servidor de origen único, estos grandes picos de tráfico a menudo pueden sobrecargar el sistema, y producir desconexiones y tiempo de inactividad no planificados. El cambio del tráfico a una infraestructura de CDN altamente disponible y redundante, diseñada para gestionar niveles variables de tráfico web, puede aumentar la disponibilidad de sus recursos y contenido.</p>
+
+<h3 id="reducir-costos">Reducir costos</h3>
+
+<p>Debido a que el aprovisionamiento de contenido estático normalmente ocupa la mayor parte del uso de su ancho de banda, la descarga de estos recursos a una red de entrega de contenido puede reducir notablemente sus costos mensuales de infraestructura. Además de reducir los costos de ancho de banda, una CDN puede disminuir los cargos de servidores mediante la reducción de la carga en los servidores de origen, lo cual permite la expansión de su infraestructura existente. Por último, algunos proveedores de CDN ofrecen facturación mensual fija, lo que le permite transformar su consumo de ancho de banda mensual variable en un gasto recurrente estable y predecible.</p>
+
+<h3 id="aumentar-la-seguridad">Aumentar la seguridad</h3>
+
+<p>Las CDN también se usan comúnmente para mitigar ataques de DDoS. Muchos proveedores de CDN incluyen funciones para controlar y filtrar solicitudes a servidores perimetrales. Estos servicios analizan el tráfico web para detectar patrones sospechosos y bloquean el tráfico de ataques malintencionados mientras permiten el tráfico de los usuarios de confianza. Los proveedores de CDN suelen ofrecer varios servicios de mitigación de DDoS, desde la protección contra ataques comunes a nivel de la infraestructura (<a href="https://en.wikipedia.org/wiki/Denial-of-service_attack#Types">capas 3 y 4 de la OSI</a>) hasta servicios de mitigación y limitación de índices más avanzados.</p>
+
+<p>Además, la mayoría de las CDN le permiten configurar SSL completo, con lo cual puede cifrar el tráfico entre la CDN y el usuario final, así como el tráfico entre la CDN y sus servidores de origen, usando certificados proporcionados por la CDN o SSL personalizados.</p>
+
+<h2 id="elegir-la-mejor-solución">Elegir la mejor solución</h2>
+
+<p>Si su obstáculo es la carga sobre la CPU en el servidor de origen, y no el ancho de banda, es posible que una CDN no sea la solución más apropiada. En este caso, el almacenamiento en cachés locales mediante cachés populares como NGINX o Varnish puede reducir considerablemente la carga proporcionando recursos desde la memoria del sistema.</p>
+
+<p>Antes de implementar una CDN, los pasos de optimización adicionales (como los de minificar y comprimir archivos de JavaScript y CSS, y permitir la compresión de la solicitud HTTP del servidor web) pueden tener un impacto considerable en los tiempos de carga de la página y el uso del ancho de banda.</p>
+
+<p>Una herramienta útil para medir la velocidad de carga de su página y mejorarla es <a href="https://developers.google.com/speed/pagespeed/insights/">PageSpeed Insights, de Google</a>. Otra herramienta útil que proporciona un desglose de los tiempos de respuesta y las optimizaciones sugeridas es <a href="https://www.pingdom.com/">Pingdom</a>.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Una red de entrega de contenido puede ser una solución rápida y eficaz para mejorar la escalabilidad y disponibilidad de sus sitios web. Al almacenar en caché los recursos estáticos en una red distribuida de servidores optimizados, puede reducir enormemente los tiempos de carga de la página y las latencias para los usuarios finales. Además, las CDN le permiten reducir considerablemente el uso de ancho de banda absorbiendo las solicitudes de los usuarios y respondiendo desde la memoria caché perimetral, lo que disminuye sus costos de ancho de banda e infraestructura.</p>
+
+<p>Gracias a complementos y compatibilidad con plataformas externas para los principales marcos, como WordPress, Drupal, Django y Ruby on Rails, además de funciones adicionales como la mitigación de DDoS, SSL completo, la monitorización de usuarios y la compresión de recursos, las CDN pueden ser una herramienta muy útil para proteger y optimizar sitios web con un alto nivel de tráfico.</p>

@@ -1,0 +1,249 @@
+---
+layout: post
+title: Cómo instalar Nginx en Debian 9
+network: digitalocean
+date: January 21, 2020 at 10:06PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-debian-9-es
+image: https://assets.digitalocean.com/articles/nginx_1604/default_page.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p><a href="https://nginx.org/">Nginx</a> es uno de los servidores web más populares del mundo y aloja algunos de los sitios más grandes y de mayor tráfico de Internet. Es más fácil de utilizar que Apache en la mayoría de los casos y puede emplearse como servidor web o proxy inverso.</p>
+
+<p>En esta guía, explicaremos la manera de instalar Nginx en su servidor de Debian 9.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de comenzar a aplicar esta guía, debe disponer de un usuario no root normal con privilegios sudo configurado en su servidor y un firewall activo. Puede aprender a hacerlo siguiendo la <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">guía de configuración inicial de servidores para Debian 9</a>.</p>
+
+<p>Cuando disponga de una cuenta, inicie sesión como usuario no root para comenzar.</p>
+
+<h2 id="paso-1-instalar-nginx">Paso 1: Instalar Nginx</h2>
+
+<p>Debido a que Nginx está disponible en los repositorios predeterminados de Debian, es posible instalarlo desde estos repositorios usando el sistema de paquetes <code>apt</code>.</p>
+
+<p>Debido a que se trata de nuestra primera interacción con el sistema de paquetes <code>apt</code> en esta sesión, también actualizaremos nuestro índice local de paquetes de modo que tengamos acceso los listados de paquetes más recientes. A continuación, podremos instalar <code>nginx</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install nginx
+</li></ul></code></pre>
+<p>Tras aceptar el procedimiento, <code>apt</code> instalará Nginx y cualquier dependencia necesaria en su servidor.</p>
+
+<h2 id="paso-2-aplicar-ajustes-al-firewall">Paso 2: Aplicar ajustes al firewall</h2>
+
+<p>Antes de probar Nginx, se deben aplicar ajustes al software del firewall para permitir el acceso al servicio.</p>
+
+<p>Enumere las configuraciones de la aplicación con las que <code>ufw</code> sabe trabajar escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw app list
+</li></ul></code></pre>
+<p>Debería obtener un listado de los perfiles de aplicación:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Available applications:
+...
+  Nginx Full
+  Nginx HTTP
+  Nginx HTTPS
+...
+</code></pre>
+<p>Como puede ver, hay tres perfiles disponibles para Nginx:</p>
+
+<ul>
+<li><strong>Nginx Full</strong>: este perfil abre el puerto <code>80</code> (tráfico web normal, no cifrado) y el puerto <code>443</code> (tráfico TLS/SSL cifrado)</li>
+<li><strong>Nginx HTTP:</strong> este perfil abre solo el puerto <code>80</code> (tráfico web normal, no cifrado)</li>
+<li><strong>Nginx HTTPS:</strong> este perfil abre solo el puerto <code>443</code> (tráfico TLS/SSL cifrado)</li>
+</ul>
+
+<p>Se recomienda habilitar el perfil más restrictivo, que de todos modos permitirá el tráfico que configuró. Debido a que en esta guía aún no configuramos SSL para nuestro servidor, solo deberemos permitir el tráfico en el puerto <code>80</code>.</p>
+
+<p>Puede habilitarlo escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 'Nginx HTTP'
+</li></ul></code></pre>
+<p>Puede verificar el cambio escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre>
+<p>Debería ver el tráfico HTTP permitido en el resultado que se muestra:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere                  
+Nginx HTTP                 ALLOW       Anywhere                  
+OpenSSH (v6)               ALLOW       Anywhere (v6)             
+Nginx HTTP (v6)            ALLOW       Anywhere (v6)
+</code></pre>
+<h2 id="paso-3-comprobar-su-servidor-web">Paso 3: Comprobar su servidor web</h2>
+
+<p>Al final del proceso de instalación, Debian 9 inicia Nginx. El servidor web ya debería estar activo.</p>
+
+<p>Realice una verificación con <code>systemd init</code> para asegurarse de que el servicio esté en ejecución escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">systemctl status nginx
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● nginx.service - A high performance web server and a reverse proxy server
+   Loaded: loaded (/lib/systemd/system/nginx.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Tue 2018-09-04 18:15:57 UTC; 3min 28s ago
+     Docs: man:nginx(8)
+  Process: 2402 ExecStart=/usr/sbin/nginx -g daemon on; master_process on; (code=exited, status=0/SUCCESS)
+  Process: 2399 ExecStartPre=/usr/sbin/nginx -t -q -g daemon on; master_process on; (code=exited, status=0/SUCCESS)
+ Main PID: 2404 (nginx)
+    Tasks: 2 (limit: 4915)
+   CGroup: /system.slice/nginx.service
+           ├─2404 nginx: master process /usr/sbin/nginx -g daemon on; master_process on;
+           └─2405 nginx: worker process
+</code></pre>
+<p>Como puede ver arriba, parece que el servicio se inició correctamente. Sin embargo, la mejor forma de comprobarlo es solicitar una página de Nginx.</p>
+
+<p>Puede acceder a la página de aterrizaje predeterminada de Nginx para confirmar que el software funcione correctamente dirigiéndose a la dirección IP de su servidor. Si no conoce la dirección IP de su servidor, intente escribir lo siguiente en la instrucción de comandos de su servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip addr show eth0 | grep inet | awk '{ print $2; }' | sed 's/\/.*$//'
+</li></ul></code></pre>
+<p>Obtendrá algunas líneas. Puede probar cada una de ellas en su navegador web para ver si funcionan.</p>
+
+<p>Cuando tenga la dirección IP de su servidor, introdúzcala en la barra de direcciones de su navegador:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>
+</code></pre>
+<p>Debería ver la página de aterrizaje predeterminada de Nginx:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_1604/default_page.png" alt="Página predeterminada de Nginx"></p>
+
+<p>Esta página se incluye con Nginx para mostrarle que el servidor se ejecuta correctamente.</p>
+
+<h2 id="paso-4-administrar-el-proceso-de-nginx">Paso 4: Administrar el proceso de Nginx</h2>
+
+<p>Ahora que su servidor web está listo, revisaremos algunos de los comandos básicos de administración.</p>
+
+<p>Para detener su servidor web, escriba lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl stop nginx
+</li></ul></code></pre>
+<p>Para iniciar el servidor web cuando no esté activo, escriba lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start nginx
+</li></ul></code></pre>
+<p>Para detener y luego iniciar el servicio de nuevo, escriba lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Si simplemente realizará cambios en la configuración, Nginx a menudo puede volver a cargase sin perder conexiones. Para hacer esto, escriba lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl reload nginx
+</li></ul></code></pre>
+<p>De forma predeterminada,Nginx está configurado para iniciarse automáticamente cuando lo haga el servidor. Si no es lo que quiere, deshabilite este comportamiento escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl disable nginx
+</li></ul></code></pre>
+<p>Para volver a habilitar el servicio de modo que se cargue en el inicio, puede escribir lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable nginx
+</li></ul></code></pre>
+<h2 id="paso-5-configurar-los-bloques-del-servidor">Paso 5: Configurar los bloques del servidor</h2>
+
+<p>Al emplear el servidor web Nginx, se pueden utilizar_ bloques de servidor_ (similares a hosts virtuales de Apache) para encapsular los detalles de la configuración y alojar más de un dominio desde un único servidor. Configuraremos un dominio llamado <strong>example.com</strong>, pero debería <strong>cambiarlo por el nombre de su propio dominio</strong>. Consulte nuestra <a href="https://www.digitalocean.com/docs/networking/dns/">introducción a DNS de DigitalOcean</a> para hallar más información sobre la configuración de un nombre de dominio con DigitalOcean.</p>
+
+<p>Nginx en Debian 9 tiene habilitado un bloque de servidor por defecto, que está configurado para presentar documentos desde un directorio en <code>/var/www/html</code>. Si bien esto funciona bien para un solo sitio, puede ser difícil de manejar si aloja varios. En vez de modificar <code>/var/www/html</code>, crearemos una estructura de directorios dentro de <code>/var/www</code> para nuestro sitio <strong>example.com</strong> y dejaremos <code>/var/www/html</code> como directorio predeterminado que se abastecerá si una solicitud de cliente no coincide con otros sitios.</p>
+
+<p>Cree el directorio para <strong>example.com</strong>, utilizando el indicador <code>-p</code> para crear cualquier directorio principal necesario:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir -p /var/www/<span class="highlight">example.com</span>/html
+</li></ul></code></pre>
+<p>A continuación, asigne la propiedad del directorio con la variable de entorno <code>$USER:</code></p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R $USER:$USER /var/www/<span class="highlight">example.com</span>/html
+</li></ul></code></pre>
+<p>Los permisos de sus root web deberían ser correctos si no modificó el valor <code>umask</code>, pero puede comprobarlo escribiendo lo siguiente:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod -R 755 /var/www/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>A continuación, cree una página de ejemplo <code>index.html</code> utilizando <code>nano</code> o <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9#step-six-%E2%80%94-completing-optional-configuration">su editor favorito</a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano /var/www/<span class="highlight">example.com</span>/html/index.html
+</li></ul></code></pre>
+<p>Dentro de ella, agregue el siguiente ejemplo de HTML:</p>
+<div class="code-label " title="/var/www/example.com/html/index.html">/var/www/example.com/html/index.html</div><pre class="code-pre "><code langs="">&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;Welcome to <span class="highlight">Example.com</span>!&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;h1&gt;Success!  The <span class="highlight">example.com</span> server block is working!&lt;/h1&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<p>Para que Nginx presente este contenido, es necesario crear un bloque de servidor con las directivas correctas. En vez de modificar el archivo de configuración predeterminado directamente, crearemos uno nuevo en <code>/etc/nginx/sites-available/<span class="highlight">example.com</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/sites-available/<span class="highlight">example.com</span>
+</li></ul></code></pre>
+<p>Péguelo en el siguiente bloque de configuración, similar al predeterminado, pero actualizado para nuestro nuevo directorio y nombre de dominio:</p>
+<div class="code-label " title="/etc/nginx/sites-available/example.com">/etc/nginx/sites-available/example.com</div><pre class="code-pre "><code langs="">server {
+        listen 80;
+        listen [::]:80;
+
+        root /var/www/<span class="highlight">example.com</span>/html;
+        index index.html index.htm index.nginx-debian.html;
+
+        server_name <span class="highlight">example.com</span> www.<span class="highlight">example.com</span>;
+
+        location / {
+                try_files $uri $uri/ =404;
+        }
+}
+</code></pre>
+<p>Observe que actualizamos la configuración <code>root</code> en nuestro nuevo directorio y el <code>server_name</code> para nuestro nombre de dominio.</p>
+
+<p>A continuación, habilitaremos el archivo creando un enlace entre él y el directorio <code>sites-enabled</code>, en el cual Nginx obtiene lecturas durante el inicio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ln -s /etc/nginx/sites-available/<span class="highlight">example.com</span> /etc/nginx/sites-enabled/
+</li></ul></code></pre>
+<p>Ahora, contamos con dos bloques de servidor habilitados y configurados para responder a las solicitudes conforme a las directivas <code>listen</code> y <code>server_name</code> (puede obtener más información sobre cómo Nginx procesa estas directivas <a href="https://www.digitalocean.com/community/tutorials/understanding-nginx-server-and-location-block-selection-algorithms">aquí</a>):</p>
+
+<ul>
+<li><code>example.com</code>: responderá a solicitudes de <code>example.com</code> y <code>www.example.com</code>.</li>
+<li><code>default</code>: responderá a cualquier solicitud en el puerto <code>80</code> que no coincida con los otros dos bloques.</li>
+</ul>
+
+<p>Para evitar un problema de memoria de depósito de hash que pueda surgir al agregar nombres de servidor, es necesario aplicar ajustes a un valor en el archivo <code>/etc/nginx/nginx.conf</code>. Abra el archivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/nginx/nginx.conf
+</li></ul></code></pre>
+<p>Encuentre la directiva <code>server_names_hash_bucket_size</code> y elimine el símbolo <code>#</code> para quitar el comentario de la línea:</p>
+<div class="code-label " title="/etc/nginx/nginx.conf">/etc/nginx/nginx.conf</div><pre class="code-pre "><code langs="">...
+http {
+    ...
+    server_names_hash_bucket_size 64;
+    ...
+}
+...
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine.</p>
+
+<p>A continuación, compruebe que no haya errores de sintaxis en ninguno de sus archivos de Nginx:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nginx -t
+</li></ul></code></pre>
+<p>Si no hay problemas, verá el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+</code></pre>
+<p>Una vez superada la prueba de configuración, reinicie Nginx para habilitar sus cambios:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart nginx
+</li></ul></code></pre>
+<p>Con esto, Nginx debería proporcionar su nombre de dominio. Puede comprobarlo visitando <code>http://<span class="highlight">example.com</span></code>, donde debería ver algo como lo siguiente:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/nginx_server_block_1404/first_block.png" alt="Primer bloque de servidor de Nginx"></p>
+
+<h2 id="paso-6-familiarizarse-con-archivos-y-directorios-importantes-de-ngnix">Paso 6: Familiarizarse con archivos y directorios importantes de Ngnix</h2>
+
+<p>Ahora que sabe administrar el propio servicio de Nginx, debería tomarse unos minutos para familiarizarse con algunos directorios y archivos importantes.</p>
+
+<h3 id="contenido">Contenido</h3>
+
+<ul>
+<li><code>/var/www/html</code>: el contenido web real, que por defecto solo consta de la página predeterminada de Nginx que vio antes, se presenta desde el directorio <code>/var/www/html</code>. Esto se puede cambiar modificando los archivos de configuración de Nginx.</li>
+</ul>
+
+<h3 id="configuración-del-servidor">Configuración del servidor</h3>
+
+<ul>
+<li><code>/etc/nginx</code>: directorio de configuración de Nginx. En él se encuentran todos los archivos de configuración de Nginx.</li>
+<li><code>/etc/nginx/nginx.conf</code>: archivo de configuración principal de Nginx. Esto se puede modificar para realizar cambios en la configuración general de Nginx.</li>
+<li><code>/etc/nginx/sites-available/</code>: directorio en el que se pueden guardar bloques de servidor por sitio. Nginx no utilizará los archivos de configuración de este directorio a menos que estén vinculados al directorio <code>sites-enabled</code>. Normalmente, toda la configuración del bloque de servidor se realiza en este directorio y luego se habilita estableciendo un vínculo con el otro directorio.</li>
+<li><code>/etc/nginx/sites-enabled/</code>: directorio en el que se almacenan los bloques de servidor habilitados por sitio. Normalmente, estos se crean estableciendo vínculos con los archivos de configuración del directorio <code>sites-available</code>.</li>
+<li><code>/etc/nginx/snippets</code>: este directorio contiene fragmentos de configuración que pueden incluirse en otras partes de la configuración de Nginx. Los segmentos de configuración potencialmente repetibles reúnen las condiciones para la conversión a fragmentos.</li>
+</ul>
+
+<h3 id="registros-del-servidor">Registros del servidor</h3>
+
+<ul>
+<li><code>/var/log/nginx/access.log</code>: cada solicitud a su servidor web se registra en este archivo de registro, a menos que Nginx esté configurado para hacer algo diferente.</li>
+<li><code>/var/log/nginx/error.log</code>: cualquier error de Nginx se asentará en este registro.</li>
+</ul>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Ahora que  instaló su servidor web, dispone de muchas opciones respecto del tipo de contenido que puede ofrecer y de las tecnologías que puede utilizar para brindar una experiencia más completa a sus usuarios.</p>

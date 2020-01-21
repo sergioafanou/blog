@@ -1,0 +1,309 @@
+---
+layout: post
+title: Cómo configurar WordPress con MySQL en Kubernetes usando Helm
+network: digitalocean
+date: January 21, 2020 at 10:07PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-wordpress-with-mysql-on-kubernetes-using-helm-es
+image: http://assets.digitalocean.com/articles/wordpress_kubernetes/admin_login.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>A medida que más desarrolladores trabajan en entornos distribuidos, herramientas como <a href="https://kubernetes.io/">Kubernetes</a> han llegado a ser cruciales para mantener la estandarización de los componentes de aplicaciones entre entornos de compilación y producción dinámicos. Con la creciente complejidad de los ecosistemas de aplicaciones, y el aumento de la popularidad de Kubernetes, las herramientas que ayudan a administrar recursos en Kubernetes se volvieron esenciales.</p>
+
+<p><a href="https://helm.sh/">helm</a> es un gestor de paquetes de código abierto para Kubernetes que simplifica el proceso de implementación y actualización de aplicaciones en un clúster de Kubernetes, y también proporciona una forma de encontrar y compartir aplicaciones listas para instalar que están empaquetadas como <em>Gráficos de Kubernetes</em>.</p>
+
+<p>A lo largo de este tutorial, usaremos Helm para configurar <a href="https://wordpress.com">WordPress</a> sobre un clúster Kubernetes a fin de crear un sitio web de alta disponibilidad. Además de aprovechar la escalabilidad intrínseca y los aspectos de alta disponibilidad de Kubernetes, esta configuración permitirá preservar la seguridad de WordPress proporcionando flujos de trabajo simplificados de actualización y reversión a través de Helm.</p>
+
+<p>Usaremos un servidor de MySQL externo para extraer el componente de la base de datos, ya que puede ser parte de un clúster o servicio gestionado independiente para mayor disponibilidad. Tras completar los pasos descritos en este tutorial, tendrá una instalación de WordPress completamente funcional en un entorno de clústeres en contenedores administrado por Kubernetes.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para completar esta guía, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un clúster de Kubernetes 1.10, o una versión posterior, con <a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/">control de acceso basado en roles</a> (RBCA) activado.</li>
+<li>La herramienta de línea de comandos <code>kubectl</code> instalada en su máquina o servidor de desarrollo local, configurada para conectarse a su clúster. Consulte <a href="https://kubernetes.io/docs/tasks/tools/install-kubectl/">la documentación oficial de Kubernetes</a> para obtener instrucciones sobre cómo configurar esto.</li>
+<li>El gestor de paquetes <a href="https://helm.sh/">Helm</a> instalado en su máquina o servidor de desarrollo local, y Tiller instalado en su clúster, como se explica en este tutorial: <a href="https://www.digitalocean.com/community/tutorials/how-to-install-software-on-kubernetes-clusters-with-the-helm-package-manager">Cómo instalar software en clústeres de Kubernetes con el gestor de paquetes Helm</a>.</li>
+<li>Un servidor MySQL externo con acceso SSH y la contraseña de <strong>root</strong> de MySQL. Para configurar esto, puede seguir uno de nuestros tutoriales sobre MySQL. Por ejemplo, <a href="https://www.digitalocean.com/community/tutorials/how-to-install-mysql-on-ubuntu-18-04">Cómo instalar MySQL en Ubuntu 18.04</a>.</li>
+</ul>
+
+<p>Antes de continuar, asegúrese de poder iniciar sesión en su servidor de MySQL y disponer de conectividad con su clúster de Kubernetes. En caso de que tenga configurados varios clústeres en su archivo de configuración <code>kubectl</code>, debe asegurarse de estar conectado al clúster correcto ejecutando el siguiente comando desde su máquina o servidor de desarrollo local:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl config get-contexts
+</li></ul></code></pre>
+<p>Este es un resultado de ejemplo:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+CURRENT   NAME                        CLUSTER                     AUTHINFO                          NAMESPACE
+*         do-sfo2-wordpress-cluster   do-sfo2-wordpress-cluster   do-sfo2-wordpress-cluster-admin   
+          minikube                    minikube                    minikube                                              
+</code></pre>
+<p>El signo asterisco (*) indica el clúster que actualmente <em>representa el contexto predeterminado</em>. En caso de que deba cambiar el contexto actual, ejecute:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl config use-context <span class="highlight">context-name</span>
+</li></ul></code></pre>
+<p>Con esto, debería estar listo para seguir el resto de la guía.</p>
+
+<h2 id="paso-1-configurar-mysql">Paso 1: Configurar MySQL</h2>
+
+<p>Primero, crearemos un usuario MySQL dedicado y una base de datos para WordPress a fin de permitir conexiones desde hosts externos. Esto es necesario porque nuestra instalación de WordPress residirá en un servidor independiente dentro del clúster de Kubernetes. En caso de que ya disponga de un usuario de MySQL dedicado y una base de datos configurados para WordPress, podrá continuar con el siguiente paso.</p>
+
+<p>Desde el servidor de MySQL, inicie sesión en MySQL con el siguiente comando:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -u root -p
+</li></ul></code></pre>
+<p>Se le solicitará proporcionar la contraseña que configuró para la cuenta <strong>root</strong> de MySQL cuando instaló el software. Después de iniciar sesión, MySQL le proporcionará un mensaje de comando que puede usar para crear la base de datos y el usuario que necesitamos para WordPress.</p>
+
+<p><span class='note'><strong>Nota:</strong> Para este tutorial, crearemos una base de datos llamada <code><span class="highlight">wordpress</span></code> y un usuario llamado <code><span class="highlight">wordpress_user</span></code>, identificado por la contraseña <code><span class="highlight">password</span></code>. Tenga en cuenta que estos son valores de ejemplo no seguros;** debería modificarlos** a lo largo de esta guía.<br></span></p>
+
+<p>Para crear la base de datos, puede usar la siguiente instrucción:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">CREATE DATABASE <span class="highlight">wordpress</span>;
+</li></ul></code></pre>
+<p>Ahora, crearemos un usuario de MySQL dedicado para esta base de datos:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">CREATE USER <span class="highlight">wordpress_user</span> IDENTIFIED BY '<span class="highlight">password</span>';
+</li></ul></code></pre>
+<p>Se creó el usuario <code><span class="highlight">wordpress_user</span></code>, pero aún no tiene permisos de acceso. El siguiente comando proporcionará a este usuario acceso de administrador (todos los privilegios) a la base de datos de <strong>wordpress</strong> desde redes locales y externas:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">GRANT ALL PRIVILEGES ON <span class="highlight">wordpress</span>.* TO <span class="highlight">wordpress_user</span>@'%';
+</li></ul></code></pre>
+<p>Para actualizar las tablas internas de MySQL que gestionan los permisos de acceso, utilice la siguiente instrucción:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">FLUSH PRIVILEGES;
+</li></ul></code></pre>
+<p>Ahora podrá cerrar el cliente de MySQL con lo siguiente:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">exit;
+</li></ul></code></pre>
+<p>Para comprobar que los cambios se realizaron correctamente, puede iniciar sesión en el cliente de línea de comandos de MySQL de nuevo, esta vez usando la nueva cuenta <code><span class="highlight">wordpress_user</span></code> para la autenticación:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -u <span class="highlight">wordpress_user</span> -p
+</li></ul></code></pre>
+<p>Debería usar la misma contraseña que proporcionó al crear este usuario MySQL con la declaración <code>CREATE_USER</code>. Para confirmar que su nuevo usuario tenga acceso a la base de datos <code><span class="highlight">wordpress</span>,</code> puede usar la siguiente instrucción:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">show databases;
+</li></ul></code></pre>
+<p>Se espera el siguiente resultado:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>+--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| <span class="highlight">wordpress</span>          |
++--------------------+
+2 rows in set (0.03 sec)
+</code></pre>
+<p>Después de confirmar que la base de datos <code><span class="highlight">wordpress</span></code> esté incluida en los resultados, puede salir del cliente de línea de comandos de MySQL con lo siguiente:</p>
+<pre class="code-pre custom_prefix second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="mysql&gt;">exit;
+</li></ul></code></pre>
+<p>Ahora, dispondrá de una base de datos de MySQL dedicada para WordPress y credenciales de acceso válidas para usarlas dentro de ella. Debido a que nuestra instalación de WordPress residirá en un servidor independiente, de todas formas necesitaremos editar nuestra configuración de MySQL para permitir conexiones provenientes de hosts externos.</p>
+
+<p>Mientras se encuentre en su servidor MySQL, abra el archivo <code>/etc/mysql/mysql.conf.d/mysqld.cnf</code> usando el editor de línea de comandos que prefiera:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+</li></ul></code></pre>
+<p>Busque el ajuste <code>bind-address</code> en este archivo. Por defecto, MySQL escucha solo en <code>127.0.0.1</code> (localhost). Para aceptar las conexiones desde hosts externos, debemos cambiar este valor a <code>0.0.0.0</code>. Así es como debería quedar la configuración <code>bind-address:</code></p>
+<div class="code-label " title="/etc/mysql/mysql.conf.d/mysqld.cnf">/etc/mysql/mysql.conf.d/mysqld.cnf</div><pre class="code-pre "><code langs="">
+# Instead of skip-networking the default is now to listen only on
+# localhost which is more compatible and is not less secure.
+bind-address            = <span class="highlight">0.0.0.0</span>
+</code></pre>
+<p>Cuando termine de realizar estos cambios, guarde y cierre el archivo. Deberá reiniciar MySQL con el siguiente comando:</p>
+<pre class="code-pre command second-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart mysql
+</li></ul></code></pre>
+<p>Para probar si puede establecer la conexión de manera remota, ejecute el siguiente comando desde su máquina o servidor de desarrollo local:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mysql -h <span class="highlight">mysql_server_ip</span> -u <span class="highlight">wordpress_user</span> -p
+</li></ul></code></pre>
+<p>Recuerde cambiar <code><span class="highlight">mysql_server_ip</span></code> por la dirección IP o el nombre de host de su servidor de MySQL. Si puede establecer conexión sin errores, estará listo para continuar con el siguiente paso.</p>
+
+<h2 id="paso-2-instalar-wordpress">Paso 2: Instalar WordPress</h2>
+
+<p>Ahora que tenemos la información necesaria para establecer conexión con la base de datos MySQL, podemos instalar WordPress usando Helm.</p>
+
+<p>Por defecto, el gráfico de WordPress instala <a href="https://mariadb.org/">MariaDB</a> en un pod separado dentro del clúster y lo utiliza como base de datos de WordPress. Nos convendrá deshabilitar este comportamiento y configurar WordPress para que utilice una base de datos de MySQL externa. Es posible ajustar esta y otras opciones de configuración (como el usuario de administración y la contraseña predeterminados de WordPress) en el momento de la instalación, ya sea a través de los parámetros de línea de comandos o mediante un archivo de configuración YAML independiente.</p>
+
+<p>Para que todo esté organizado y se pueda extender de forma sencilla, usaremos un archivo de configuración.</p>
+
+<p>Desde su máquina o servidor de desarrollo local, cree un nuevo directorio para los ajustes de su proyecto y diríjase a él:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir myblog-settings
+</li><li class="line" prefix="$">cd myblog-settings
+</li></ul></code></pre>
+<p>A continuación, cree un archivo llamado <code>values.yaml</code>, usando el editor de texto que prefiera:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano values.yaml
+</li></ul></code></pre>
+<p>Dentro de este archivo, debemos configurar algunas variables que definirán la forma en que WordPress se conectará con la base de datos, así como algunas informaciones básicas sobre su sitio y el usuario de administración inicial para iniciar sesión en WordPress cuando la instalación se complete.</p>
+
+<p>Basaremos nuestra configuración en el archivo predeterminado <code>values.yaml</code> del <a href="https://github.com/bitnami/charts/blob/master/upstreamed/wordpress/values.yaml">gráfico de Helm de WordPress</a>. La sección <strong>_Información del blog _</strong>y del sitio contiene opciones generales para su blog de WordPress, como el nombre del blog y las credenciales de usuario iniciales. La sección <strong><em>Configuración de la base de datos</em></strong> de este archivo contiene los ajustes para la conexión con el servidor de MySQL remoto. MariaDB está desactivado en la sección final.</p>
+
+<p>Copie el siguiente contenido a su archivo <code>values.yaml</code> y sustituya los valores resaltados por sus valores personalizados:</p>
+<div class="code-label " title="values.yaml">values.yaml</div><pre class="code-pre "><code langs="">
+## Blog/Site Info
+wordpressUsername: <span class="highlight">sammy</span>
+wordpressPassword: <span class="highlight">password</span>
+wordpressEmail: <span class="highlight">sammy@example.com</span>
+wordpressFirstName: <span class="highlight">Sammy</span>
+wordpressLastName: <span class="highlight">the Shark</span>
+wordpressBlogName: <span class="highlight">Sammy's Blog!</span>
+
+## Database Settings
+externalDatabase:
+  host: <span class="highlight">mysql_server_ip</span>
+  user: <span class="highlight">wordpress_user</span>
+  password: <span class="highlight">password</span>
+  database: <span class="highlight">wordpress</span>
+
+## Disabling MariaDB
+mariadb:
+  enabled: false
+</code></pre>
+<p>Acabamos de configurar las siguientes opciones:</p>
+
+<ul>
+<li><strong>wordpressUsername</strong>: nombre de usuario para iniciar sesión en WordPress.</li>
+<li><strong>wordpressPassword</strong>: contraseña del usuario de WordPress.</li>
+<li><strong>wordpressEmail</strong>: correo electrónico del usuario de WordPress.</li>
+<li><strong>wordpressFirstName</strong>: nombre del usuario de Wordpress.</li>
+<li><strong>wordpressLastName</strong>: apellido del usuario de Wordpress.</li>
+<li><strong>wordpressBlogName</strong>: nombre del sitio o blog.</li>
+<li><strong>host</strong>: dirección IP o nombre de host del servidor de MySQL.</li>
+<li><strong>user</strong>: usuario de MySQL.</li>
+<li><strong>password</strong>: contraseña de MySQL.</li>
+<li><strong>database</strong>: nombre de la base de datos de MySQL.</li>
+</ul>
+
+<p>Cuando termine con la edición, guarde el archivo y cierre el editor.</p>
+
+<p>Ahora que realizamos toda la configuración necesaria, es el momento de ejecutar <code>helm</code> para instalar WordPress. El siguiente comando indica a <code>helm</code> que instale la versión estable más reciente del gráfico de WordPress con el nombre <code><span class="highlight">myblog</span></code>, usando <code>values.yaml</code> como archivo de configuración:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm install --name <span class="highlight">myblog</span> -f values.yaml stable/wordpress
+</li></ul></code></pre>
+<p>El resultado debe ser similar al siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+NAME:   myblog
+LAST DEPLOYED: Fri Jan 25 20:24:10 2019
+NAMESPACE: default
+STATUS: DEPLOYED
+
+RESOURCES:
+==&gt; v1/Deployment
+NAME              READY  UP-TO-DATE  AVAILABLE  AGE
+myblog-wordpress  0/1    1           0          1s
+
+==&gt; v1/PersistentVolumeClaim
+NAME              STATUS   VOLUME            CAPACITY  ACCESS MODES  STORAGECLASS  AGE
+myblog-wordpress  Pending  do-block-storage  1s
+
+==&gt; v1/Pod(related)
+NAME                               READY  STATUS   RESTARTS  AGE
+myblog-wordpress-5965f49485-8zfl7  0/1    Pending  0         1s
+
+==&gt; v1/Secret
+NAME               TYPE    DATA  AGE
+myblog-externaldb  Opaque  1     1s
+myblog-wordpress   Opaque  1     1s
+
+==&gt; v1/Service
+NAME              TYPE          CLUSTER-IP     EXTERNAL-IP  PORT(S)                     AGE
+myblog-wordpress  LoadBalancer  10.245.144.79  &lt;pending&gt;    80:31403/TCP,443:30879/TCP  1s
+
+(...)
+</code></pre>
+<p>Una vez que la instalación finalice, se creará un servicio llamado <strong>myblog-wordpress</strong> en su clúster de Kubernetes, pero pueden transcurrir unos minutos hasta que el contenedor esté listo y la información de <code>External-IP</code> esté disponible. Para verificar el estado de este servicio y recuperar su dirección IP externa, ejecute lo siguiente:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">kubectl get services
+</li></ul></code></pre>
+<p>El resultado debe ser similar al siguiente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+NAME               TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                      AGE
+kubernetes         ClusterIP      10.245.0.1      &lt;none&gt;          443/TCP                      20h
+<span class="highlight">myblog-wordpress</span>   LoadBalancer   10.245.144.79   <span class="highlight">203.0.113.110</span>   80:31403/TCP,443:30879/TCP   3m40s
+
+</code></pre>
+<p>Este comando le proporciona información detallada sobre los servicios que se ejecutan en su clúster, incluidos el nombre y el tipo del servicio, y las direcciones IP utilizadas por este. Como puede ver en el resultado, la instalación de WordPress se presenta como <code>myblog-wordpress</code> en la dirección IP externa <code>203.0.113.110</code>.</p>
+
+<p><span class='note'><strong>Nota:</strong> En caso de que utilice <code>minikube</code> para probar esta configuración, deberá ejecutar <code>minikube service myblog-wordpress</code> para exponer el servidor web del contenedor de modo que pueda acceder a él desde su navegador.<br></span></p>
+
+<p>De esta manera, su instalación de WordPress quedará en condiciones de funcionamiento. Para acceder a la interfaz de administración, utilice la dirección IP obtenida a partir del resultado de <code>kubectl get services</code>, seguida de <code>/wp-admin</code> en su navegador web:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">203.0.113.110</span>/wp-admin
+</code></pre>
+<p><img src="http://assets.digitalocean.com/articles/wordpress_kubernetes/admin_login.png" alt="Pantalla de inicio de sesión"></p>
+
+<p>Debería usar las credenciales definidas en su archivo <code>values.yaml</code> para iniciar sesión y comenzar a configurar su sitio de WordPress.</p>
+
+<h2 id="paso-3-actualizar-wordpress">Paso 3: Actualizar WordPress</h2>
+
+<p>Debido a su popularidad, WordPress es a menudo objetivo de usos malintencionados. Por ello, es importante mantenerlo actualizado. Podemos actualizar las versiones de Helm con el comando <code>helm upgrade</code>.</p>
+
+<p>Para enumerar todas sus versiones actuales, ejecute el siguiente comando desde su computadora local o servidor de desarrollo:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm list
+</li></ul></code></pre>
+<p>El resultado deberá ser similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>NAME        REVISION    UPDATED                     STATUS      CHART           APP VERSION NAMESPACE
+myblog      1           Fri Jan 25 20:24:10 2019    DEPLOYED    wordpress-<span class="highlight">5.1.2</span>   <span class="highlight">5.0.3</span>     default  
+
+</code></pre>
+<p>Como puede ver en el resultado, nuestra versión actual de WordPress es la <code>5.0.3</code> (versión app), mientras que la versión del gráfico es la <code>5.1.2</code>. Si desea actualizar a una versión más reciente de un gráfico, primero actualice sus repositorios de Helm con lo siguiente:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm repo update
+</li></ul></code></pre>
+<p>El siguiente resultado estará previsto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hang tight while we grab the latest from your chart repositories...
+...Skip local chart repository
+...Successfully got an update from the "stable" chart repository
+Update Complete. ⎈ Happy Helming!⎈
+</code></pre>
+<p>Ahora, podrá verificar si hay una versión más reciente del gráfico de WordPress disponible con lo siguiente:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm inspect chart stable/wordpress
+</li></ul></code></pre>
+<p>El resultado deberá ser similar a este:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>apiVersion: v1
+appVersion: <span class="highlight">5.1.1</span>
+description: Web publishing platform for building blogs and websites.
+engine: gotpl
+home: http://www.wordpress.com/
+icon: https://bitnami.com/assets/stacks/wordpress/img/wordpress-stack-220x234.png
+keywords:
+- wordpress
+- cms
+- blog
+- http
+- web
+- application
+- php
+maintainers:
+- email: containers@bitnami.com
+  name: Bitnami
+name: wordpress
+sources:
+- https://github.com/bitnami/bitnami-docker-wordpress
+version: <span class="highlight">5.9.0</span>
+</code></pre>
+<p>Como puede ver en el resultado, hay un nuevo gráfico disponible (versión 5.9.0) con WordPress <strong>5.1.1</strong> (versión app). Cuando desee actualizar su versión de WordPress al gráfico de WordPress más reciente, debería ejecutar lo siguiente:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm upgrade -f values.yaml <span class="highlight">myblog</span> stable/wordpress
+</li></ul></code></pre>
+<p>Con este comando se generará un resultado muy similar al de <code>helm install</code>. Es importante proporcionar el mismo archivo de configuración que usamos al instalar el gráfico de WordPress por primera vez, ya que contiene los ajustes de la base de datos personal que definimos para nuestra configuración.</p>
+
+<p>Ahora, si ejecuta <code>helm list</code> de nuevo, debería ver información actualizada sobre su versión:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+NAME    REVISION    UPDATED                     STATUS      CHART           APP VERSION     NAMESPACE
+myblog  2           Fri May  3 14:51:20 2019    DEPLOYED    wordpress-<span class="highlight">5.9.0</span>   <span class="highlight">5.1.1</span>         default  
+
+</code></pre>
+<p>Con esto, habrá realizado de forma correcta la actualización de WordPress a la última versión del gráfico de WordPress.</p>
+
+<h3 id="volver-a-una-versión-anterior">Volver a una versión anterior</h3>
+
+<p>Cada vez que actualice una versión, Helm creará una nueva <strong><em>revisión</em></strong> de esta. Una revisión establece un <em>punto de control</em> fijo que podrá restablecer si no obtiene los resultados que espera. Es similar a una <em>confirmación</em> en Git, porque crea un historial de cambios que pueden compararse y revertirse. Si se produce algún error durante el proceso de actualización, siempre puede restablecer una revisión anterior de una versión de Helm concreta con el comando <code>helm rollback</code>:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm rollback <span class="highlight">release-name revision-number</span>
+</li></ul></code></pre>
+<p>Por ejemplo, si queremos deshacer la actualización y restablecer nuestra <strong>primera</strong> versión de WordPress, lo haríamos así:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">helm rollback myblog <span class="highlight">1</span>
+</li></ul></code></pre>
+<p>Con esto, se restablecería la primera versión de la instalación de WordPress. Debería ver el siguiente resultado, lo cual indica que la reversión se realizó correctamente:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+Rollback was a success! Happy Helming!
+</code></pre>
+<p>Al ejecutar <code>helm list</code> de nuevo, se debería indicar que WordPress volvió a la versión 5.0.3, versión del gráfico 5.1.2:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+NAME        REVISION    UPDATED                     STATUS      CHART           APP VERSION NAMESPACE
+myblog      3       Mon Jan 28 22:02:42 2019    DEPLOYED    wordpress-<span class="highlight">5.1.2</span>   <span class="highlight">5.0.3</span>         default  
+
+</code></pre>
+<p>Observe que con el restablecimiento a una versión anterior se creará una nueva revisión, basada en la revisión de destino de la reversión. La revisión de nuestra versión de WordPress llamada <code>myblog</code> ahora tiene el número <strong>tres</strong>, que se basó en el número de revisión <strong>uno</strong>.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A lo largo de esta guía, instalamos WordPress con un servidor de MySQL externo en un clúster de Kubernetes usando la herramienta de línea de comandos de Helm. También aprendimos a actualizar una versión de WordPress a una nueva del gráfico, y a volver a una versión anterior si se produce un error durante la actualización.</p>
+
+<p>Como pasos adicionales, podría considerar <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-an-nginx-ingress-with-cert-manager-on-digitalocean-kubernetes">configurar Nginx Ingress con Cert-Manager</a> para permitir alojamiento virtual basado en nombres y configurar un certificado SSL para su sitio de WordPress. También debería verificar los <a href="https://github.com/helm/charts/tree/master/stable/wordpress#production-and-horizontal-scaling">ajustes de producción recomendados</a> para obtener información sobre gráfico de WordPress que usamos en esta guía.</p>
+
+<p>Si desea obtener más información sobre Kubernetes y Helm, consulte la sección <a href="https://www.digitalocean.com/community/tags/kubernetes">Kubernetes</a> de la página de nuestra comunidad.</p>

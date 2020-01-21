@@ -1,0 +1,272 @@
+---
+layout: post
+title: Установка комплекта Linux, Apache, MariaDB, PHP (LAMP) в Debian 9
+network: digitalocean
+date: January 21, 2020 at 10:07PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-linux-apache-mariadb-php-lamp-stack-debian9-ru
+image: http://assets.digitalocean.com/how-to-install-lamp-debian-9/small_apache_default_debian9.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Комплект LAMP — это набор программного обеспечения с открытым исходным кодом, которое обычно устанавливается в комплексе для размещения на сервере динамических сайтов и веб-приложений. Этот термин представляет собой аббревиатуру. Операционная система <strong>L</strong>inux используется с веб-сервером <strong>A</strong>pache. Данные сайта хранятся в базе данных <strong>M</strong>ariaDB, а за обработку динамического контента отвечает <strong>P</strong>HP.</p>
+
+<p>В этом обучающем модуле мы установим комплект LAMP на сервер Debian 9.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Для данного обучающего модуля вам потребуется сервер Debian 9 с учетной записью пользователя без привилегий root и с привилегиями <code>sudo</code>, а также базовым брандмауэром. При настройке следует использовать указания <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-debian-9">руководства по начальной настройке сервера Debian 9</a>.</p>
+
+<h2 id="Шаг-1-—-Установка-apache-и-обновление-брандмауэра">Шаг 1 — Установка Apache и обновление брандмауэра</h2>
+
+<p>Веб-сервер Apache — один из самых популярных веб-серверов в мире. По нему имеется очень много документации, и он широко использовался в течение почти всей истории Интернета, что делает его отличным выбором для хостинга сайта.</p>
+
+<p>Установите Apache с помощью диспетчера пакетов <code>apt</code> в Debian:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li><li class="line" prefix="$">sudo apt install apache2
+</li></ul></code></pre>
+<p>Поскольку это команда <code>sudo</code>, данные операции выполняются с привилегиями root. Для подтверждения система попросит ввести пароль обычного пользователя.</p>
+
+<p>После ввода пароля <code>apt</code> покажет, какие пакеты планируются к установке, и сколько они займут дополнительного пространства на диске. Нажмите <code>Y</code>, а затем нажмите <code>ENTER</code>, чтобы продолжить установку.</p>
+
+<p>Если вы выполнили указания по начальной настройке сервера и установили и включили брандмауэр UFW, убедитесь, что ваш брандмауэр разрешает трафик HTTP и HTTPS.</p>
+
+<p>При установке в операционной системе Debian 9 в UFW имеются профили приложений, с помощью которых вы можете настраивать параметры брандмауэра. Для просмотра полного списка профилей приложений запустите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw app list
+</li></ul></code></pre>
+<p>Профили <code>WWW</code> используются для управления портами, которые используются веб-серверами:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Available applications:
+. . .
+  WWW
+  WWW Cache
+  WWW Full
+  WWW Secure
+. . .
+</code></pre>
+<p>Если вы просмотрите профиль <code>WWW Full</code>, вы увидите, что он активирует трафик на портах <code>80</code> и <code>443</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw app info "WWW Full"
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Profile: WWW Full
+Title: Web Server (HTTP,HTTPS)
+Description: Web Server (HTTP,HTTPS)
+
+Ports:
+  <span class="highlight">80</span>,<span class="highlight">443/tcp</span>
+</code></pre>
+<p>Разрешите входящий трафик HTTP и HTTPS для этого профиля:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow in "WWW Full"
+</li></ul></code></pre>
+<p>Вы можете провести точечную проверку работы брандмауэра, открыв в браузере внешний IP-адрес сервера:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>
+</code></pre>
+<p>Вы увидите веб-страницу по умолчанию Debian 9 Apache, предназначенную для информационных целей и целей тестирования. Она должна выглядеть следующим образом:</p>
+
+<p><img src="http://assets.digitalocean.com/how-to-install-lamp-debian-9/small_apache_default_debian9.png" alt="Страница Debian 9 Apache по умолчанию"></p>
+
+<p>Если вы видите эту страницу, ваш веб-сервер правильно установлен и доступен через ваш брандмауэр.</p>
+
+<p>Если вы не знаете внешний IP-адрес вашего сервера, вы можете определить его с помощью нескольких способов. Обычно это адрес, который вы используете для подключения к серверу через SSH.</p>
+
+<p>Существует несколько способов сделать это через командную строку. Во-первых, вы можете использовать инструменты <code>iproute2</code> для получения IP-адреса с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip addr show eth0 | grep inet | awk '{ print $2; }' | sed 's/\/.*$//'
+</li></ul></code></pre>
+<p>В результате будут выведены две или три строки. Все указанные адреса верные, но ваш компьютер может использовать только один из них, так что вы можете попробовать каждый.</p>
+
+<p>Также можно использовать утилиту <code>curl</code> для связи с внешним устройством. Вы увидите, как <em>это устройство</em> видит ваш сервер. Для этого нужно запросить ваш IP-адрес у конкретного сервера:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install curl
+</li><li class="line" prefix="$">curl http://icanhazip.com
+</li></ul></code></pre>
+<p>Вне зависимости от метода получения IP-адреса введите его в адресную строку браузера для просмотра страницы Apache по умолчанию.</p>
+
+<h2 id="Шаг-2-—-Установка-mariadb">Шаг 2 — Установка MariaDB</h2>
+
+<p>Вы установили и запустили веб-сервер, а теперь можете устанавливать MariaDB. MariaDB — это система управления базами данных. Она организует и обеспечивает доступ к базам данных, где ваш сайт может хранить информацию.</p>
+
+<p>MariaDB — это созданное сообществом разработчиков ответвление MySQL. В Debian 9 в качестве сервера MySQL по умолчанию используется MariaDB 10.1, а пакет <code>mysql-server</code>, который обычно используется для установки MySQL, представляет собой переходный пакет, который фактически устанавливает MariaDB. Однако рекомендуется устанавливать MariaDB с помощью пакета <code>mariadb-server</code>.</p>
+
+<p>Используйте <code>apt</code> для получения и установки этого программного обеспечения:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install mariadb-server
+</li></ul></code></pre>
+<p><span class='note'><strong>Примечание.</strong> В этом случае вам не нужно предварительно запускать команду <code>sudo apt update</code> до выполнения команды. Это связано с тем, что вы недавно запускали ее для установки Apache, и индекс пакетов на вашем компьютере уже должен быть обновлен.<br></span></p>
+
+<p>Эта команда также выводит список устанавливаемых пакетов и показывает, сколько они займут места на диске. Введите <code>Y</code>, чтобы продолжить.</p>
+
+<p>После завершения установки запустите простой скрипт безопасности, устанавливаемый вместе с MariaDB. Этот скрипт удаляет некоторые небезопасные параметры по умолчанию и блокирует доступ к системе баз данных. Для запуска интерактивного скрипта введите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mysql_secure_installation
+</li></ul></code></pre>
+<p>При этом откроется серия диалогов, где вы можете внести некоторые изменения в параметры безопасности установки MariaDB. В первом диалоге вам нужно будет ввести пароль пользователя <strong>root</strong> для текущей базы данных. Это административная учетная запись MariaDB, имеющая повышенный уровень привилегий. Она напоминает учетную запись <strong>root</strong> на сервере (хотя эта учетная запись относится только к MariaDB). Поскольку вы только что установили MariaDB и еще не меняли параметры конфигурации, пароль будет пустым, так что вам достаточно нажать <code>ENTER</code> в этом диалоге.</p>
+
+<p>В следующем диалоге вам будет предложено задать пароль для пользователя <strong>root</strong> базы данных. Введите <code>N</code> и нажмите <code>ENTER</code>. В Debian учетная запись пользователя <strong>root</strong> для MariaDB тесно связана с автоматизированным обслуживанием системы, так что мы не должны изменять настроенные методы аутентификации для этой учетной записи. Это позволит нам обновить пакет для уничтожения системы базы данных посредством удаления доступа к административной учетной записи. Позднее мы расскажем о том, как настроить дополнительную административную учетную запись для доступа через пароль, если аутентификация через сокет не подходит для вашего случая.</p>
+
+<p>Далее вы можете использовать клавиши <code>Y</code> и <code>ENTER</code>, чтобы принять ответы по умолчанию для всех последующих вопросов. Выбрав эти ответы, вы удалите ряд анонимных пользователей и тестовую базу данных, отключите возможность удаленного входа пользователя <strong>root</strong> и загрузите новые правила, чтобы внесенные изменения немедленно активировались в MariaDB.</p>
+
+<p>При установке на системы Debian пользователь <strong>root</strong> MariaDB настроен для аутентификации с помощью плагина <code>unix_socket</code>, а не с помощью пароля. Во многих случаях это обеспечивает более высокую безопасность и удобство, однако это также может осложнить ситуацию, если вам нужно предоставить права администратора внешней программе (например, phpMyAdmin).</p>
+
+<p>Поскольку для ротации журналов, запуска и остановки сервера используется учетная запись <strong>root</strong>, лучше всего не менять учетные данные пользователя <strong>root</strong>. Изменение учетных данных в файле конфигурации <code>/etc/mysql/debian.cnf</code> может сработать на начальном этапе, но при обновлении пакета изменения могут быть перезаписаны. Если вам требуется настроить доступ с паролем, команда поддержки рекомендует создать отдельную учетную запись администратора вместо изменения учетной записи <strong>root</strong>.</p>
+
+<p>Для этого мы создадим новую учетную запись <code>admin</code> с теми же привилегиями, что и у учетной записи <strong>root</strong>, но настроенную для аутентификации с использованием пароля. Для этого откройте командную строку MariaDB через терминал:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mariadb
+</li></ul></code></pre>
+<p>Теперь мы можем создать нового пользователя с привилегиями <strong>root</strong> и доступом с использованием пароля. Измените имя пользователя и пароль на желаемые:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">GRANT ALL ON *.* TO '<span class="highlight">admin</span>'@'localhost' IDENTIFIED BY '<span class="highlight">password</span>' WITH GRANT OPTION;
+</li></ul></code></pre>
+<p>Очистите привилегии, чтобы они были сохранены и доступны в текущем сеансе:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">FLUSH PRIVILEGES;
+</li></ul></code></pre>
+<p>После этого закройте оболочку MariaDB:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="MariaDB [(none)]&gt;">exit
+</li></ul></code></pre>
+<p>Теперь для получения доступа к базе данных с правами администратора вам потребуется пройти аутентификацию учетной записи этого пользователя с указанием заданного пароля. Для этого необходимо использовать следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mariadb -u <span class="highlight">admin</span> -p
+</li></ul></code></pre>
+<p>Вы настроили систему базы данных и теперь можете перейти к установке PHP, заключительного компонента комплекта LAMP.</p>
+
+<h2 id="Шаг-3-—-Установка-php">Шаг 3 — Установка PHP</h2>
+
+<p>PHP — это компонент системы, обрабатывающий код для отображения динамического контента. Он может запускать скрипты, подключаться к базам данных MariaDB для получения информации и передавать обработанный контент на веб-сервер для отображения.</p>
+
+<p>Используйте систему <code>apt</code> для установки PHP. Кроме того, установите вспомогательные пакеты, чтобы код PHP можно было запускать на сервере Apache, и чтобы он мог взаимодействовать с базой данных MariaDB:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install php libapache2-mod-php php-mysql
+</li></ul></code></pre>
+<p>Эта команда должна установить PHP без каких-либо проблем. Сейчас мы это протестируем.</p>
+
+<p>В большинстве случаев необходимо изменить способ обслуживания файлов Apache при запросе директории. Обычно, если пользователь запрашивает директорию на сервере, Apache в первую очередь ищет файл <code>index.html</code>. Нам нужно, чтобы веб-сервер предпочитал файлы PHP, и чтобы Apache в первую очередь искал файл <code>index.php</code>.</p>
+
+<p>Для этого введите следующую команду, чтобы открыть файл <code>dir.conf</code> в текстовом редакторе с привилегиями root:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/apache2/mods-enabled/dir.conf
+</li></ul></code></pre>
+<p>Он будет выглядеть примерно так:</p>
+<div class="code-label " title="/etc/apache2/mods-enabled/dir.conf">/etc/apache2/mods-enabled/dir.conf</div><pre class="code-pre "><code langs="">&lt;IfModule mod_dir.c&gt;
+    DirectoryIndex index.html index.cgi index.pl <span class="highlight">index.php</span> index.xhtml index.htm
+&lt;/IfModule&gt;
+</code></pre>
+<p>Переместите файл индекса PHP (выделен выше) на первую позицию после спецификации <code>DirectoryIndex</code>, примерно так:</p>
+<div class="code-label " title="/etc/apache2/mods-enabled/dir.conf">/etc/apache2/mods-enabled/dir.conf</div><pre class="code-pre "><code langs="">&lt;IfModule mod_dir.c&gt;
+    DirectoryIndex <span class="highlight">index.php</span> index.html index.cgi index.pl index.xhtml index.htm
+&lt;/IfModule&gt;
+</code></pre>
+<p>После завершения сохраните и закройте файл, нажав <code>CTRL+X</code>. Для подтверждения сохранения нажмите <code>Y</code>, а затем нажмите <code>ENTER</code> для подтверждения расположения сохраняемого файла.</p>
+
+<p>После этого перезапустите веб-сервер Apache, чтобы ваши изменения были готовы к распознанию. Для этого введите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart apache2
+</li></ul></code></pre>
+<p>Также вы можете проверить статус службы <code>apache2</code> с помощью команды <code>systemctl</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status apache2
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Sample Output">Sample Output</div>● apache2.service - The Apache HTTP Server
+   Loaded: loaded (/lib/systemd/system/apache2.service; enabled; vendor preset: enabled)
+   Active: active (running) since Tue 2018-09-04 18:23:03 UTC; 9s ago
+  Process: 22209 ExecStop=/usr/sbin/apachectl stop (code=exited, status=0/SUCCESS)
+  Process: 22216 ExecStart=/usr/sbin/apachectl start (code=exited, status=0/SUCCESS)
+ Main PID: 22221 (apache2)
+    Tasks: 6 (limit: 4915)
+   CGroup: /system.slice/apache2.service
+           ├─22221 /usr/sbin/apache2 -k start
+           ├─22222 /usr/sbin/apache2 -k start
+           ├─22223 /usr/sbin/apache2 -k start
+           ├─22224 /usr/sbin/apache2 -k start
+           ├─22225 /usr/sbin/apache2 -k start
+           └─22226 /usr/sbin/apache2 -k start
+</code></pre>
+<p>Вы можете установить дополнительные модули, чтобы расширить функционал PHP. Чтобы посмотреть доступные варианты модулей и библиотек PHP, отправьте результаты поиска <code>apt search</code> на пейджер <code>less</code>, позволяющий просматривать результаты выполнения других команд:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">apt search php- | less
+</li></ul></code></pre>
+<p>Используйте стрелки для прокрутки экрана и клавишу <code>Q</code> для выхода.</p>
+
+<p>На экране результатов будут показаны все доступные для установки опциональные компоненты. Также будет выведено краткое описание каждого из них:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sorting...
+Full Text Search...
+bandwidthd-pgsql/stable 2.0.1+cvs20090917-10 amd64
+  Tracks usage of TCP/IP and builds html files with graphs
+
+bluefish/stable 2.2.9-1+b1 amd64
+  advanced Gtk+ text editor for web and software development
+
+cacti/stable 0.8.8h+ds1-10 all
+  web interface for graphing of monitoring systems
+
+cakephp-scripts/stable 2.8.5-1 all
+  rapid application development framework for PHP (scripts)
+
+ganglia-webfrontend/stable 3.6.1-3 all
+  cluster monitoring toolkit - web front-end
+
+haserl/stable 0.9.35-2+b1 amd64
+  CGI scripting program for embedded environments
+
+kdevelop-php-docs/stable 5.0.3-1 all
+  transitional package for kdevelop-php
+
+kdevelop-php-docs-l10n/stable 5.0.3-1 all
+  transitional package for kdevelop-php-l10n
+&hellip;
+:
+</code></pre>
+<p>Дополнительную информацию о функциях каждого модуля можно найти в Интернете. Также вы можете посмотреть длинное описание пакета с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">apt show <span class="highlight">package_name</span>
+</li></ul></code></pre>
+<p>На экране результатов будет много текста, а в поле описания <code>Description</code> будет приведено развернутое описание функционала модуля.</p>
+
+<p>Например, чтобы узнать функции модуля <code>php-cli</code>, нужно использовать следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">apt show php-cli
+</li></ul></code></pre>
+<p>Помимо другой информации вы увидите следующий фрагмент:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>&hellip;
+Description: command-line interpreter for the PHP scripting language (default)
+ This package provides the /usr/bin/php command interpreter, useful for
+ testing PHP scripts from a shell or performing general shell scripting tasks.
+ .
+ PHP (recursive acronym for PHP: Hypertext Preprocessor) is a widely-used
+ open source general-purpose scripting language that is especially suited
+ for web development and can be embedded into HTML.
+ .
+ This package is a dependency package, which depends on Debian's default
+ PHP version (currently 7.0).
+&hellip;
+</code></pre>
+<p>Если после изучения информации вы решите установить пакет, вы можете использовать для этого команду <code>apt install</code>, как для любого другого программного обеспечения.</p>
+
+<p>Если вы решили установить <code>php-cli</code>, введите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install php-cli
+</li></ul></code></pre>
+<p>Если вы хотите установить несколько модулей, вы можете перечислить их после команды <code>apt install</code>, разделяя пробелами:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install <span class="highlight">package1</span> <span class="highlight">package2</span> <span class="highlight">...</span>
+</li></ul></code></pre>
+<p>Ваш комплект LAMP установлен и настроен. Однако прежде чем вносить другие изменения или развертывать приложения, будет полезно протестировать конфигурацию PHP на наличие возможных проблем.</p>
+
+<h2 id="Шаг-4-—-Тестирование-обработки-php-на-веб-сервере">Шаг 4 — Тестирование обработки PHP на веб-сервере</h2>
+
+<p>Чтобы проверить правильность настройки системы для кода PHP, создайте простой скрипт PHP под названием <code>info.php</code>. Чтобы Apache мог найти этот файл и правильно его обслуживать, его нужно сохранить в специальной директории <em>web root</em>.</p>
+
+<p>В Debian 9 эта директория находится по адресу <code>/var/www/html/</code>. Для создания файла в этой директории запустите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /var/www/html/info.php
+</li></ul></code></pre>
+<p>В результате откроется пустой файл. Вставьте в файл следующий код PHP:</p>
+<div class="code-label " title="/var/www/html/info.php">/var/www/html/info.php</div><pre class="code-pre "><code langs="">&lt;?php
+phpinfo();
+?&gt;
+</code></pre>
+<p>После завершения редактирования сохраните и закройте файл.</p>
+
+<p>Теперь вы можете проверить способность вашего веб-сервера правильно отображать контент, генерируемый этим скриптом PHP. Для этого откройте страницу в своем браузере. Вам снова потребуется внешний IP-адрес вашего сервера.</p>
+
+<p>Вам нужен следующий адрес:</p>
+<pre class="code-pre "><code langs="">http://<span class="highlight">your_server_ip</span>/info.php
+</code></pre>
+<p>Отображаемая страница должна выглядеть примерно так:</p>
+
+<p><img src="https://assets.digitalocean.com/how-to-install-lamp-debian-9/small_php_info_debian9.png" alt="Информация PHP по умолчанию в Debian 9"></p>
+
+<p>На этой странице содержится базовая информация о вашем сервере с точки зрения PHP. Эта информация полезна для отладки и обеспечения правильного применения настроек.</p>
+
+<p>Если вы видите эту страницу в своем браузере, PHP работает надлежащим образом.</p>
+
+<p>После тестирования этот файл лучше удалить, поскольку он может предоставить неуполномоченным пользователям информацию о вашем сервере. Для этого запустите следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo rm /var/www/html/info.php
+</li></ul></code></pre>
+<p>Если впоследствии вам снова потребуется эта информация, вы всегда можете воссоздать эту страницу.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Вы установили комплект LAMP, и теперь у вас имеется множество вариантов дальнейших действий. Вы установили платформу, которая позволит вам устанавливать на ваш сервер разнообразные сайты и веб-приложения.</p>

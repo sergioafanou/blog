@@ -1,0 +1,602 @@
+---
+layout: post
+title: Disponer en contenedor una aplicación de Node.js para el desarrollo con Docker Compose
+network: digitalocean
+date: January 22, 2020 at 09:31PM
+url: https://www.digitalocean.com/community/tutorials/containerizing-a-node-js-application-for-development-with-docker-compose-es
+image: https://assets.digitalocean.com/articles/node_docker_dev/persisted_data.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Si desarrolla activamente una aplicación, usando <a href="https://www.docker.com/">Docker</a>, puede simplificar su flujo de trabajo y el proceso de implementación de su aplicación para producción. El trabajo con contenedores en tareas de desarrollo tiene los siguientes beneficios:</p>
+
+<ul>
+<li>Los entornos son uniformes, lo cual significa que puede elegir los lenguajes y las dependencias que desee para su proyecto sin tener que preocuparse por posibles conflictos del sistema.</li>
+<li>Los entornos están aislados. Esto facilita la resolución de problemas y la admisión de nuevos miembros del equipo.</li>
+<li>Los entornos son portátiles; esto permite empaquetar y compartir su código con otros.</li>
+</ul>
+
+<p>A través de este tutorial, verá la forma de configurar un entorno de desarrollo para una aplicación de <a href="https://nodejs.org/">Node.js</a> usando Docker. Creará dos contenedores: uno para la aplicación de Node y otro para la base de datos de <a href="https://www.mongodb.com/">MongoDB</a>, con <a href="https://docs.docker.com/compose/">Docker Compose</a>. Debido a que esta aplicación funciona con Node y MongoDB, nuestra configuración realizará lo siguiente:</p>
+
+<ul>
+<li>Sincronizar el código de la aplicación del host con el código del contenedor para facilitar los cambios durante el desarrollo.</li>
+<li>Garantizar que los cambios al código de la aplicación funcionen sin un reinicio.</li>
+<li>Crear una base de datos protegida por nombre de usuario y contraseña para los datos de la aplicación.</li>
+<li>Hacer que los datos sean persistentes.</li>
+</ul>
+
+<p>Al finalizar este tutorial, contará con una aplicación de información sobre tiburones en funcionamiento en contenedores de Docker:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_docker_dev/persisted_data.png" alt="Completar la colección de tiburones"></p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Para seguir este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un servidor de desarrollo con Ubuntu 18.04, un usuario no root con privilegios <code>sudo</code> y un firewall activo. Para obtener información sobre cómo configurarlos, consulte esta <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guía de configuración inicial para servidores</a>.</li>
+<li>Docker instalado en su servidor, siguiendo los pasos 1 y 2 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04">Cómo instalar y usar Docker en Ubuntu 18.04</a>.</li>
+<li>Docker Compose instalado en su servidor conforme el paso 1 de <a href="https://www.digitalocean.com/community/tutorials/how-to-install-docker-compose-on-ubuntu-18-04">Cómo instalar Docker Compose en Ubuntu 18.04</a>.</li>
+</ul>
+
+<h2 id="paso-1-clonar-el-proyecto-y-modificar-las-dependencias">Paso 1: Clonar el proyecto y modificar las dependencias</h2>
+
+<p>El primer paso para crear esta configuración será clonar el código del proyecto y modificar su archivo <a href="https://docs.npmjs.com/files/package.json"><code>package.json</code></a>, que incluye las dependencias del proyecto. Añadiremos <a href="https://www.npmjs.com/package/nodemon"><code>nodemon</code></a> a <a href="https://docs.npmjs.com/files/package.json#devdependencies"><code>devDependencies</code> del proyecto</a>y especificaremos que lo utilizaremos durante el desarrollo. Ejecutar la aplicación con <code>nodemon</code> garantiza que se reiniciará automáticamente cuando realice cambios en su código.</p>
+
+<p>Primero, clone el <a href="https://github.com/do-community/nodejs-mongo-mongoose">repositorio <code>nodejs-mongo-mongoose</code></a> desde la <a href="https://github.com/do-community">cuenta de GitHub de la comunidad de DigitalOcean</a>. Este repositorio incluye el código de la configuración descrita en el artículo <a href="https://www.digitalocean.com/community/tutorials/how-to-integrate-mongodb-with-your-node-application">Cómo integrar MongoDB con su aplicación de Node</a>, en el que se explica la manera de integrar una base de datos de MongoDB con una aplicación de Node existente usando <a href="https://mongoosejs.com/">Mongoose</a>.</p>
+
+<p>Clone el repositorio en un directorio llamado <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/do-community/nodejs-mongo-mongoose.git <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Diríjase al directorio <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Abra el archivo <code>package.json</code> del proyecto usando <code>nano</code> o su editor favorito:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano package.json
+</li></ul></code></pre>
+<p>Debajo de las dependencias del proyecto y encima de la llave de cierre, cree un nuevo objeto <code>devDependencies</code> que incluya <code>nodemon</code>:</p>
+<div class="code-label " title="~/node_project/package.json">~/node_project/package.json</div><pre class="code-pre "><code langs="">...
+"dependencies": {
+    "ejs": "^2.6.1",
+    "express": "^4.16.4",
+    "mongoose": "^5.4.10"
+  }<span class="highlight">,</span>
+  <span class="highlight">"devDependencies": {</span>
+    <span class="highlight">"nodemon": "^1.18.10"</span>
+  <span class="highlight">}</span>    
+}
+</code></pre>
+<p>Guarde y cierre el archivo cuando haya terminado de editar.</p>
+
+<p>Una vez que se implemente el código del proyecto y se modifiquen sus dependencias, podrá proceder a refactorizar el código para un flujo de trabajo en contenedor.</p>
+
+<h2 id="paso-2-configurar-su-aplicación-para-que-funcione-con-contenedores">Paso 2: Configurar su aplicación para que funcione  con contenedores</h2>
+
+<p>Modificar nuestra aplicación para un flujo de trabajo en contenedores implica hacer que nuestro código sea más modular. Los contenedores ofrecen portabilidad entre entornos, y nuestro código debería reflejar esto manteniendo un nivel de disociación lo más alto posible respecto del sistema operativo subyacente. A fin de lograr esto, refactorizaremos nuestro código para hacer un mayor uso de la propiedad <a href="https://nodejs.org/api/process.html#process_process_env">process.env</a> de Node, que muestra un objeto con información sobre su entorno de usuario en el tiempo de ejecución. Podemos usar este objeto en nuestro código para asignar de forma dinámica información de la configuración en el tiempo de ejecución con variables de entorno.</p>
+
+<p>Comenzaremos con <code>apps.js</code>, nuestro punto de entrada principal para la aplicación. Abra el archivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Dentro, verá una definición para una <a href="https://www.digitalocean.com/community/tutorials/understanding-variables-scope-hoisting-in-javascript#constants">constante</a> <code>port</code>, además de una función <a href="https://expressjs.com/en/4x/api.html#app.listen"><code>listen</code></a> que utiliza esta constante para especificar el puerto en el que la aplicación escuchará.</p>
+<div class="code-label " title="~/home/node_project/app.js">~/home/node_project/app.js</div><pre class="code-pre "><code langs="">...
+const port = 8080;
+...
+app.listen(port, function () {
+  console.log('Example app listening on port 8080!');
+});
+</code></pre>
+<p>Redefiniremos la constante <code>port</code> para permitir la asignación dinámica en el tiempo de ejecución usando el objeto <code>process.env</code>. Realice los siguientes cambios en la definición de la constante y la función <code>listen</code>:</p>
+<div class="code-label " title="~/home/node_project/app.js">~/home/node_project/app.js</div><pre class="code-pre "><code langs="">...
+<span class="highlight">const port = process.env.PORT || 8080;</span>
+...
+app.listen(port, function () {
+  console.log(<span class="highlight">`Example app listening on ${port}!`</span>);
+});
+</code></pre>
+<p>Con nuestra nueva definición de la constante, <code>port</code> se asigna de forma dinámica usando el valor transmitido en el tiempo de ejecución o <code>8080</code>. De modo similar, reescribimos la función <code>listen</code> para que use un <a href="https://www.digitalocean.com/community/tutorials/how-to-work-with-strings-in-javascript#string-literals-and-string-values">literal de plantilla</a> que interpolará el valor del puerto al escuchar conexiones. Debido a que asignaremos nuestros puertos en otra parte, estas revisiones evitarán que debamos revisar continuamente este archivo a medida que nuestro entorno cambie.</p>
+
+<p>Una vez que finalice la edición, guarde y cierre el archivo.</p>
+
+<p>A continuación, modificaremos la información de conexión de nuestra base de datos para eliminar cualquier credencial de configuración. Abra el archivo <code>db.js</code>, que contiene esta información:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano db.js
+</li></ul></code></pre>
+<p>Actualmente, el archivo hace lo siguiente:</p>
+
+<ul>
+<li>Importa Mongoose, el <em>asignador de objeto a documento</em> (ODM) que usaremos para crear esquemas y modelos para los datos de nuestra aplicación.</li>
+<li>Establece las credenciales de la base de datos como constantes, incluidos el nombre de usuario y la contraseña.</li>
+<li>Establece conexión con la base de datos usando el método <a href="https://mongoosejs.com/docs/api.html#connection_Connection"><code>mongoose.connect</code></a>.</li>
+</ul>
+
+<p>Para obtener más información sobre el archivo, consulte el <a href="https://www.digitalocean.com/community/tutorials/how-to-integrate-mongodb-with-your-node-application#step-3-%E2%80%94-creating-mongoose-schemas-and-models">paso 3</a> de <a href="https://www.digitalocean.com/community/tutorials/how-to-integrate-mongodb-with-your-node-application">Cómo integrar MongoDB con su aplicación de Node</a>.</p>
+
+<p>Nuestro primer paso para modificar el archivo será redefinir las constantes que incluyan información confidencial. Actualmente, estas constantes tendrán este aspecto:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+const MONGO_USERNAME = '<span class="highlight">sammy</span>';
+const MONGO_PASSWORD = '<span class="highlight">your_password</span>';
+const MONGO_HOSTNAME = '127.0.0.1';
+const MONGO_PORT = '27017';
+const MONGO_DB = '<span class="highlight">sharkinfo</span>';
+...
+</code></pre>
+<p>En vez de realizar una codificación rígida de esta información, puede usar el objeto <code>process.env</code> a fin de capturar los valores del tiempo de ejecución para estas constantes: Modifique el bloque para que tenga este aspecto:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+const {
+  MONGO_USERNAME,
+  MONGO_PASSWORD,
+  MONGO_HOSTNAME,
+  MONGO_PORT,
+  MONGO_DB
+} = process.env;
+...
+</code></pre>
+<p>Guarde y cierre el archivo cuando haya terminado de editar.</p>
+
+<p>En este punto, habrá modificado <code>db.js</code>para que funcione con las variables de entorno de su aplicación, pero aún necesita una forma de pasar estas variables a su aplicación. Crearemos un archivo <code>.env</code> con valores que pueda pasar a su aplicación en el tiempo de ejecución.</p>
+
+<p>Abra el archivo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .env
+</li></ul></code></pre>
+<p>Este archivo incluirá la información que eliminó de <code>db.js</code>: el nombre de usuario y la contraseña para la base de su aplicación, además del ajuste del puerto y el nombre de la base de datos. Recuerde actualizar el nombre de usuario, la contraseña y el nombre de la base de datos que se muestran aquí con su propia información:</p>
+<div class="code-label " title="~/node_project/.env">~/node_project/.env</div><pre class="code-pre "><code langs="">MONGO_USERNAME=<span class="highlight">sammy</span>
+MONGO_PASSWORD=<span class="highlight">your_password</span>
+MONGO_PORT=27017
+MONGO_DB=<span class="highlight">sharkinfo</span>
+</code></pre>
+<p>Tenga en cuenta que <strong>eliminamos</strong> el ajuste de host que originalmente aparecía en <code>db.js</code>. Ahora definiremos nuestro host a nivel del archivo de Docker Compose, junto con información adicional sobre nuestros servicios y contenedores.</p>
+
+<p>Guarde y cierre este archivo cuando concluya la edición.</p>
+
+<p>Debido a que su archivo <code>.env</code> contiene información confidencial, le convendrá asegurarse de que se incluya en los archivos <code>.dockerignore</code> y <code>.gitignore</code> de su proyecto para que no realice copias al control de su versión o a los contenedores.</p>
+
+<p>Abra su archivo <code>.dockerignore</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .dockerignore
+</li></ul></code></pre>
+<p>Añada la siguiente línea a la parte inferior del archivo:</p>
+<div class="code-label " title="~/node_project/.dockerignore">~/node_project/.dockerignore</div><pre class="code-pre "><code langs="">...
+.gitignore
+<span class="highlight">.env</span>
+</code></pre>
+<p>Guarde y cierre el archivo cuando haya terminado de editar.</p>
+
+<p>El archivo <code>.gitignore</code> de este repositorio ya incluye <code>.env,</code> pero verifique que esté allí:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano .gitignore
+</li></ul></code></pre><div class="code-label " title="~~/node_project/.gitignore">~~/node_project/.gitignore</div><pre class="code-pre "><code langs="">...
+.env
+...
+</code></pre>
+<p>En este punto, habrá extraído correctamente la información confidencial del código de su proyecto y tomado medidas para controlar la forma y la ubicación en que se copia esta información. Ahora, podrá aportar más solidez al código de conexión de su base de datos a fin de optimizarlo para un flujo de trabajo en contenedor.</p>
+
+<h2 id="paso-3-modificar-ajustes-de-conexión-de-la-base-de-datos">Paso 3: Modificar ajustes de conexión de la base de datos</h2>
+
+<p>Nuestro siguiente paso será hacer que el método de conexión de nuestra base de datos sea más sólido añadiendo código que gestione los casos en los que nuestra aplicación no se conecte con nuestra base de datos. Sumar este nivel de resistencia al código de su aplicación es una <a href="https://docs.docker.com/compose/startup-order/">práctica recomendada</a> cuando se trabaja con contenedores usando Compose.</p>
+
+<p>Abra <code>db.js</code> para editarlo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano db.js
+</li></ul></code></pre>
+<p>Verá el código que añadimos antes, junto con la constante <code>url</code> para la URI de conexión de Mongo y el método <a href="https://mongoosejs.com/docs/api.html#mongoose_Mongoose-connect"><code>connect</code> de Mongoose</a>:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+const {
+  MONGO_USERNAME,
+  MONGO_PASSWORD,
+  MONGO_HOSTNAME,
+  MONGO_PORT,
+  MONGO_DB
+} = process.env;
+
+const url = `mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOSTNAME}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+
+mongoose.connect(url, {useNewUrlParser: true});
+</code></pre>
+<p>Actualmente, nuestro método <code>connect</code> acepta una opción que indica a Mongoose que utilice el <a href="https://mongoosejs.com/docs/deprecations.html">nuevo analizador de URL</a> de Mongo. Añadiremos algunas opciones más a este método para definir parámetros para intentos de reconexión. Podemos hacer esto creando una constante <code>options</code> que incluya la información pertinente, además de usar la opción del nuevo analizador de URL. En sus constantes de Mongo, añada la siguiente definición para una constante <code>options</code>:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+const {
+  MONGO_USERNAME,
+  MONGO_PASSWORD,
+  MONGO_HOSTNAME,
+  MONGO_PORT,
+  MONGO_DB
+} = process.env;
+
+<span class="highlight">const options = {</span>
+  <span class="highlight">useNewUrlParser: true,</span>
+  <span class="highlight">reconnectTries: Number.MAX_VALUE,</span>
+  <span class="highlight">reconnectInterval: 500,</span>
+  <span class="highlight">connectTimeoutMS: 10000,</span>
+<span class="highlight">};</span>
+...
+</code></pre>
+<p>La opción <code>reconnectTries</code> indica a Mongoose que siga intentando establecer conexión indefinidamente, mientras que <code>reconnectInterval</code> define el período entre los intentos de conexión en milisegundos. <code>connectTimeoutMS</code> define 10 segundos como el período que el controlador de Mongo esperará antes de que falle el intento de conexión.</p>
+
+<p>Ahora podemos usar la nueva constante <code>options</code> en el método <code>connect</code> de Mongoose para ajustar nuestra configuración de conexión de Mongoose. También añadiremos una <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises">promesa</a> para manejar los posibles errores de conexión.</p>
+
+<p>En este momento, el mét<code>odo conn</code>ect de Mongoose tiene este aspecto:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+mongoose.connect(url, {useNewUrlParser: true});
+</code></pre>
+<p>Elimine el método <code>connect</code> existente y sustitúyalo por el siguiente código, que incluye la constante <code>options</code> y una promesa:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+<span class="highlight">mongoose.connect(url, options).then( function() {</span>
+  <span class="highlight">console.log('MongoDB is connected');</span>
+<span class="highlight">})</span>
+  <span class="highlight">.catch( function(err) {</span>
+  <span class="highlight">console.log(err);</span>
+<span class="highlight">});</span>
+</code></pre>
+<p>En caso de que la conexión se realice correctamente, nuestra función registrará un mensaje correspondiente; de lo contrario, aplicará <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/catch"><code>catch</code></a> al error y lo registrará para que podamos resolverlo.</p>
+
+<p>El archivo terminado tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">const mongoose = require('mongoose');
+
+const {
+  MONGO_USERNAME,
+  MONGO_PASSWORD,
+  MONGO_HOSTNAME,
+  MONGO_PORT,
+  MONGO_DB
+} = process.env;
+
+const options = {
+  useNewUrlParser: true,
+  reconnectTries: Number.MAX_VALUE,
+  reconnectInterval: 500,
+  connectTimeoutMS: 10000,
+};
+
+const url = `mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOSTNAME}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+
+mongoose.connect(url, options).then( function() {
+  console.log('MongoDB is connected');
+})
+  .catch( function(err) {
+  console.log(err);
+});
+</code></pre>
+<p>Guarde y cierre el archivo cuando concluya la edición.</p>
+
+<p>Con esto, habrá añadido resistencia al código de su aplicación para gestionar los casos en los cuales fuera posible que esta no pudiera establecer conexión con su base de datos. Una vez establecido este código, puede proceder a definir sus servicios con Compose.</p>
+
+<h2 id="paso-4-definir-servicios-con-docker-compose">Paso 4: Definir servicios con Docker Compose</h2>
+
+<p>Una vez refactorizado su código, estará listo para escribir el archivo <code>docker-compose.yml</code> con las definiciones de su servicio. Un <em>servicio</em> en Compose es un contenedor en ejecución y las definiciones del servicio, que incluirá en su archivo <code>docker-compose.yml</code>, contienen información sobre cómo se ejecutará cada imagen del contenedor. La herramienta Compose le permite definir varios servicios para crear aplicaciones en diferentes contenedores.</p>
+
+<p>Antes de definir nuestros servicios, sin embargo, añadiremos una herramienta a nuestro proyecto llamada <a href="https://github.com/Eficode/wait-for"><code>wait-for</code></a> para garantizar que nuestra aplicación solo intente establecer conexión con nuestra base de datos una vez que las tareas de inicio de esta última se completen. Esta secuencia de comandos utiliza <a href="https://www.digitalocean.com/community/tutorials/how-to-use-netcat-to-establish-and-test-tcp-and-udp-connections-on-a-vps"><code>netcat</code></a> para determinar, mediante un sondeo, si un host y puerto específicos aceptan conexiones TCP o no. Usarla le permite controlar los intentos que su aplicación realiza para establecer conexión con su base de datos determinando, mediante una prueba, si la base de datos está lista o no para aceptar conexiones.</p>
+
+<p>Aunque Compose le permite especificar dependencias entre los servicios usando la <a href="https://docs.docker.com/compose/compose-file/#depends_on">opción <code>depends_on</code></a>, esta orden se basa más en el hecho que el contenedor se ejecute o no que en el hecho de que esté preparado. Usar <code>depends_on</code> no será la mejor opción para nuestra configuración, pues queremos que nuestra aplicación se conecte solo cuando las se completen tareas de la base de datos, incluida la de añadir usuario y contraseña a la base de datos de autenticación de <code>admin</code>. Para obtener más información sobre cómo usar <code>wait-for</code> y otras herramientas para controlar la orden de inicio, consulte las <a href="https://docs.docker.com/compose/startup-order/">recomendaciones pertinentes en la documentación de Compose</a>.</p>
+
+<p>Abra un archivo llamado <code>wait-for.sh</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano wait-for.sh
+</li></ul></code></pre>
+<p>Pegue el siguiente código en el archivo para crear la función de sondeo:</p>
+<div class="code-label " title="~/node_project/app/wait-for.sh">~/node_project/app/wait-for.sh</div><pre class="code-pre "><code langs="">#!/bin/sh
+
+# original script: https://github.com/eficode/wait-for/blob/master/wait-for
+
+TIMEOUT=15
+QUIET=0
+
+echoerr() {
+  if [ "$QUIET" -ne 1 ]; then printf "%s\n" "$*" 1&gt;&amp;2; fi
+}
+
+usage() {
+  exitcode="$1"
+  cat &lt;&lt; USAGE &gt;&amp;2
+Usage:
+  $cmdname host:port [-t timeout] [-- command args]
+  -q | --quiet                        Do not output any status messages
+  -t TIMEOUT | --timeout=timeout      Timeout in seconds, zero for no timeout
+  -- COMMAND ARGS                     Execute command with args after the test finishes
+USAGE
+  exit "$exitcode"
+}
+
+wait_for() {
+  for i in `seq $TIMEOUT` ; do
+    nc -z "$HOST" "$PORT" &gt; /dev/null 2&gt;&amp;1
+
+    result=$?
+    if [ $result -eq 0 ] ; then
+      if [ $# -gt 0 ] ; then
+        exec "$@"
+      fi
+      exit 0
+    fi
+    sleep 1
+  done
+  echo "Operation timed out" &gt;&amp;2
+  exit 1
+}
+
+while [ $# -gt 0 ]
+do
+  case "$1" in
+    *:* )
+    HOST=$(printf "%s\n" "$1"| cut -d : -f 1)
+    PORT=$(printf "%s\n" "$1"| cut -d : -f 2)
+    shift 1
+    ;;
+    -q | --quiet)
+    QUIET=1
+    shift 1
+    ;;
+    -t)
+    TIMEOUT="$2"
+    if [ "$TIMEOUT" = "" ]; then break; fi
+    shift 2
+    ;;
+    --timeout=*)
+    TIMEOUT="${1#*=}"
+    shift 1
+    ;;
+    --)
+    shift
+    break
+    ;;
+    --help)
+    usage 0
+    ;;
+    *)
+    echoerr "Unknown argument: $1"
+    usage 1
+    ;;
+  esac
+done
+
+if [ "$HOST" = "" -o "$PORT" = "" ]; then
+  echoerr "Error: you need to provide a host and port to test."
+  usage 2
+fi
+
+wait_for "$@"
+</code></pre>
+<p>Guarde y cierre el archivo cuando termine de añadir el código.</p>
+
+<p>Haga que la secuencia de comandos sea ejecutable:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">chmod +x wait-for.sh
+</li></ul></code></pre>
+<p>A continuación, abra el archivo <code>docker-compose.yml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano docker-compose.yml
+</li></ul></code></pre>
+<p>Primero defina el servicio de la aplicación <code>nodejs</code> agregando el siguiente código al archivo:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre "><code langs="">version: '3'
+
+services:
+  nodejs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nodejs
+    container_name: nodejs
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_HOSTNAME=db
+      - MONGO_PORT=$MONGO_PORT
+      - MONGO_DB=$MONGO_DB
+    ports:
+      - "80:8080"
+    volumes:
+      - .:/home/node/app
+      - node_modules:/home/node/app/node_modules
+    networks:
+      - app-network
+    command: ./wait-for.sh db:27017 -- /home/node/app/node_modules/.bin/nodemon app.js
+</code></pre>
+<p>La definición del servicio <code>nodejs</code> incluye las siguientes opciones:</p>
+
+<ul>
+<li><code>build</code>: define las opciones de configuración, incluido el <code>context</code> y <code>dockerfile</code>, que se aplicarán cuando Compose cree la imagen de la aplicación. Si desea utilizar una imagen existente de un registro como <a href="https://hub.docker.com/">Docker Hub</a>, podría utilizar la <a href="https://docs.docker.com/compose/compose-file/#image">instrucción <code>image</code></a> como alternativa, con información sobre su nombre de usuario, repositorio y etiqueta de imagen.</li>
+<li><code>context</code>: esto define el contexto de compilación para la compilación de la imagen; en este caso, el directorio del proyecto actual.</li>
+<li><code>dockerfile</code>: esto especifica el <code>Dockerfile</code> del directorio actual de su directorio como el archivo  que Compose usará para complilar la imagen de la aplicación. Para obtener más información sobre este archivo, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker">Cómo crear una aplicación de Node.js con Docker</a>.</li>
+<li><code>image</code> y <code>container_name</code>: aplican nombres a la imagen y al contenedor.</li>
+<li><code>restart</code>: define la política de reinicio. El valor predeterminado es <code>no</code>, pero configuramos el contenedor para reiniciarse a menos que se detenga.</li>
+<li><code>env_file</code>: indica a Compose que deseamos añadir variables de entorno de un archivo llamado <code>.env</code>, ubicado en nuestro contexto de compilación.</li>
+<li><code>environment</code>: esta opción le permite añadir los ajustes de conexión de Mongo que definió en el <code>archivo .env</code>. Tenga en cuenta que no fijaremos <code>NODE_ENV</code> en <code>development</code>, ya que éste es el comportamiento <a href="https://github.com/expressjs/express/blob/dc538f6e810bd462c98ee7e6aae24c64d4b1da93/lib/application.js#L71">predeterminado</a> de <a href="https://expressjs.com/">Express</a> si <code>NODE_ENV</code> no se configura. Cuando procedamos con la producción, podrá fijarlo en <code>production</code> para <a href="https://expressjs.com/en/advanced/best-practice-performance.html#set-node_env-to-production">permitir el almacenamiento de vistas en caché y recibir menos mensajes de error confusos</a>. Observe, además, que especificamos el contenedor de la base de datos <code>db</code> como host, como se explicó en el <a href="https://www.digitalocean.com/community/tutorials/containerizing-a-node-js-application-for-development-with-docker-compose#step-2-%E2%80%94-configuring-your-application-to-work-with-containers">paso 2</a>.</li>
+<li><code>ports</code>: asigna el puerto <code>80</code> del host al puerto <code>8080</code> del contenedor.</li>
+<li><code>volumes</code>: incluiremos dos tipos de montajes aquí:
+
+<ul>
+<li>El primero es un <a href="https://docs.docker.com/storage/bind-mounts/">montaje de enlace</a>, que monta el código de nuestra aplicación del host en el directorio <code>/home/node/app</code> del contenedor. Esto facilitará un desarrollo rápido, ya que cualquier cambio que realice a su código de host se completará de inmediato en el contenedor.</li>
+<li>El segundo es un <a href="https://docs.docker.com/storage/volumes/">volumen con nombre</a>: <code>node_modules</code>. Cuando Docker ejecute la instrucción <code>npm install</code> que se indica en el <code>Dockerfile</code> de la aplicación, <code>npm</code> creará en el contenedor un nuevo directorio <a href="https://docs.npmjs.com/files/folders.html#node-modules"><code>node_modules</code></a> en el que se incluirán los paquetes necesarios para ejecutar la aplicación. El montaje de enlace que acabamos de crear ocultará, sin embargo, este directorio <code>node_modules</code> recién creado. Debido a que <code>node_modules</code> en el host está vacío, el bind asignará un directorio vacío al contenedor, con lo cual se anulará el nuevo directorio <code>node_modules</code> y se evitará el inicio de nuestra aplicación. El volumen llamado <code>node_modules</code> resuelve este problema haciendo que persista el contenido del directorio <code>/home/node/app/node_modules</code> y montándolo en el contenedor, con lo cual se ocultará el enlace.</li>
+</ul></li>
+</ul>
+
+<p><strong>Tenga en cuenta lo siguiente cuando utilice este enfoque</strong>:</p>
+
+<ul>
+<li>Su enlace montará los contenidos del directorio <code>node_modules</code> del contenedor en el host y este directorio será propiedad de <code>root</code>, ya que el volumen nombrado fue creado por Docker.</li>
+<li><p>Si dispone de un directorio <code>node_modules</code> preexistente en el host, anulará el <code>directorio node_modules</code> creado en el contenedor. Para configuración que estamos creando en este tutorial, se supone que <strong>no</strong> dispone de un directorio <code>node_modules</code> preexistente y que no trabajará con <code>npm</code> en su host. Esto se ajusta a un <a href="https://12factor.net/">enfoque de doce factores para el desarrollo de la aplicación</a>, que minimiza las dependencias entre los entornos de ejecución.</p>
+
+<ul>
+<li><code>networks</code>: especifica que nuestro servicio de aplicación se unirá a la red <code>app-network</code>, que definiremos al final del archivo.</li>
+<li><code>command</code>: esta opción le permite establecer el comando que debería ejecutarse cuando Compose ejecute la imagen. Tenga en cuenta que con esto se anulará la instrucción <code>CMD</code> que establecimos en el <code>Dockerfile</code> de nuestra aplicación. En este caso, ejecutaremos la aplicación usando la secuencia de comandos <code>wait-for</code> que sondeará el servicio <code>db</code> en el puerto <code>27017</code> para probar si el servicio de la base de datos está listo o no. Una vez que esta prueba se realice, la secuencia de comandos ejecutará el comando que establecimos, /home<code>/node/app/node_modules/.bin/nodemon app.js</code>, para iniciar la aplicación con <code>nodemon</code>. Esto garantizará que cualquier cambio futuro que realicemos en nuestro código se recargue sin que debamos reiniciar la aplicación.</li>
+</ul></li>
+</ul>
+
+<p>A continuación, cree el servicio <code>db</code> agregando el siguiente código debajo de la definición del servicio de la aplicación:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+  db:
+    image: mongo:4.1.8-xenial
+    container_name: db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=$MONGO_USERNAME
+      - MONGO_INITDB_ROOT_PASSWORD=$MONGO_PASSWORD
+    volumes:  
+      - dbdata:/data/db   
+    networks:
+      - app-network  
+</code></pre>
+<p>Algunos de los ajustes que definimos para el servicio <code>nodejs</code> seguirán siendo los mismos, pero también realizamos los siguientes cambios en las definiciones de <code>image</code>, <code>environment</code> y <code>volumes</code>:</p>
+
+<ul>
+<li><code>image</code>: para crear este servicio, Compose extraerá la <a href="https://hub.docker.com/_/mongo">imagen de Mongo</a> <code>4.1.8-xenial</code> de Docker Hub. Fijaremos una versión concreta para evitar posibles conflictos futuros a medida que la imagen de Mongo cambie. Para obtener más información sobre la fijación de la versiones, consulte la documentación de <a href="https://docs.docker.com/develop/develop-images/dockerfile_best-practices/">Docker en Prácticas recomendadas de Dockerfile</a>.</li>
+<li><code>MONGO_INITDB_ROOT_USERNAME</code>, <code>MONGO_INITDB_ROOT_PASSWORD</code>: la imagen de <code>mongo</code> pone estas <a href="https://docs.docker.com/samples/library/mongo/#environment-variables">variables de entorno</a> a disposición para que pueda modificar la inicialización de la instancia de su base de datos. <code>MONGO_INITDB_ROOT_USERNAME</code> y <code>MONGO_INITDB_ROOT_PASSWORD</code> crean juntos un usuario <code>root</code> en la base de datos de autenticación <code>admin</code> y verifican que la autenticación esté habilitada cuando se inicie el contenedor. Configuramos <code>MONGO_INITDB_ROOT_USERNAME</code> y <code>MONGO_INITDB_ROOT_PASSWORD</code> usando los valores de nuestro archivo <code>.env</code>, que pasamos al servicio <code>db</code> usando la opción <code>env_file</code>. Hacer esto significa que nuestro usuario de la aplicación <code><span class="highlight">sammy</span></code> será un <a href="https://docs.mongodb.com/manual/reference/built-in-roles/#root">usuario <code>root</code></a> en la instancia de la base de datos, con acceso a todos los privilegios administrativos y operativos de esa función. Cuando trabaje en producción, le convendrá crear un usuario de aplicación dedicado con privilegios de alcance correspondiente.
+<span class='note'>
+<strong>Nota:</strong> Tenga en cuenta que estas variables no se aplicarán si inicia el contenedor con un directorio de datos existente implementado.
+</span></li>
+<li><code>dbdata:/data/db</code>: el volumen llamado <code>dbdata</code> preservará los datos almacenados en  <code>/data/db</code>, el <a href="https://docs.mongodb.com/manual/reference/configuration-options/#storage.dbPath">directorio de datos predeterminado</a> de Mongo. Esto garantizará que no pierda datos en los casos en los que detenga o elimine contenedores.</li>
+</ul>
+
+<p>También agregamos el servcio <code>db</code> a la red <code>app-network</code> con la opción <code>networks</code>.</p>
+
+<p>Como paso final, añada las definiciones de volumen y red al final del archivo:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre "><code langs="">...
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  dbdata:
+  node_modules:  
+</code></pre>
+<p>La red de puente definida por el usuario <code>app-network</code> permite la comunicación entre nuestros contenedores, ya que están en el mismo host de demonio de Docker. Esto agiliza el tráfico y la comunicación dentro de la aplicación, ya que abre todos los puertos entre contenedores en la misma red de puente y, al mismo tiempo, no expone ningún puerto al exterior. Por lo tanto, nuestros contenedores <code>db</code> y <code>nodejs</code> pueden comunicarse entre sí y solo debemos exponer el puerto <code>80</code> para el acceso de front-end a la aplicación.</p>
+
+<p>Nuestra clave <code>volumes</code> de nivel nivel superior define <code>dbdata</code> y <code>node_modules</code> de los volúmenes. Cuando Docker crea volúmenes, el contenido de estos se almacena en una parte del sistema de archivos host, <code>/var/ib/docker/volume/</code>, que Docker administra. El contenido de cada volumen se almacena en un directorio en <code>/var/lib/docker/volume/</code> y se monta en cualquier contenedor que utilice el volumen. De esta forma, los datos de la información sobre tiburones que nuestros usuarios crearán persistirán en el volumen <code>dbdata</code>, incluso si eliminamos y volvemos a crear el contenedor <code>db</code>.</p>
+
+<p>El archivo <code>docker-compose.yml</code> terminado tendrá este aspecto:</p>
+<div class="code-label " title="~/node_project/docker-compose.yml">~/node_project/docker-compose.yml</div><pre class="code-pre "><code langs="">version: '3'
+
+services:
+  nodejs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nodejs
+    container_name: nodejs
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_HOSTNAME=db
+      - MONGO_PORT=$MONGO_PORT
+      - MONGO_DB=$MONGO_DB
+    ports:
+      - "80:8080"
+    volumes:
+      - .:/home/node/app
+      - node_modules:/home/node/app/node_modules
+    networks:
+      - app-network
+    command: ./wait-for.sh db:27017 -- /home/node/app/node_modules/.bin/nodemon app.js
+
+  db:
+    image: mongo:4.1.8-xenial
+    container_name: db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=$MONGO_USERNAME
+      - MONGO_INITDB_ROOT_PASSWORD=$MONGO_PASSWORD
+    volumes:     
+      - dbdata:/data/db
+    networks:
+      - app-network  
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  dbdata:
+  node_modules:  
+</code></pre>
+<p>Guarde y cierre el archivo cuando haya terminado de editar.</p>
+
+<p>Una vez implementadas las definiciones de su servicio, estará listo para iniciar la aplicación.</p>
+
+<h2 id="paso-5-probar-la-aplicación">Paso 5: Probar la aplicación</h2>
+
+<p>Una vez implementado su archivo <code>docker-compose.yml</code>, puede crear sus servicios con el comando <a href="https://docs.docker.com/compose/reference/up/"><code>docker-compose up</code></a>. También puede comprobar que sus datos persisitirán deteniendo y eliminando sus contenedores con <a href="https://docs.docker.com/compose/reference/down/"><code>docker-compose down</code></a>.</p>
+
+<p>Primero, compile las imágenes del contenedor y cree los servicios ejecutando <code>docker-compose up</code> con el indicador <code>-d</code>, que luego ejecutará los contenedores <code>nodejs</code> y <code>db</code> en segundo plano.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Verá un resultado que confirmará la creación de sus servicios:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+Creating db ... done
+Creating nodejs ... done
+</code></pre>
+<p>También puede obtener información más detallada sobre los procesos de inicio mostrando el resultado del registro de los servicios:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose logs
+</li></ul></code></pre>
+<p>Si todo se inició de forma correcta, verá algo similar a esto:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>...
+nodejs    | [nodemon] starting `node app.js`
+nodejs    | Example app listening on 8080!
+nodejs    | MongoDB is connected
+...
+db        | 2019-02-22T17:26:27.329+0000 I ACCESS   [conn2] Successfully authenticated as principal <span class="highlight">sammy</span> on admin
+</code></pre>
+<p>También puede verificar el estado de sus contenedores con <a href="https://docs.docker.com/compose/reference/ps/"><code>docker-compose ps</code></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose ps
+</li></ul></code></pre>
+<p>Verá un resultado que indicará que sus contenedores están en ejecución:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div> Name               Command               State          Ports        
+----------------------------------------------------------------------
+db       docker-entrypoint.sh mongod      Up      27017/tcp           
+nodejs   ./wait-for.sh db:27017 --  ...   Up      0.0.0.0:80-&gt;8080/tcp
+</code></pre>
+<p>Una vez que los servicios estén en ejecución, podrá visitar <code>http://<span class="highlight">your_server_ip</span></code> en el navegador. Verá una página de aterrizaje similar a esta:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/landing_page.png" alt="Página de destino de la aplicación"></p>
+
+<p>Haga clic en el botón <strong>Get Shark Info</strong>. Verá una página con un formulario de entrada en el que podrá introducir un nombre del tiburón y una descripción del carácter general de este:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_form.png" alt="Formulario de Información sobre tiburones"></p>
+
+<p>En el formulario, agregue un tiburón que elija. A los efectos de esta demostración, añadiremos <code><span class="highlight">Megalodon Shark</span></code> en el campo <strong>Shark Name</strong> y <code><span class="highlight">Ancient</span></code> en el campo <strong>Shark Character</strong>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_filled.png" alt="Formulario de tiburones completado"></p>
+
+<p>Haga clic en el botón <strong>Submit</strong>. Visualizará una página con la siguiente información sobre tiburones que se le mostrará de nuevo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_added.png" alt="Resultado de tiburones"></p>
+
+<p>Como paso final, podemos hacer una prueba para verificar que los datos que acaba de introducir persistan si elimina el contenedor de su base de datos.</p>
+
+<p>Cuando regrese a su terminal, escriba el siguiente comando para detener y eliminar sus contenedores y su red:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose down
+</li></ul></code></pre>
+<p>Tenga en cuenta que <em>no</em> incluiremos la opción <code>--volumes</code>; por lo tanto, no se eliminará nuestro volumen <code>dbdata</code>.</p>
+
+<p>El siguiente resultado confirma que se eliminaron sus contenedores y su red:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Stopping nodejs ... done
+Stopping db     ... done
+Removing nodejs ... done
+Removing db     ... done
+Removing network node_project_app-network
+</code></pre>
+<p>Vuelva a crear los contenedores:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">docker-compose up -d
+</li></ul></code></pre>
+<p>Ahora, vuelva al formulario de información de tiburones:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_form.png" alt="Formulario de información  sobre tiburones"></p>
+
+<p>Introduzca un nuevo tiburón que elija. Usaremos <code><span class="highlight">Whale Shark</span></code> y <code><span class="highlight">Large</span></code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_docker_dev/whale_shark.png" alt="Introduzca un nuevo tiburón"></p>
+
+<p>Una vez que haga clic en <strong>Submit</strong>, verá que se agregó el nuevo tiburón a la colección de tiburones de su base de datos sin pérdida de datos que ya introdujo:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_docker_dev/persisted_data.png" alt="Colección completa de tiburones"></p>
+
+<p>Su aplicación ahora se ejecuta en los contenedores de Docker con la persistencia de datos y la sincronización de códigos habilitadas.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>Siguiendo este tutorial, creó una configuración de desarrollo para su aplicación de Node usando contenedores de Docker. Hizo que su proyecto fuera más modular y portátil mediante la extracción de información confidencial y la desvinculación del estado de su aplicación del código de esta. También configuró un archivo <code>docker-compose.yml</code> estándar que podrá revisar a medida que sus necesidades y requisitos de desarrollo cambien.</p>
+
+<p>A medida que realice desarrollos, es posible que le interese aprender más sobre cómo diseñar aplicaciones para flujos de trabajo en contenedores y de <a href="https://github.com/cncf/toc/blob/master/DEFINITION.md">Cloud Native</a>. Consulte <a href="https://www.digitalocean.com/community/tutorials/architecting-applications-for-kubernetes">Crear aplicaciones para Kubernetes</a> y <a href="https://www.digitalocean.com/community/tutorials/modernizing-applications-for-kubernetes">Modernizar aplicaciones para Kubernetes</a> para obtener más información sobre estos temas.</p>
+
+<p>Para obtener más información sobre el código utilizado en este tutorial, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker">Cómo crear una aplicación de Node.js con Docker</a> y <a href="https://www.digitalocean.com/community/tutorials/how-to-integrate-mongodb-with-your-node-application">Cómo integrar MongoDB con su aplicación de Node</a>. Para obtener información sobre cómo implementar una aplicación de Node con un proxy inverso de <a href="https://www.nginx.com/">Nginx</a> usando contenedores, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-secure-a-containerized-node-js-application-with-nginx-let-s-encrypt-and-docker-compose">Cómo proteger una aplicación de Node.js en contenedor con Nginx, Let´s Encrypt y Docker Compose</a>.</p>

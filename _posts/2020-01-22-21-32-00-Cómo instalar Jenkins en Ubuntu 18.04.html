@@ -1,0 +1,140 @@
+---
+layout: post
+title: Cómo instalar Jenkins en Ubuntu 18.04
+network: digitalocean
+date: January 22, 2020 at 09:32PM
+url: https://www.digitalocean.com/community/tutorials/how-to-install-jenkins-on-ubuntu-18-04-es
+image: https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1604/unlock-jenkins.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h2 id="introducción">Introducción</h2>
+
+<p><a href="https://jenkins.io/">Jenkins</a> es un servidor de automatización de código abierto que automatiza las tareas técnicas repetitivas que se requieren en la integración continua y la entrega de software. Jenkins está basado en Java y puede instalarse desde paquetes de Ubuntu o descargando y ejecutando su archivo de aplicación web (WAR): una colección de archivos que componen una aplicación web completa para el funcionamiento en un servidor.</p>
+
+<p>A través de este tutorial, instalará Jenkins agregando su repositorio de paquetes de Debian y utilizando ese repositorio para instalar el paquete con <code>apt</code>.</p>
+
+<h3 id="requisitos-previos">Requisitos previos</h3>
+
+<p>Para seguir este tutorial, necesitará lo siguiente:</p>
+
+<ul>
+<li>Un servidor de Ubuntu 18.04 configurado con un usuario sudo no root y un firewall conforme a la <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">guía de configuración inicial de servidores de Ubuntu 18.04</a>. Recomendamos empezar con al menos 1 GB de RAM. Consulte <a href="https://jenkins.io/doc/book/hardware-recommendations/">Elegir el hardware adecuado para maestros</a>, para obtener orientación al planificar la capacidad de una instalación de producción de Jenkins.</li>
+<li>Java 8 instalado conforme a nuestras directrices para la <a href="https://www.digitalocean.com/community/tutorials/how-to-install-java-with-apt-on-ubuntu-18-04#installing-specific-versions-of-openjdk">instalación de versiones específicas de OpenJDK en Ubuntu 18.04</a>.</li>
+</ul>
+
+<h2 id="paso-1-instalar-jenkins">Paso 1: Instalar Jenkins</h2>
+
+<p>La versión de Jenkins incluida con los paquetes predeterminados de Ubuntu suele ser anterior a la última versión disponible del propio proyecto. Para aprovechar las últimas correcciones y características, puede utilizar los paquetes del proyecto para instalar Jenkins.</p>
+
+<p>Primero, agregue la clave del repositorio al sistema:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -
+</li></ul></code></pre>
+<p>Cuando se agregue la clave, el sistema mostrará <code>OK</code>. A continuación, anexe la dirección del repositorio de paquetes de Debian a la <code>sources.list</code> del servidor:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ &gt; /etc/apt/sources.list.d/jenkins.list'
+</li></ul></code></pre>
+<p>Cuando ambos estén preparados, ejecute <code>update</code>  para que <code>apt</code> utilice el nuevo repositorio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Por último, instale Jenkins y sus dependencias:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install jenkins
+</li></ul></code></pre>
+<p>Ahora que Jenkins y sus dependencias están instaladas, iniciaremos el servidor de Jenkins.</p>
+
+<h2 id="paso-2-iniciar-jenkins">Paso 2: Iniciar Jenkins</h2>
+
+<p>Iniciemos Jenkins utilizando <code>systemctl</code>:</p>
+<pre class="code-pre "><code langs="">sudo systemctl start jenkins
+</code></pre>
+<p>Debido a que <code>systemctl</code> no muestra un resultado, puede utilizar su comando <code>status</code> para verificar que Jenkins se haya iniciado de forma correcta:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status jenkins
+</li></ul></code></pre>
+<p>Si todo salió bien, en la primera parte del resultado se debería ver que el servicio está activo y configurado para iniciarse en el arranque:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● jenkins.service - LSB: Start Jenkins at boot time
+   Loaded: loaded (/etc/init.d/jenkins; generated)
+   Active: <span class="highlight">active (exited)</span> since Mon 2018-07-09 17:22:08 UTC; 6min ago
+     Docs: man:systemd-sysv-generator(8)
+    Tasks: 0 (limit: 1153)
+   CGroup: /system.slice/jenkins.service
+</code></pre>
+<p>Ahora que Jenkins funciona, ajustaremos las reglas de nuestro firewall para poder acceder desde un navegador web a fin de completar la configuración inicial.</p>
+
+<h2 id="paso-3-abrir-el-firewall">Paso 3: Abrir el firewall</h2>
+
+<p>De forma predeterminada, Jenkins se ejecuta en el puerto <code>8080</code>. Abramos ese puerto utilizando <code>ufw</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 8080
+</li></ul></code></pre>
+<p>Compruebe el estado de <code>ufw</code> para confirmar las nuevas reglas:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status
+</li></ul></code></pre>
+<p>Verá que se permite el tráfico en el puerto <code>8080</code> desde cualquier lugar:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+
+To                         Action      From
+--                         ------      ----
+OpenSSH                    ALLOW       Anywhere
+8080                       ALLOW       Anywhere
+OpenSSH (v6)               ALLOW       Anywhere (v6)
+8080 (v6)                  ALLOW       Anywhere (v6)
+</code></pre>
+<span class='note'><p>
+<strong>Nota:</strong> Si el firewall está desactivado, los siguientes comandos lo activarán y permitirán OpenSSH:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow OpenSSH
+</li><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Con Jenkins instalado y el firewall configurado, podemos completar la configuración inicial.</p>
+
+<h2 id="paso-4-configurar-jenkins">Paso 4: Configurar Jenkins</h2>
+
+<p>Para configurar su instalación, visite Jenkins en su puerto predeterminado, <code>8080</code>, utilizando su nombre de dominio o dirección IP: <code>http://<span class="highlight">your_server_or_domain</span>:8080</code></p>
+
+<p>Debería visualizar la pantalla de <strong>Unlock Jenkins,</strong> en la que se muestra la ubicación de la contraseña inicial:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1604/unlock-jenkins.png" alt="Pantalla “Unlock Jenkins”"></p>
+
+<p>En la ventana de la terminal, utilice el comando <code>cat</code> para mostrar la contraseña:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+</li></ul></code></pre>
+<p>Copie la contraseña alfanumérica de 32 caracteres de la terminal, péguela en el campo <strong>Administrator password</strong> y luego haga clic en <strong>Continue</strong>.</p>
+
+<p>En la siguiente pantalla se muestra la opción de instalación de complementos sugeridos o selección de complementos específicos:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1804/customize_jenkins_screen_two.png" alt="Pantalla de Customize Jenkins"></p>
+
+<p>Haremos clic en <strong>la opción Install suggested plugins,</strong> con la cual se iniciará de inmediato el proceso de instalación:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1804/jenkins_plugin_install_two.png" alt="Pantalla Getting Started de Jenkins; instalación de complementos"></p>
+
+<p>Una vez finalizada la instalación, se le solicitará configurar el primer usuario administrativo. Es posible omitir este paso y continuar como <code>admin</code> utilizando la contraseña inicial que se usó anteriormente, pero nos tomaremos un momento para crear el usuario.</p>
+
+<p><span class='note'><strong>Nota:</strong> El servidor predeterminado de Jenkins NO está cifrado, por lo que los datos ingresados con este formulario no están protegidos. Cuando esté listo para utilizar esta instalación, siga la guía <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-jenkins-with-ssl-using-an-nginx-reverse-proxy-on-ubuntu-18-04">Cómo configurar Jenkins con SSL utilizando un proxy inverso de Nginx en Ubuntu 18.04</a>. Esto protegerá las credenciales y la información sobre compilaciones transmitidas a través de la interfaz web.<br></span></p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1804/jenkins_create_user.png" alt="Pantalla Create First Admin User de Jenkins"></p>
+
+<p>Introduzca el nombre y la contraseña de su usuario:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1804/jenkins_user_info.png" alt="Creación de usuario de Jenkins"></p>
+
+<p>Vera una página <strong>Instance Configuration</strong> en la que se le solicitará confirmar la URL preferida para su instancia de Jenkins. Confirme el nombre de dominio o la dirección IP de su servidor:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1804/instance_confirmation.png" alt="Página Instance Configuration de Jenkins"></p>
+
+<p>Después de confirmar la información correspondiente, haga clic en** Save and Finish<strong>. Visualizará una página de confirmación con el mensaje **“Jenkins is Ready!”</strong> (Jenkins está listo):</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1804/jenkins_ready_page_two.png" alt="Pantalla “Jenkins is ready”"></p>
+
+<p>Haga clic en <strong>Start using Jenkins</strong> para visitar el panel principal de Jenkins:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/jenkins-install-ubuntu-1804/jenkins_home_page.png" alt="Pantalla “Welcome to Jenkins”"></p>
+
+<p>En este punto, habrá completado con éxito la instalación de Jenkins.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A través de este tutorial, instaló Jenkins utilizando los paquetes proporcionados por el proyecto, inició el servidor, abrió el firewall y creó un usuario administrativo. En este momento, podrá comenzar a explorar Jenkins.</p>
+
+<p>Cuando haya completado su exploración, si decide continuar utilizando Jenkins, siga la guía <a href="https://www.digitalocean.com/community/tutorials/how-to-configure-jenkins-with-ssl-using-an-nginx-reverse-proxy-on-ubuntu-18-04">Cómo configurar Jenkins con SSL utilizando un proxy inverso de Nginx en Ubuntu 18.04 pa</a>ra proteger sus contraseñas y cualquier información confidencial relacionada con sistemas o productos que se enviarán su equipo y el servidor en texto simple.</p>

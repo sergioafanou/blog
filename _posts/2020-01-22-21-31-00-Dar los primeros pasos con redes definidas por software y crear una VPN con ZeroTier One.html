@@ -1,0 +1,282 @@
+---
+layout: post
+title: Dar los primeros pasos con redes definidas por software y crear una VPN con ZeroTier One
+network: digitalocean
+date: January 22, 2020 at 09:31PM
+url: https://www.digitalocean.com/community/tutorials/getting-started-software-defined-networking-creating-vpn-zerotier-one-es
+image: https://assets.digitalocean.com/articles/zerotier-1604/ZeroTierSettings-updated.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="introducción">Introducción</h3>
+
+<p>Actualmente, cada vez se crean más proyectos de software a través de equipos cuyos miembros trabajan juntos desde ubicaciones geográficas apartadas. Aunque este flujo de trabajo ofrece muchas ventajas claras, existen casos en los cuales los equipos pueden desear vincular sus computadoras a través de Internet y tratarlas como si estuviesen en la misma habitación. Por ejemplo, es posible que pruebe sistemas distribuidos como Kubernetes o compilando una aplicación multiservicio compleja. A veces, contribuye a la productividad la posibilidad de tratar las máquinas como si estuviesen juntas, ya que no se debe correr el riesgo de exponer servicios inacabados a Internet. Este paradigma se puede lograr mediante la redes definidas por software (SDN), una tecnología relativamente nueva que proporciona una trama de red dinámica completamente integrada por software.</p>
+
+<p><a href="https://www.zerotier.com/">ZeroTier One</a> es una aplicación de código abierto que utiliza algunos de los últimos desarrollos en materia de SDN para permitir a los usuarios crear redes seguras y manejables, y tratar los dispositivos conectados como si estuviesen en la misma ubicación física. ZeroTier proporciona una consola web para software de administración de redes y de extremos para los clientes. Es una tecnología punto a punto cifrada, lo cual significa que a diferencia de lo que sucede con las soluciones de VPN tradicionales, las comunicaciones no tienen que pasar a través de un servidor o enrutador central; los mensajes se envían directamente de host a host. En consecuencia, es muy eficiente y garantiza una latencia mínima. Entre otros beneficios, se incluyen el proceso de implementación y configuración sencillo de ZeroTier, su fácil mantenimiento y el hecho de que permite registrar y administrar de forma centraliza los nodos autorizados a través de la consola web.</p>
+
+<p>Siguiendo este tutorial, conectará un cliente y un servidor juntos en una red punto a punto simple. Debido a que la red definida por software no utiliza el diseño tradicional de cliente y servidor, no se debe instalar ni configurar un servidor VPN central; esto agiliza la implementación de la herramienta y la adición de nodos complementarios. Una vez establecida la conectividad, tendrá la oportunidad de utilizar la capacidad VPN de ZeroTier empleando algunas funcionalidades inteligentes de Linux para permitir que el tráfico salga de su red ZerTier desde su servidor e indicar a un cliente que envíe su tráfico en esa dirección.</p>
+
+<h2 id="requisitos-previos">Requisitos previos</h2>
+
+<p>Antes de realizar este tutorial, necesitará los siguientes recursos:</p>
+
+<ul>
+<li><p>Un servidor con Ubuntu 16.04. En este servidor, también necesitará un usuario no root con privilegios sudo que se pueda configurar usando nuestra <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-16-04">guía de configuración inicial para servidores de Ubuntu 16.04</a>.</p></li>
+<li><p>Una cuenta con ZeroTier One, que puede configurar visitando <a href="https://my.zerotier.com/">MyZeroTier</a>. Para realizar este tutorial, puede usar la versión gratuita de este servicio, sin costo ni compromisos.</p></li>
+<li><p>Una computadora local para que se una a su SDN como cliente. En los ejemplos de este tutorial, tanto el servidor como el equipo local cuentan con Ubuntu Linux, pero cualquier sistema operativo listado en la <a href="https://zerotier.com/download.shtml">página de descarga de ZeroTier</a> funcionará en el cliente.</p></li>
+</ul>
+
+<p>Una vez cumplidos esos requisitos previos, estará listo para configurar redes definidas por software para su servidor y su equipo local.</p>
+
+<h2 id="paso-1-crear-una-red-definida-por-software-usando-zerotier-one">Paso 1: Crear una red definida por software usando ZeroTier One</h2>
+
+<p>La plataforma ZeroTier proporciona el punto central de control para su red definida por software. En ella, podrá autorizar y desautorizar clientes, elegir un esquema de dirección y crear un ID de red al cual puede dirigir a sus clientes cuando los configure.</p>
+
+<p>Inicie sesión en su cuenta de ZerTier, haga clic en <strong>Networks</strong> en la parte superior de la pantalla y luego seleccione <strong>Create</strong>. Aparecerá un nombre de red generado automáticamente. Haga clic para ver la pantalla de configuración de su red. Tome nota del parámetro <strong>Network ID</strong> que aparece en amarillo, ya que necesitará consultarlo más tarde.</p>
+
+<p>Si prefiere cambiar el nombre de la red por algo más descriptivo, edite el nombre en el lado izquierdo de la pantalla; también puede añadir una descripción, si lo desea. Cualquier cambio que realice se guardará y se aplicará automáticamente.</p>
+
+<p>A continuación, seleccione el rango de dirección IPv4 en el que funcionará la SDN. En el lado derecho de la pantalla, en el área titulada <strong>IPv4 Auto-Assign</strong>, seleccione un rango de direcciones al que pertenecerán sus nodos. A los efectos de este tutorial, puede utilizarse cualquier rango, pero es importante dejar seleccionada la casilla <strong>Auto-Assign from Range</strong>.</p>
+
+<p>Asegúrese de que quede marcado el parámetro <strong>Certificate (Private Network)</strong> en <strong>Access Control</strong>, a la izquierda. Esto garantiza que solo las computadoras aprobadas puedan conectarse a su red, y que no lo haga cualquiera que conozca el ID de esta.</p>
+
+<p>Una vez que termine, sus ajustes deben tener un aspecto similar a este:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/zerotier-1604/ZeroTierSettings-updated.png" alt="Configurar ZeroTier"></p>
+
+<p>En este punto, habrá creado con éxito los elementos básicos de una red definida por software de ZeroTier. A continuación, instalará el software de ZeroTier en su servidor y en más máquinas clientes para permitirles establecer conexión con su SDN.</p>
+
+<h2 id="paso-2-instalar-el-cliente-de-zerotier-one-en-su-servidor-y-su-máquina-local">Paso 2: Instalar el cliente de ZeroTier One en su servidor y su máquina local</h2>
+
+<p>Debido a que ZeroTier One es un software relativamente nuevo, aún no se ha incluido en los repositorios de software centrales de Ubuntu. Por este motivo, ZeroTier ofrece una secuencia de comandos de instalación que usaremos para instalar el software. Este comando es una secuencia de comandos con firma GPG, lo cual significa que el código que descargue se verificará como publicado por ZeroTier. Esta secuencia de comandos tiene cuatro partes principales. A continuación, se muestra una explicación de cada una de ellas:</p>
+
+<ul>
+<li><code>curl -s 'https://pgp.mit.edu/pks/lookup?op=get&amp;search=0x1657198823E52A61'</code>: esto importa la clave pública de ZeroTier de MIT.</li>
+<li><code>gpg --import</code>: esta sección del comando añade la clave pública de ZeroTier a su cadena de claves local de autoridades de confianza para los paquetes que intente instalar. La siguiente parte del comando solo se ejecutará si la importación de GPG se completa de forma correcta.</li>
+<li><code>if z=$(curl -s 'https://install.zerotier.com/' | gpg); then echo "$z"</code>: en esta sección tienen lugar varios eventos. No obstante, el concepto es básicamente el siguiente: “Si GPG admite la secuencia de comandos de instalación con firma criptográfica descargada de ZeroTier.com y esta no se rechaza por no estar, en apariencia, firmada por ZeroTier, se debe pegar esa información en la pantalla”.</li>
+<li><code>sudo bash; fi</code>: esta sección toma la secuencia de comandos del instalador recién validado y lo ejecuta realmente antes de finalizar la rutina.</li>
+</ul>
+
+<p><span class='warning'><strong>Advertencia:</strong> Nunca debe descargar algo de Internet y asignarlo a otro programa a menos que esté seguro de que proviene de una fuente confiable. Si lo desea, puede inspeccionar el software de ZeroTier revisando el código fuente en <a href="https://github.com/zerotier/ZeroTierOne">la página oficial de GitHub del proyecto</a>.<br></span></p>
+
+<p>Utilice una consola SSH para establecer conexión con su servidor recién creado y ejecute el siguiente comando como usuario normal (a continuación, verá una explicación del comando). Asegúrese de <strong>no</strong> ejecutarlo como root, ya que la secuencia de comandos solicita automáticamente su contraseña para elevar su nivel de privilegios, y recuerde mantener la consola de ZeroTier abierta en su navegador para poder interactuar con ella cuando sea necesario.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -s 'https://pgp.mit.edu/pks/lookup?op=get&amp;search=0x1657198823E52A61' | gpg --import &amp;&amp; if z=$(curl -s 'https://install.zerotier.com/' | gpg); then echo "$z" | sudo bash; fi
+</li></ul></code></pre>
+<p>Una vez que la secuencia de comandos se complete, verá dos líneas de resultado similares a las que se muestran a continuación. Tome nota de su dirección de ZeroTier (sin los corchetes) y del nombre del sistema que generó esa dirección; los necesitará más tarde.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>*** Waiting for identity generation...
+
+*** Success! You are ZeroTier address [ <span class="highlight">916af8664d</span> ].
+</code></pre>
+<p>Repita este paso en su computadora local si utiliza Ubuntu, o siga los pasos pertinentes para su sistema operativo en la <a href="https://www.zerotier.com/download.shtml">página de descargas</a> del sitio web de ZeroTier. Una vez más, asegúrese de anotar la dirección de ZeroTier y la máquina que generó dicha dirección. Necesitará esta información en el siguiente paso de este tutorial cuando una su servidor y cliente a la red.</p>
+
+<h2 id="paso-3-unirse-a-su-red-zerotier">Paso 3: Unirse a su red ZeroTier</h2>
+
+<p>Ahora que tanto el servidor como el cliente tienen activo el software de ZeroTier, estará listo para conectarlos a la red que creó en la consola web de ZeroTier.</p>
+
+<p>Utilice el siguiente comando para indicar a su cliente que solicite acceso a la red ZeroTier a través de su plataforma. La solicitud inicial del cliente se rechazará y quedará pendiente, pero solucionaremos eso en un momento. Asegúrese de sustituir <span class="highlight">NetworkID</span> por el ID de red que indicó anteriormente desde la ventana de configuración de su red.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo zerotier-cli join <span class="highlight">NetworkID</span>
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>200 join OK
+</code></pre>
+<p>Recibirá un mensaje <code>200 join OK</code>, lo cual confirmará que el servicio ZeroTier de su servidor pudo interpretar el comando. Si no lo hace, compruebe el ID de red de ZeroTier que introdujo.</p>
+
+<p>Debido a que no creó una red pública a la que pueda unirse cualquier persona en el mundo, deberá autorizar sus clientes. Vaya a la consola web de ZeroTier y desplácese hasta la parte inferior donde se encuentra la sección de <strong>miembros</strong>. Debería ver dos entradas marcadas como <strong>Online</strong>, con las mismas direcciones indicadas anteriormente.</p>
+
+<p>En la primera columna marcada como <strong>Auth?</strong>, seleccione las casillas para autorizarlas a unirse a la red. El controlador de ZeroTier asignará una dirección IP al servidor y el cliente del rango que seleccionó la próxima vez que invoquen a la SDN.</p>
+
+<p>Asignar las direcciones IP tomará un momento. Mientras espera, podría proporcionar un <strong>nombre corto</strong> y una <strong>descripción</strong> para sus nodos en la sección de <strong>miembros</strong>.</p>
+
+<p>De esta menra, habrá conectado dos sistemas a su red definida por software.</p>
+
+<p>Hasta ahora, se familiarizó con el panel de control de ZeroTier, usó la interfaz de la línea de comandos para descargar e instalar ZeroTier y luego conectó el servidor y el cliente a esa red. A continuación, comprobará que todo se haya aplicado correctamente realizando una prueba de conectividad.</p>
+
+<h2 id="paso-4-verificar-la-conectividad">Paso 4: Verificar la conectividad</h2>
+
+<p>En esta etapa, es importante validar que los dos hosts puedan comunicarse. Existe la posibilidad de que aún cuando parezca que los host se unieron a la red no puedan comunicarse. Al verificar la conectividad, no tendrá que preocuparse por problemas básicos de interconexión que podrían causar problemas posteriormente.</p>
+
+<p>Una alternativa sencilla para encontrar la dirección IP de ZeroTier de cada host es buscar en la sección de <strong>miembros</strong> de la consola web de ZeroTier. Es posible que necesite actualizarla tras autorizar al servidor y al cliente antes de que aparezcan sus direcciones IP. También puede usar la línea de comandos de Linux para buscar estas direcciones. Utilice el siguiente comando en ambos equipos; la primera dirección IP de la lista es la que debe usar. En el ejemplo que se muestra a continuación, esa dirección es <code>203.0.113.0</code>.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip addr sh zt0 | grep 'inet'
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>inet 203.0.113.0/24 brd 203.0.255.255 scope global zt0
+inet6 fc63:b4a9:3507:6649:9d52::1/40 scope global
+inet6 fe80::28e4:7eff:fe38:8318/64 scope link
+</code></pre>
+<p>Para probar la conectividad entre los hosts, ejecute el comando <code>ping</code> desde un host seguido de la dirección del otro. Por ejemplo, en el cliente:</p>
+<pre class="code-pre custom_prefix local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy@client:~$">ping <span class="highlight">your_server_ip</span>
+</li></ul></code></pre>
+<p>Y en el servidor:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="sammy@server:~$">ping <span class="highlight">your_client_ip</span>
+</li></ul></code></pre>
+<p>Si el host opuesto muestra una respuesta (como se muestra en el resultado, a continuación), significa que los dos nodos se comunican correctamente a través de la SDN.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>PING 203.0.113.0 (203.0.113.0) 56(84) bytes of data.
+64 bytes from 203.0.113.0: icmp_seq=1 ttl=64 time=0.054 ms
+64 bytes from 203.0.113.0: icmp_seq=2 ttl=64 time=0.046 ms
+64 bytes from 203.0.113.0: icmp_seq=3 ttl=64 time=0.043 ms
+</code></pre>
+<p>Puede añadir tantos equipos como lo desee a esta configuración repitiendo los procesos de instalación e incorporación para ZeroTier anteriormente descritos. Recuerde que no es necesario que estos equipos estén cerca uno de otro.</p>
+
+<p>Ahora que confirmó que su servidor y cliente pueden comunicarse entre sí, continúe leyendo para aprender a configurar la red de modo que proporcione una puerta de enlace de salida y construir su propia VPN.</p>
+
+<h2 id="paso-5-habilitar-la-capacidad-vpn-de-zerotier">Paso 5: Habilitar la capacidad VPN de ZeroTier</h2>
+
+<p>Como se mencionó en la introducción, es posible usar ZeroTier como herramienta de VPN. Si no planea usar ZeroTier como una solución de VPN, no necesita seguir este paso y puede ir directo al 6.</p>
+
+<p>El uso de una VPN oculta el origen de sus comunicaciones con sitios web en Internet. Le permite omitir filtros y restricciones que puedan existir en la red que usa. Para Internet en general, parecerá que navega desde la dirección IP pública de su servidor. Para usar ZeroTier como herramienta de VPN, deberá aplicar algunos cambios más a las configuraciones de su servidor y cliente.</p>
+
+<h3 id="habilitar-la-traducción-de-la-dirección-de-red-y-el-reenvío-de-ip">Habilitar la traducción de la dirección de red y el reenvío de IP</h3>
+
+<p>La <em>traducción de direcciones de red</em>, más comúnmente conocida como “NAT”, es un método por el cual un enrutador acepta paquetes en una interfaz etiquetada con la dirección IP del remitente y luego cambia esa dirección por la del enrutador. Se conserva un registro de este cambio en la memoria del enrutador para que cuando el tráfico de retorno vuelva en la dirección opuesta, el enrutador pueda traducir el IP de vuelta para su dirección original. La NAT se utiliza normalmente para permitir que varias computadoras funcionen detrás de una dirección IP públicamente expuesta, lo cual es útil para un servicio de VPN. Un ejemplo de la NAT en la práctica es el enrutador doméstico que su proveedor de servicios de Internet le proporcionó para conectar todos los dispositivos de su hogar a Internet. Su portátil, su teléfono, sus tabletas y cualquier otro dispositivo habilitado para Internet aparecerán para compartir la misma dirección IP pública en Internet, porque su enrutador aplica NAT.</p>
+
+<p>Aunque el enrutador normalmente aplica NAT, un servidor también puede hacerlo. A lo largo de este paso, utilizará esta funcionalidad en su servidor ZeroTier para habilitar sus capacidades de VPN.</p>
+
+<p>El <em>reenvío de IP</em> es una función que realiza un router o un servidor. Mediante esta se reenvía el tráfico de una interfaz a otra si las direcciones IP están en zonas diferentes. Si un enrutador se conectó a dos redes, el reenvío de IP le permite reenviar el tráfico entre ellas. Esto puede parecer sencillo, pero su implementación correcta puede ser un proceso sorprendentemente complejo. Sin embargo, en el caso de este tutorial, bastará con editar algunos archivos de configuración.</p>
+
+<p>Si se habilita el reenvío de IP, el tráfico de la VPN desde su cliente en la red ZeroTier llegará a la interfaz de ZeroTier del servidor. Sin estos cambios en la configuración, el kernel de Linux (por defecto) desechará cualquier paquete no destinado a la interfaz a la que llegan. Este es un comportamiento normal para el kernel de Linux, ya que normalmente cualquier paquete que llegue a una interfaz que tenga una dirección de destino para otra red podría ser el resultado de una mala configuración del direccionamiento en cualquier otra parte de la red.</p>
+
+<p>Resulta útil concebir el reenvío de IP como un proceso mediante el cual se notifica al kernel de Linux que es aceptable reenviar paquetes entre las interfaces. El ajuste predeterminado es <code>0</code>, que equivale a “inhabilitado”. Lo cambiará a <code>1</code>, equivalente a “habilitado”.</p>
+
+<p>Para ver la configuración actual, ejecute el siguiente comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl net.ipv4.ip_forward
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>net.ipv4.ip_forward = 0
+</code></pre>
+<p>Para habilitar el reenvío de IP, modifique el archivo <code>/etc/sysctl.conf</code> en su servidor y añada la línea requerida. Este archivo de configuración permite que un administrador anule los ajustes predeterminados del kernel y siempre se aplicará después de los reinicios para que no tenga que preocuparse por configurarlos de nuevo. Utilice <code>nano</code> o su editor de texto favorito para añadir la siguiente línea a la parte inferior del archivo.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysctl.conf
+</li></ul></code></pre><div class="code-label " title="/etc/sysctl.conf">/etc/sysctl.conf</div><pre class="code-pre "><code langs="">. . .
+<span class="highlight">net.ipv4.ip_forward = 1</span>
+</code></pre>
+<p>Guarde y cierre el archivo, y luego ejecute el siguiente comando para activar la adopción del kernel de la nueva configuración</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl -p
+</li></ul></code></pre>
+<p>El servidor adoptará cualquier directiva nueva de configuración en el archivo y la aplicará de inmediato, sin necesidad de un reinicio. Ejecute el mismo comando que aplicó antes; verá que el reenvío de IP está habilitado.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl net.ipv4.ip_forward
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>net.ipv4.ip_forward = 1
+</code></pre>
+<p>Ahora que el reenvío de IP está habilitado, podrá aprovecharlo al máximo proporcionando al servidor algunas reglas de direccionamiento básicas. Debido a que el kernel de Linux ya tiene una capacidad de direccionamiento de red integrada, lo único que debe hacer es añadir algunas reglas para indicar al firewall integrado y al enrutador que el nuevo tráfico que verá es aceptable y mostrarle el destino de este.</p>
+
+<p>Para añadir estas reglas desde la línea de comandos, primero necesitará saber los nombres que Ubuntu asignó a su interfaz de ZeroTier y a su interfaz ethernet regular para Internet. Normalmente, son <code>zt0</code> y <code>eth0</code> respectivamente, aunque no siempre es así.</p>
+
+<p>Para encontrar estos nombres de interfaces, utilice el comando <code>ip link show</code>. Esta utilidad de línea de comandos es parte de <code>iproute2</code>, un conjunto de utilidades del espacio de usuario que viene instalada en Ubuntu por defecto:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ip link show
+</li></ul></code></pre>
+<p>En el resultado de este comando, los nombres de las interfaces se encuentran directamente junto a los números que identifican una interfaz única en la lista. Estos nombres de interfaces se resaltan en el siguiente resultado de ejemplo. Si el suyo difiere de los nombres que se muestran en el ejemplo, sustituya el nombre de su interfaz de forma correspondiente a lo largo de esta guía.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>1: <span class="highlight">lo</span>: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: <span class="highlight">eth0</span>: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
+    link/ether 72:2d:7e:6f:5e:08 brd ff:ff:ff:ff:ff:ff
+3: <span class="highlight">zt0</span>: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 2800 qdisc pfifo_fast state UNKNOWN mode DEFAULT group default qlen 1000
+    link/ether be:82:8f:f3:b4:cd brd ff:ff:ff:ff:ff:ff
+</code></pre>
+<p>Con esa información, utilice <code>iptables</code> para habilitar la traducción de direcciones de red y el enmascaramiento de IP:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+</li></ul></code></pre>
+<p>Permita el reenvío de tráfico y el seguimiento de las conexiones activas:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+</li></ul></code></pre>
+<p>A continuación, permita el reenvío de tráfico de <code>zt0</code> a <code>eth0</code>. No es necesaria una regla inversa, ya que en este tutorial se supone que el cliente siempre realiza la invocación a través del servidor, y no al revés:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo iptables -A FORWARD -i zt0 -o eth0 -j ACCEPT
+</li></ul></code></pre>
+<p>Es importante recordar que las reglas de iptables que estableció para el servidor no persisten automáticamente entre los reinicios. Deberá guardar estas reglas para garantizar que se vuelvan a implementar si el servidor se reinicia. En su servidor, ejecute los comandos siguientes usando como guía las breves instrucciones en la pantalla para guardar las reglas IPv4 actuales; no se requiere IPv6.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt-get install iptables-persistent
+</li></ul></code></pre><pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo netfilter-persistent save
+</li></ul></code></pre>
+<p>Tras ejecutar <code>sudo netfilter-persistent save</code>, puede resultarle conveniente reiniciar su servidor para validar el almacenamiento correcto de las reglas de iptables. Una forma sencilla de verificar esto es ejecutar <code>sudo iptables-save</code>, que volcará la configuración actual cargada en la memoria a su terminal. Si ve reglas similares a las que se muestran a continuación en relación con el enmascaramiento, el reenvío y la interfaz <code>zt0</code>, significa que se guardaron correctamente.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo iptables-save
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div># Generated by iptables-save v1.6.0 on Tue Apr 17 21:43:08 2018
+. . .
+-A POSTROUTING -o eth0 -j MASQUERADE
+COMMIT
+. . .
+-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -i zt0 -o eth0 -j ACCEPT
+COMMIT
+. . .
+</code></pre>
+<p>Ahora que estas reglas se aplicaron a su servidor, está listo para alternar el tráfico entre la red de ZeroTier y la Internet pública. Sin embargo, la VPN no funcionará a menos que la red ZeroTier esté informada de que el servidor está listo para utilizarse como una puerta de enlace.</p>
+
+<h3 id="habilitar-su-servidor-para-administrar-la-ruta-global">Habilitar su servidor para administrar la ruta global</h3>
+
+<p>Para que su servidor procese el tráfico de cualquier cliente, debe asegurarse de que otros clientes de la red de ZeroTier puedan enviar su tráfico a él. Esto puede hacerse estableciendo una ruta global en la consola de ZeroTier. Aquellos que están familiarizados con las redes informáticas pueden describir esto como una <em>Ruta predeterminada</em>. Es donde cualquier cliente envía su tráfico predeterminado; es decir, cualquier tráfico que no debería ir a ninguna otra ubicación específica.</p>
+
+<p>Vaya a la parte superior derecha de su página de redes de ZeroTier y añada una nueva ruta con los parámetros siguientes. Puede encontrar el IP de ZeroTier para su servidor en la sección de <strong>miembros</strong> de su página de configuración de red de ZeroTier. En el campo <strong>network/bits</strong>, introduzca <code>0.0.0.0/0</code> y en el campo <strong>(LAN)</strong> la dirección IP de su servidor ZeroTier.</p>
+
+<p>Cuando se implementen los detalles, haga clic en el símbolo “<strong>+</strong>”; verá aparecer una nueva regla debajo de la existente. Un globo naranja en ella indicará que es de hecho una ruta global:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/zerotier-1604/zerotierGlobalRouteRule-updated.png" alt="Regla de ruta global"></p>
+
+<p>Con su red de ZeroTier lista, solo queda configurar un aspecto para que la VPN funcione: los clientes.</p>
+
+<h3 id="configurar-clientes-de-linux">Configurar clientes de Linux</h3>
+
+<p><span class='note'><strong>Nota:</strong> Los comandos de esta sección solo se aplican a clientes de Linux. En la siguiente sección se proporcionan instrucciones para configurar clientes de Windows o macOS.<br></span></p>
+
+<p>Si su cliente cuenta con Linux, deberá realizar un cambio manual en su archivo <code>/etc/sysctl.conf</code>. Este cambio de configuración es necesario para modificar la perspectiva del kernel respecto de lo que es una ruta de retorno aceptable para el tráfico de su cliente. Debido a la forma en que se encuentra configurada la VPN de ZeroTier, a veces puede parecer que el tráfico que regresa de su servidor a su cliente proviene de una dirección de red diferente de aquella a la que se envió. Por defecto, el kernel de Linux considera que no son válidas y las desactiva, lo que hace necesario anular este comportamiento.</p>
+
+<p>Abra <code>/etc/sysctl.conf</code> en su máquina cliente:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/sysctl.conf
+</li></ul></code></pre>
+<p>A continuación, añada la siguiente línea:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>. . .
+
+<span class="highlight">net.ipv4.conf.all.rp_filter=2</span>
+</code></pre>
+<p>Guarde y cierre el archivo, y luego ejecute <code>sudo sysctl -p</code> para aplicar los cambios.</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo sysctl -p
+</li></ul></code></pre>
+<p>A continuación, informe al software del cliente de ZerTier que su red tiene permiso para llevar tráfico de ruta predeterminado. Esto modifica el direccionamiento del cliente y, por tanto, se considera como una función privilegiada, por lo que debe habilitarse manualmente. El comando imprimirá una estructura de configuración en el resultado. Compruebe esto para confirmar que muestre <code><span class="highlight">allowDefault=1</span></code> en la parte superior:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo zerotier-cli set <span class="highlight">NetworkID</span> allowDefault=1
+</li></ul></code></pre>
+<p>Si en cualquier momento desea dejar de usar ZeroTier como VPN con todo el enrutamiento de su tráfico a través de ella, fije <code>allowDefault</code> de nuevo en <code>0</code>.</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo zerotier-cli set <span class="highlight">NetworkID</span> allowDefault=0
+</li></ul></code></pre>
+<p>Cada vez que se reinicia el servicio ZeroTier en el cliente, el valor <code>allowDefault=1</code> vuelve a fijarse en 0. Por lo tanto, recuerde volver a ejecutarlo para activar la funcionalidad de VPN.</p>
+
+<p>Por defecto, el servicio de ZeroTier se establece para que se inicie automáticamente en el arranque para el cliente y el servidor de Linux. Si no desea que esto sea así, puede deshabilitar la rutina de inicio con el comando siguiente.</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl disable zerotier-one
+</li></ul></code></pre>
+<p>Si desea usar otros sistemas operativos en su red ZeroTier, lea la siguiente sección. De lo contrario, continúe directamente con la sección “Administrar flujos”.</p>
+
+<h3 id="configurar-clientes-que-no-tengan-linux">Configurar clientes que no tengan Linux</h3>
+
+<p>El software cliente de ZeroTier está disponible para muchos sistemas operativos, no solo para Linux; incluso es compatible con teléfonos inteligentes. Existen clientes para Windows, macOS, Android, iOS e incluso sistemas operativos especializados como QNAP, Synology y sistemas NAS de WesternDigital.</p>
+
+<p>Para unir clientes macOS y Windows a la red, inicie la herramienta ZeroTier (que instaló en el paso 1) e introduzca su ID de red en el campo proporcionado antes de hacer clic en <strong>Join</strong>. Recuerde volver a la consola de ZeroTier para seleccionar el botón <strong>Allow</strong> a fin de autorizar un nuevo host en su red.</p>
+
+<p>Asegúrese de seleccionar la casilla con la etiqueta <strong>Route all traffic through ZeroTier</strong>. Si no lo hace, su cliente se adjuntará a su red de ZeroTier, pero no intentará enviar su tráfico de Internet a través de ella.</p>
+
+<p>Utilice una herramienta de verificación de IP, como <a href="http://icanhazip.com/">ICanHazIP</a> para verificar que su tráfico aparezca a Internet desde la IP de su servidor. Para comprobarlo, pegue la siguiente URL en la barra de direcciones de su navegador. Este sitio web mostrará la dirección IP que su servidor (y el resto de Internet) ve que usted usa para acceder al sitio:</p>
+<pre class="code-pre "><code langs="">http://icanhazip.com
+</code></pre>
+<p>Una vez completados estos pasos, podrá comenzar a usar su VPN como lo desee. En la siguiente sección opcional, se abarca una tecnología integrada en la SDN de ZeroTier y conocida con la denominación “reglas de flujo”; no obstante, estas no son necesarias para que la funcionalidad de VPN se aplique.</p>
+
+<h2 id="paso-6-administrar-flujos-opcional">Paso 6: Administrar flujos (opcional)</h2>
+
+<p>Uno de los beneficios de una red definida por software es el controlador centralizado. En cuanto a ZeroTier, el controlador centralizado es la Interfaz de usuario web que se sitúa por encima del servicio SDN general de ZeroTier. Desde esta interfaz, es posible escribir reglas conocidas como <em>reglas de flujo</em> que especifican lo que el tráfico de una red puede o no hacer. Por ejemplo, podría especificar una prohibición total en ciertos puertos de la red por los que pase tráfico a través la red, limitar los hosts que pueden comunicarse entre ellos e incluso redirigir el tráfico.</p>
+
+<p>Ésta es una capacidad extremadamente potente que se implementa casi al instante, ya que cualquier cambio aplicado a la tabla de flujos se envían a miembros de la red y surten efecto tras unos momentos. Para editar las reglas de flujo, vuelva a la interfaz de usuario web de ZeroTier, haga clic en la pestaña <strong>Networking</strong>, y desplácese hacia abajo hasta que vea un cuadro titulado <strong>Flow Rules</strong> (puede estar contraído, en cuyo caso deberá desplegarlo). Con esto, se abrirá un campo de texto en el que podrá introducir las reglas que desee. Existe, en la consola de ZeroTier, un manual completo en un cuadro que se halla justo debajo del cuadro de entrada de <strong>Flow Rules</strong>; lleva la leyenda <strong>Rules Engine Help</strong>.</p>
+
+<p>A continuación, se ofrecen algunas reglas de ejemplo para ayudarlo a explorar esta funcionalidad.</p>
+
+<p>Para bloquear cualquier tráfico vinculado al servidor DNS <code>8.8.8.8</code>, añada esta regla:</p>
+<pre class="code-pre "><code langs="">drop
+    ipdest 8.8.8.8/32
+;
+</code></pre>
+<p>Para redirigir cualquier tráfico destinado al servidor de DNS público de Google a uno de sus nodos de ZeroTier, añada la regla siguiente. Esto podría servir como una regla general excelente para anular las búsquedas de DNS:</p>
+<pre class="code-pre "><code langs="">redirect <span class="highlight">NetworkID</span>
+    ipdest 8.8.8.8/32
+;
+</code></pre>
+<p>Si su red tiene requisitos de seguridad especiales, puede detener cualquier actividad en los puertos FTP, Telnet y HTTP sin cifrado añadiendo esta regla:</p>
+<pre class="code-pre "><code langs="">drop
+    dport 80,23,21,20
+;
+</code></pre>
+<p>Cuando termine de añadir las reglas de flujo, haga clic en el botón <strong>Save Changes</strong>. ZeroTier registrará sus cambios.</p>
+
+<h2 id="conclusión">Conclusión</h2>
+
+<p>A lo largo de este tutorial, dio un primer paso hacia el mundo de las redes definidas por software. Además, trabajar con ZeroTier proporciona cierta información sobre los beneficios de esta tecnología. Si siguió el ejemplo de VPN, aunque la configuración inicial puede contrastar con otras herramientas que haya usado en el pasado, la facilidad de añadir clientes podría ser una razón de peso para usar la tecnología en cualquier otro espacio.</p>
+
+<p>En resumen, aprendió a usar ZeroTier como su proveedor de SDN, y a configurar y conectar nodos a esa red. El elemento de VPN le habrá proporcionado un mayor nivel de comprensión de cómo funciona el direccionamiento en esa red y cualquier ruta de este tutorial le permitirá utilizar la potente tecnología de las reglas de flujo.</p>
+
+<p>Ahora que existe una red punto a punto, podría combinarla con otra funcionalidad como la de intercambio de archivos. Si dispone de un servidor NAS o de archivos en casa, podría vincularlo a ZeroTier y acceder a él en cualquier parte. Si desea compartirlo con sus amigos, puede mostrarles la forma de unirse a su red de ZeroTier. Los empleados distribuidos en una zona extensa podrían incluso establecer conexión con el mismo espacio central de almacenamiento. Si desea comenzar a compilar el intercambio de archivos para cualquiera de estos ejemplos, consulte <a href="https://www.digitalocean.com/community/tutorials/how-to-set-up-a-samba-share-for-a-small-organization-on-ubuntu-16-04">Cómo configurar un recurso compartido de Samba para una pequeña organización en Ubuntu 16.04</a>.</p>

@@ -1,0 +1,382 @@
+---
+layout: post
+title: Como Configurar um Servidor de Armazenamento de Objeto Usando o Minio no Ubuntu 18.04
+network: digitalocean
+date: January 22, 2020 at 08:02PM
+url: https://www.digitalocean.com/community/tutorials/how-to-set-up-an-object-storage-server-using-minio-on-ubuntu-18-04-pt
+image: https://assets.digitalocean.com/articles/cart-66199/Minio_login_screen.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p><em>O autor escolheu o <a href="https://www.brightfunds.org/funds/open-internet-free-speech">Open Internet/Free Speech Fund</a> para receber uma doação como parte do programa <a href="https://do.co/w4do-cta">Write for DOnations</a>.</em></p>
+
+<h3 id="introdução">Introdução</h3>
+
+<p>De soluções de backup baseadas na nuvem até a alta disponibilidade <a href="https://www.digitalocean.com/community/tutorials/usando-uma-cdn-para-acelerar-a-entrega-de-conteudo-estatico-pt">redes de entrega de conteúdo (CDNs)</a>, a capacidade de armazenar blobs não estruturados de dados de objetos e torná-los acessíveis por meio de APIs HTTP, conhecidas como armazenamento de objeto ou <a href="https://www.digitalocean.com/community/tutorials/servicos-de-armazenamento-de-objetos-versus-armazenamento-em-blocos-pt"><em>object storage</em></a>, tornou-se parte integrante do cenário da tecnologia moderna.</p>
+
+<p>O <a href="https://www.minio.io/">Minio</a> é um popular servidor de armazenamento de objetos open-source compatível com o <a href="https://aws.amazon.com/pt/free/storage/">Serviço de armazenamento em nuvem Amazon S3</a>. As aplicações que foram configuradas para conversar com o Amazon S3 também podem ser configuradas para conversar com o Minio, permitindo que o Minio seja uma alternativa viável ao S3 se você quiser ter mais controle sobre o servidor de armazenamento de objetos. O serviço armazena dados não estruturados como fotos, vídeos, arquivos de log, backups e imagens de container/VM, e pode até mesmo fornecer um servidor de armazenamento de objeto único que agrupa várias unidades espalhadas por muitos servidores.</p>
+
+<p>O Minio é escrito em Go, vem com um cliente de linha de comando mais uma interface web, e suporta serviço de enfileiramento simples para alvos com <a href="https://www.digitalocean.com/community/tutorials/an-advanced-message-queuing-protocol-amqp-walkthrough">o protocolo Advanced Message Queuing (AMQP)</a>, <a href="https://www.digitalocean.com/community/tutorials/como-instalar-elasticsearch-logstash-e-kibana-elastic-stack-no-ubuntu-18-04-pt">Elasticsearch</a>, <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-redis-on-ubuntu-18-04-pt">Redis</a>, <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-nats-on-ubuntu-16-04">NATS</a>. Por todos esses motivos, aprender a configurar um servidor de armazenamento de objetos Minio pode adicionar uma ampla variedade de flexibilidade e utilidade ao seu projeto.</p>
+
+<p>Neste tutorial, você irá:</p>
+
+<ul>
+<li><p>Instalar o servidor Minio no seu servidor Ubuntu 18.04 e configurá-lo como um <a href="https://www.digitalocean.com/community/tutorials/systemd-essentials-working-with-services-units-and-the-journal">serviço <code>systemd</code></a>.</p></li>
+<li><p>Configurar um certificado SSL/TLS usando o <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a> para proteger a comunicação entre o servidor e o cliente.</p></li>
+<li><p>Acessar a interface web do Minio via HTTPS para usar e administrar o servidor.</p></li>
+</ul>
+
+<h2 id="pré-requisitos">Pré-requisitos</h2>
+
+<p>Para concluir este tutorial, você precisará de:</p>
+
+<ul>
+<li><p>Um servidor Ubuntu 18.04 configurado seguindo <a href="https://www.digitalocean.com/community/tutorials/configuracao-inicial-de-servidor-com-ubuntu-18-04-pt">nosso tutorial de Configuração Inicial de servidor com Ubuntu 18.04</a>, incluindo um usuário sudo não-root e um firewall.</p></li>
+<li><p>Um nome de domínio totalmente qualificado. Você pode comprar um em <a href="https://namecheap.com">Namecheap</a> ou obter um gratuitamente em <a href="http://www.freenom.com/en/index.html">Freenom</a>. Neste tutorial, seu domínio será representado como <code><span class="highlight">seu_domínio</span></code>.</p></li>
+<li><p>Os seguintes registros DNS configurados para o seu servidor Minio. Você pode seguir <a href="https://www.digitalocean.com/docs/networking/dns/how-to/manage-records/">nossa documentação sobre registros DNS</a> para obter detalhes sobre como adicioná-los a um Droplet da DigitalOcean.</p>
+
+<ul>
+<li>Um registro A com o nome do servidor (exemplo: <code><span class="highlight">minio-server.seu_domínio</span></code>) apontando para o endereço IPv4 do servidor de objetos.</li>
+<li><strong>(Opcional)</strong> Se você deseja que seu servidor seja acessível via IPv6, será necessário um registro AAAA com o nome do seu servidor apontando para o endereço IPv6 do servidor de objetos.</li>
+</ul></li>
+</ul>
+
+<h2 id="passo-1-mdash-instalando-e-configurando-o-servidor-minio">Passo 1 — Instalando e Configurando o Servidor Minio</h2>
+
+<p>Você pode instalar o servidor Minio compilando o código fonte ou através de um arquivo binário. Para instalá-lo a partir da fonte, você precisa ter pelo menos o <a href="https://golang.org/doc/go1.12">Go 1.12</a> instalado em seu sistema.</p>
+
+<p>Neste passo, você instalará o servidor através do binário pré-compilado e configurará o servidor Minio posteriormente.</p>
+
+<p>Primeiro, efetue login no seu servidor, substituindo <code><span class="highlight">sammy</span></code> pelo seu nome de usuário e <code><span class="highlight">ip_do_seu_servidor</span></code> pelo endereço IP do seu servidor Ubuntu 18.04:</p>
+<pre class="code-pre command local-environment"><code langs=""><ul class="prefixed"><li class="line" prefix="$">ssh <span class="highlight">sammy</span>@<span class="highlight">ip_do_seu_servidor</span>
+</li></ul></code></pre>
+<p>Se você não atualizou o banco de dados de pacotes recentemente, atualize-o agora:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Em seguida, baixe o arquivo binário do servidor Minio do site oficial:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">wget https://dl.min.io/server/minio/release/linux-amd64/minio
+</li></ul></code></pre>
+<p>Você receberá uma saída semelhante à seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>--2019-08-27 15:08:49--  https://dl.min.io/server/minio/release/linux-amd64/minio
+Resolving dl.min.io (dl.min.io)... 178.128.69.202
+Connecting to dl.min.io (dl.min.io)|178.128.69.202|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 44511616 (42M) [application/octet-stream]
+Saving to: ‘minio’
+
+minio               100%[===================&gt;]  42.45M  21.9MB/s    in 1.9s
+
+2019-08-27 15:08:51 (21.9 MB/s) - ‘minio’ saved [44511616/44511616]
+</code></pre>
+<p>Depois que o download terminar, um arquivo chamado <code>minio</code> estará no seu diretório de trabalho. Use o seguinte comando para torná-lo executável:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod +x minio
+</li></ul></code></pre>
+<p>Agora, mova o arquivo para o diretório <code>/usr/local/bin</code>, onde o script de inicialização <code>systemd</code> do Minio espera encontrá-lo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv minio /usr/local/bin
+</li></ul></code></pre>
+<p>Isso nos permitirá escrever um <a href="https://www.digitalocean.com/community/tutorials/understanding-systemd-units-and-unit-files#types-of-units">arquivo de unidade de serviço</a> posteriormente neste tutorial para executar automaticamente o Minio na inicialização.</p>
+
+<p>Por motivos de segurança, é melhor evitar a execução do servidor Minio como <strong>root</strong>. Isso limitará os danos que podem ser causados ao seu sistema se ele for comprometido. Como o script <code>systemd</code> que você usará no Passo 2 procura uma conta de usuário e um grupo chamado <code>minio-user</code>, crie um novo usuário com este nome:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo useradd -r minio-user -s /sbin/nologin
+</li></ul></code></pre>
+<p>Neste comando, você usou a flag <code>-s</code> para definir <code>/sbin/nologin</code> como o shell para <code>minio-user</code>. Este é um shell que não permite o login do usuário, o que não é necessário para o <code>minio-user</code>.</p>
+
+<p>Em seguida, altere a propriedade do binário do Minio para <code>minio-user</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown minio-user:minio-user /usr/local/bin/minio
+</li></ul></code></pre>
+<p>Em seguida, você criará um diretório onde o Minio armazenará arquivos. Este será o local de armazenamento para os <em>buckets</em> que você usará posteriormente para organizar os objetos que você armazena no servidor Minio. Este tutorial nomeará o diretório como <code><span class="highlight">minio</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /usr/local/share/<span class="highlight">minio</span>
+</li></ul></code></pre>
+<p>Dê a propriedade desse diretório para o <code>minio-user</code>: </p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown minio-user:minio-user /usr/local/share/<span class="highlight">minio</span>
+</li></ul></code></pre>
+<p>A maioria dos arquivos de configuração do servidor é armazenada no diretório <code>/etc</code>, então crie seu arquivo de configuração do Minio lá:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /etc/<span class="highlight">minio</span>
+</li></ul></code></pre>
+<p>Dê a propriedade desse diretório para o <code>minio-user</code> também:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown minio-user:minio-user /etc/minio
+</li></ul></code></pre>
+<p>Use o Nano ou seu editor de texto favorito para criar o arquivo de ambiente necessário para modificar a configuração padrão:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/default/<span class="highlight">minio</span>
+</li></ul></code></pre>
+<p>Depois que o arquivo estiver aberto, adicione as seguintes linhas para definir algumas variáveis de ambiente importantes no seu arquivo de ambiente:</p>
+<div class="code-label " title="/etc/default/minio">/etc/default/minio</div><pre class="code-pre "><code langs="">MINIO_ACCESS_KEY="<span class="highlight">minio</span>"
+MINIO_VOLUMES="<span class="highlight">/usr/local/share/minio/</span>"
+MINIO_OPTS="-C <span class="highlight">/etc/minio</span> --address <span class="highlight">ip_do_seu_servidor</span>:<span class="highlight">9000</span>"
+MINIO_SECRET_KEY="<span class="highlight">miniostorage</span>"
+</code></pre>
+<p>Vamos dar uma olhada nessas variáveis e nos valores que você define:</p>
+
+<ul>
+<li> <code>MINIO_ACCESS_KEY</code>: Isso define a access key que você usará para acessar a interface web de usuário do Minio.</li>
+<li> <code>MINIO_SECRET_KEY</code>: Isso define a chave privada que você usará para completar suas credenciais de login na interface do Minio. Este tutorial configurou o valor para <code><span class="highlight">miniostorage</span></code>, mas recomendamos que você escolha uma senha diferente e mais complexa para proteger seu servidor.</li>
+<li> <code>MINIO_VOLUMES</code>: Isso identifica o diretório de armazenamento que você criou para seus buckets.</li>
+<li> <code>MINIO_OPTS</code>: Isso muda onde e como o servidor serve os dados. A flag <code>-C</code> aponta o Minio para o diretório de configuração que ele deve usar, enquanto a flag <code>--address</code> informa ao Minio o endereço IP e a porta na qual se conectar. Se o endereço IP não for especificado, o Minio será vinculado a todos os endereços configurados no servidor, incluindo <code>localhost</code> e quaisquer endereços IP relacionados ao Docker, portanto, é recomendável especificar diretamente o endereço IP aqui. A porta padrão <code>9000</code> pode ser alterada se você desejar.</li>
+</ul>
+
+<p>Por fim, salve e feche o arquivo de ambiente quando terminar de fazer as alterações.</p>
+
+<p>Agora você instalou o Minio e definiu algumas variáveis de ambiente importantes. Em seguida, você configurará o servidor para ser executado como um serviço do sistema.</p>
+
+<h2 id="passo-2-mdash-instalando-o-script-de-inicialização-systemd-do-minio">Passo 2 — Instalando o Script de Inicialização Systemd do Minio</h2>
+
+<p>Neste passo, você configurará o servidor Minio para ser gerenciado como um serviço <code>systemd</code>.</p>
+
+<p>Primeiro, faça o download do <a href="https://github.com/minio/minio-service/blob/master/README.md">arquivo descritor de serviço oficial do Minio</a> usando o seguinte comando.</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -O https://raw.githubusercontent.com/minio/minio-service/master/linux-systemd/minio.service
+</li></ul></code></pre>
+<p>Você receberá uma saída semelhante à seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   835  100   835    0     0   6139      0 --:--:-- --:--:-- --:--:--  6139
+</code></pre>
+<p>Após o término do download, um arquivo chamado <code>minio.service</code> estará no seu diretório de trabalho.</p>
+
+<p>Para auditar o conteúdo do arquivo <code>minio.service</code> antes de aplicá-lo, abra-o em um editor de texto para visualizar seu conteúdo:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano minio.service
+</li></ul></code></pre>
+<p>Isso mostrará o seguinte:</p>
+<div class="code-label " title="/etc/systemd/system/minio.service">/etc/systemd/system/minio.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=MinIO
+Documentation=https://docs.min.io
+Wants=network-online.target
+After=network-online.target
+AssertFileIsExecutable=/usr/local/bin/minio
+
+[Service]
+WorkingDirectory=/usr/local/
+
+User=minio-user
+Group=minio-user
+
+EnvironmentFile=/etc/default/minio
+ExecStartPre=/bin/bash -c "if [ -z \"${MINIO_VOLUMES}\" ]; then echo \"Variable MINIO_VOLUMES not set in /etc/default/minio\"; exit 1; fi"
+
+ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+
+# Let systemd restart this service always
+Restart=always
+
+# Specifies the maximum file descriptor number that can be opened by this process
+LimitNOFILE=65536
+
+# Disable timeout logic and wait until process is stopped
+TimeoutStopSec=infinity
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target
+
+# Built for ${project.name}-${project.version} (${project.name})
+</code></pre>
+<p>Este arquivo de unidade de serviço inicia o servidor Minio usando o usuário <code>minio-user</code> que você criou anteriormente. Ele também implementa as variáveis de ambiente definidas no último passo e faz o servidor executar automaticamente na inicialização. Para mais informações sobre arquivos de unidades do <code>systemd</code>, consulte nosso guia <a href="https://www.digitalocean.com/community/tutorials/understanding-systemd-units-and-unit-files">Understanding Systemd Units and Unit Files</a>.</p>
+
+<p>Depois de examinar o conteúdo do script, feche o seu editor de texto.</p>
+
+<p>O Systemd requer que os arquivos de unidade sejam armazenados no diretório de configuração <code>systemd</code>, então mova o <code>minio.service</code> para lá:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mv minio.service /etc/systemd/system
+</li></ul></code></pre>
+<p>Em seguida, execute o seguinte comando para recarregar todas as unidades systemd:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl daemon-reload
+</li></ul></code></pre>
+<p>Por fim, habilite o Minio para iniciar na inicialização:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable minio
+</li></ul></code></pre>
+<p>Isso dará a seguinte saída:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Created symlink from /etc/systemd/system/multi-user.target.wants/minio.service to /etc/systemd/system/minio.service.
+</code></pre>
+<p>Agora que o script systemd está instalado e configurado, é hora de iniciar o servidor.</p>
+
+<h2 id="passo-3-mdash-iniciando-o-servidor-minio">Passo 3 — Iniciando o Servidor Minio</h2>
+
+<p>Neste passo, você iniciará o servidor e modificará o firewall para permitir o acesso através da interface web.</p>
+
+<p>Primeiro, inicie o servidor Minio:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start minio
+</li></ul></code></pre>
+<p>Em seguida, verifique o status do Minio, o endereço IP ao qual está vinculado, seu uso de memória e muito mais executando este comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status minio
+</li></ul></code></pre>
+<p>Você obterá a seguinte saída:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● minio.service - MinIO
+   Loaded: loaded (/etc/systemd/system/minio.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Mon 2019-12-09 21:54:02 UTC; 46s ago
+     Docs: https://docs.min.io
+  Process: 3405 ExecStartPre=/bin/bash -c if [ -z "${MINIO_VOLUMES}" ]; then echo "Variable MINIO_VOLUMES not set in /etc/default/minio"; exit 1; fi (code=exited, status=0/SUCCES
+ Main PID: 3407 (minio)
+    Tasks: 7 (limit: 1152)
+   CGroup: /system.slice/minio.service
+           └─3407 /usr/local/bin/minio server -C /etc/minio --address <span class="highlight">your_server_IP</span>:<span class="highlight">9000</span> /usr/local/share/minio/
+
+Dec 09 21:54:02 cart-Minion-Object-1804-1 systemd[1]: Started MinIO.
+Dec 09 21:54:03 cart-Minion-Object-1804-1 minio[3407]: Endpoint:  http://<span class="highlight">your_server_IP</span>:<span class="highlight">9000</span>
+Dec 09 21:54:03 cart-Minion-Object-1804-1 minio[3407]: Browser Access:
+Dec 09 21:54:03 cart-Minion-Object-1804-1 minio[3407]:    http://<span class="highlight">your_server_IP</span>:<span class="highlight">9000</span>
+...
+</code></pre>
+<p>Em seguida, habilite o acesso através do firewall ao servidor Minio na porta configurada. Neste tutorial, essa é a porta <code><span class="highlight">9000</span></code>.</p>
+
+<p>Primeiro adicione a regra:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow <span class="highlight">9000</span>
+</li></ul></code></pre>
+<p>Em seguida, ative o firewall:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw enable
+</li></ul></code></pre>
+<p>Você receberá o seguinte prompt:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Command may disrupt existing ssh connections. Proceed with operation (y|n)?
+</code></pre>
+<p>Pressione <code>y</code> e <code>ENTER</code> para confirmar. Você obterá a seguinte saída:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Firewall is active and enabled on system startup
+</code></pre>
+<p>O Minio agora está pronto para aceitar tráfego, mas antes de se conectar ao servidor, você protegerá a comunicação instalando um certificado SSL/TLS.</p>
+
+<h2 id="passo-4-mdash-protegendo-o-acesso-ao-seu-servidor-minio-com-um-certificado-tls">Passo 4 — Protegendo o Acesso ao seu Servidor Minio com um Certificado TLS</h2>
+
+<p>Neste passo, você protegerá o acesso ao seu servidor Minio usando uma chave privada e um certificado público que foram obtidos de uma autoridade de certificação (CA), neste caso <a href="https://letsencrypt.org/">Let&rsquo;s Encrypt</a>. Para obter um certificado SSL gratuito, você usará o <a href="https://certbot.eff.org/">Certbot</a>.</p>
+
+<p>Primeiro, permita o acesso HTTP e HTTPS através do seu firewall. Para fazer isso, abra a porta <code>80</code>, que é a porta para HTTP:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 80
+</li></ul></code></pre>
+<p>Em seguida, abra a porta <code>443</code> para HTTPS:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 443
+</li></ul></code></pre>
+<p>Depois de adicionar essas regras, verifique o status do seu firewall com o seguinte comando:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw status verbose
+</li></ul></code></pre>
+<p>Você receberá uma saída semelhante à seguinte:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp (OpenSSH)           ALLOW IN    Anywhere
+9000                       ALLOW IN    Anywhere
+443                        ALLOW IN    Anywhere
+80                         ALLOW IN    Anywhere
+22/tcp (OpenSSH (v6))      ALLOW IN    Anywhere (v6)
+9000 (v6)                  ALLOW IN    Anywhere (v6)
+443 (v6)                   ALLOW IN    Anywhere (v6)
+80 (v6)                    ALLOW IN    Anywhere (v6)
+</code></pre>
+<p>Isso confirma que as portas <code>80</code> e <code>443</code> estão abertas, garantindo que o servidor aceite solicitações da Internet.</p>
+
+<p>Em seguida, você instalará o Certbot. Como o Certbot mantém um repositório <a href="https://help.ubuntu.com/community/PPA">PPA</a> separado, você primeiro precisará adicioná-lo à sua lista de repositórios antes de instalar o Certbot, como mostrado:</p>
+
+<p>Para se preparar para adicionar o repositório PPA, primeiro instale <a href="https://packages.ubuntu.com/bionic/admin/software-properties-common"><code>software-properties-common</code></a>, um pacote para o gerenciamento de PPAs:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install software-properties-common
+</li></ul></code></pre>
+<p>Este pacote fornece alguns scripts úteis para adicionar e remover PPAs em vez de fazê-lo manualmente.</p>
+
+<p>Agora adicione o repositório <a href="https://help.ubuntu.com/community/Repositories/Ubuntu"><em>Universe</em></a>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository universe
+</li></ul></code></pre>
+<p>Este repositório contém software livre e de código aberto mantido pela comunidade Ubuntu, mas não é oficialmente mantido pela <a href="https://canonical.com/">Canonical</a>, os desenvolvedores do Ubuntu. É aqui que encontraremos o repositório do Certbot.</p>
+
+<p>Em seguida, adicione o repositório do Certbot:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo add-apt-repository ppa:certbot/certbot
+</li></ul></code></pre>
+<p>Você receberá a seguinte saída:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>This is the PPA for packages prepared by Debian Let's Encrypt Team and backported for Ubuntu(s).
+More info: https://launchpad.net/~certbot/+archive/ubuntu/certbot
+Press [ENTER] to continue or ctrl-c to cancel adding it
+</code></pre>
+<p>Pressione ENTER para aceitar.</p>
+
+<p>Atualize a lista de pacotes:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Finalmente, instale o <code>certbot</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install certbot
+</li></ul></code></pre>
+<p>Em seguida, você usará o <code>certbot</code> para gerar um novo certificado SSL.</p>
+
+<p>Como o Ubuntu 18.04 ainda não suporta a instalação automática, você usará o comando <code>certonly</code> e <code>--standalone</code> para obter o certificado:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo certbot certonly --standalone -d minio-server.<span class="highlight">seu_domínio</span>
+</li></ul></code></pre>
+<p><code>--standalone</code> significa que este certificado é para um servidor web interno <em>independente</em>. Para mais informações sobre isso, consulte nosso tutorial <a href="https://www.digitalocean.com/community/tutorials/how-to-use-certbot-standalone-mode-to-retrieve-let-s-encrypt-ssl-certificates-on-ubuntu-1804">How To Use Certbot Standalone Mode to Retrieve Let&rsquo;s Encrypt SSL Certificates on Ubuntu 18.04</a>.</p>
+
+<p>Você receberá a seguinte saída:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Saving debug log to /var/log/letsencrypt/letsencrypt.log
+Plugins selected: Authenticator standalone, Installer None
+Enter email address (used for urgent renewal and security notices) (Enter 'c' to
+cancel):
+</code></pre>
+<p>Adicione seu email e pressione <code>ENTER</code>.</p>
+
+<p>O Certbot solicitará que você se registre no Let&rsquo;s Encrypt:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Please read the Terms of Service at
+https://letsencrypt.org/documents/LE-SA-v1.2-November-15-2017.pdf. You must
+agree in order to register with the ACME server at
+https://acme-v02.api.letsencrypt.org/directory
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+(A)gree/(C)ancel:
+</code></pre>
+<p>Digite <code>A</code> e pressione <code>ENTER</code> para concordar.</p>
+
+<p>Em seguida, você será perguntado se deseja compartilhar seu e-mail com a <a href="https://www.eff.org/">Electronic Frontier Foundation</a>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Would you be willing to share your email address with the Electronic Frontier
+Foundation, a founding partner of the Let's Encrypt project and the non-profit
+organization that develops Certbot? We'd like to send you email about our work
+encrypting the web, EFF news, campaigns, and ways to support digital freedom.
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+(Y)es/(N)o:
+</code></pre>
+<p>Depois de responder <code>Y</code> ou <code>N</code>, suas chaves públicas e privadas serão geradas e salvas no diretório <code>/etc/letsencrypt/live/minio-server.<span class="highlight">seu_domínio</span></code>.</p>
+
+<p>Em seguida, copie esses dois arquivos (<code>privkey.pem</code> e <code>fullchain.pem</code>) para o diretório <code>certs</code> na pasta de configuração do servidor Minio, que é <code>/etc/minio</code> para este tutorial. Use o seguinte para copiar <code>privkey.pem</code> e renomear o arquivo <code>private.key</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /etc/letsencrypt/live/minio-server.<span class="highlight">seu_domínio</span>/privkey.pem <span class="highlight">/etc/minio</span>/certs/private.key
+</li></ul></code></pre>
+<p>Em seguida, faça o mesmo para <code>fullchain.pem</code>, nomeando o resultado como <code>public.crt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo cp /etc/letsencrypt/live/minio-server.<span class="highlight">seu_domínio</span>/fullchain.pem <span class="highlight">/etc/minio</span>/certs/public.crt
+</li></ul></code></pre>
+<p>Agora, altere a propriedade dos arquivos para <code>minio-user</code>. Primeiro, faça isso para <code>private.key</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown minio-user:minio-user <span class="highlight">/etc/minio</span>/certs/private.key
+</li></ul></code></pre>
+<p>Em seguida, <code>public.crt</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown minio-user:minio-user <span class="highlight">/etc/minio</span>/certs/public.crt
+</li></ul></code></pre>
+<p>Reinicie o servidor Minio, para que ele fique ciente do certificado e comece a usar HTTPS:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart minio
+</li></ul></code></pre>
+<p>Os certificados Let’s Encrypt são válidos apenas por noventa dias. Isso é para incentivar os usuários a automatizar seu processo de renovação de certificado. O pacote Certbot que você instalou adiciona automaticamente um script novo ao <a href="https://www.digitalocean.com/community/tutorials/how-to-use-cron-to-automate-tasks-on-a-vps"><code>/etc/cron.d</code></a>. Esse script é executado duas vezes por dia e renova automaticamente qualquer certificado que esteja dentro de trinta dias da expiração.</p>
+
+<p>Com isso, a conexão do Minio agora está segura e o certificado SSL/TLS será renovado automaticamente para você. No próximo passo, você se conectará ao Minio através do navegador para usar o servidor.</p>
+
+<h2 id="passo-5-mdash-conexão-segura-à-interface-web-do-minio-usando-https">Passo 5 — Conexão Segura à Interface Web do Minio Usando HTTPS</h2>
+
+<p>Neste passo, você se conectará com segurança à interface web do Minio via HTTPS e, em seguida, criará buckets e fará o upload de objetos para eles.</p>
+
+<p>Acesse a interface web apontando o navegador para <code>https://minio-server.<span class="highlight">seu_domínio</span>:<span class="highlight">9000</span></code>.</p>
+
+<p>Você verá a tela de login do servidor Minio:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/cart-66199/Minio_login_screen.png" alt="Minio login screen"></p>
+
+<p>Agora, faça login na interface principal inserindo suas credenciais. Para <strong>Access Key</strong>, digite a <code>MINIO_ACCESS_KEY</code> que você definiu no arquivo de ambiente <code>/etc/default/<span class="highlight">minio</span></code> no  <strong>Passo 1</strong>. Para <strong>Secret Key</strong>, digite a <code>MINIO_SECRET_KEY</code> que você definiu nesse mesmo arquivo. Depois de inserir as credenciais, clique no botão redondo com a seta, diretamente abaixo dos campos de entrada.</p>
+
+<p>Você será apresentado à interface de usuário do Minio. Para criar um novo bucket no qual você pode armazenar objetos, clique no botão vermelho claro <strong>+</strong> no canto inferior direito da interface principal para exibir dois botões amarelos adicionais.</p>
+
+<p><img src="https://assets.digitalocean.com/articles/how-to-set-up-an-object-storage-server-using-minio/61120-ssb.png" alt="Minio's main interface"></p>
+
+<p>Clique no botão amarelo do meio e digite um nome para o seu novo bucket no prompt, pressionando a tecla <code>ENTER</code> para salvar sua resposta. Seu novo bucket está pronto para ser usado para armazenamento.</p>
+
+<p><span class='note'><strong>Nota:</strong> Ao nomear seu bucket no Minio, verifique se o seu nome contém apenas letras minúsculas, números ou hífens. O Minio limita as convenções de nomenclatura de buckets para ser compatível com os padrões do AWS S3.<br></span></p>
+
+<p>Quando você quiser adicionar objetos ao seu bucket, clique no mesmo botão vermelho claro de antes e clique no botão amarelo superior para abrir um prompt de upload de arquivo.</p>
+
+<p>Neste ponto, você trabalhou em toda a interface web básica para criar buckets e fazer upload de objetos.</p>
+
+<h2 id="conclusão">Conclusão</h2>
+
+<p>Agora você tem seu próprio servidor Minio de armazenamento de objetos ao qual pode se conectar com segurança a partir da interface web usando um certificado Let&rsquo;s Encrypt SSL/TLS. Opcionalmente, você pode querer olhar para o <a href="https://dl.minio.io/client/mc/release/">Minio desktop clients</a> para FreeBSD, Linux, Mac, e Windows como uma maneira alternativa de usar e administrar seu servidor de armazenamento de objetos.</p>
+
+<p>Além disso, se você quiser aumentar a capacidade de armazenamento da sua instalação do Minio para além do tamanho do disco do servidor, use o <a href="https://www.digitalocean.com/community/tutorials/how-to-use-block-storage-on-digitalocean">Serviço de armazenamento em bloco da DigitalOcean</a> para anexar um volume ao seu servidor, estendendo a capacidade de armazenamento em até 80 TB.</p>
+
+<p>Mais informações sobre o Minio estão disponíveis no <a href="https://docs.minio.io/">site de documentação do projeto</a>. Se você quiser saber mais sobre armazenamento de objetos, navegue em <a href="https://www.digitalocean.com/community/tags/object-storage?type=tutorials">Tutoriais sobre armazenamento de objetos</a>.</p>

@@ -1,0 +1,362 @@
+---
+layout: post
+title: Написание условных выражений в Go
+network: digitalocean
+date: January 24, 2020 at 04:36AM
+url: https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Условные выражения являются частью каждого языка программирования. Условные выражения позволяют создавать код, который будет или не будет выполняться в зависимости от условий в программе на момент запуска.</p>
+
+<p>Когда мы полностью исполняем каждое выражение программы, мы не просим, чтобы программа оценивала определенные условия. С условными выражениями программы могут определять выполнение определенных условий и получать соответствующие указания.</p>
+
+<p>Рассмотрим несколько примеров, когда стоит использовать условные выражения:</p>
+
+<ul>
+<li>Если ученица получает за тест 65% или больше, она сдает его; если нет — не сдает.</li>
+<li>Если у человека есть деньги на счете, рассчитывается процент, а если нет — начисляется штраф.</li>
+<li>Если покупатель приобретает 10 апельсинов или более, он получает скидку 5%; если же он покупает меньше, скидка не предоставляется.</li>
+</ul>
+
+<p>Оценка условий и назначение кода для запуска в зависимости от выполнения условий — это основа использования условных выражений.</p>
+
+<p>В этом обучающем руководстве мы научимся писать условные выражения на языке программирования Go.</p>
+
+<h2 id="Оператор-if">Оператор If</h2>
+
+<p>Начнем с выражений <code>if</code>, которые оценивают истинность утверждения и запускают код, только если оно истинно.</p>
+
+<p>Откройте в текстовом редакторе файл и введите следующий код:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := 70
+
+    if grade &gt;= 65 {
+        fmt.Println("Passing grade")
+    }
+}
+</code></pre>
+<p>В этом коде мы используем переменную <code>grade</code> и присваиваем ей значение <code>70</code>. Затем мы используем оператор <code>if</code> для проверки того, что значения переменной grade больше или равно ( <code>&gt;=</code> ) числу <code>65.</code> Если это условие выполняется, мы указываем программе распечатать <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-working-with-strings-in-go">строку</a> <code>Passing grade.</code></p>
+
+<p>Сохраните программу с именем <code>grade.go</code> и запустите ее в <a href="https://www.digitalocean.com/community/tutorial_series/how-to-install-and-set-up-a-local-programming-environment-for-go">локальной среде программирования из окна терминала</a> с помощью команды <code>go run grade.go</code>.</p>
+
+<p>В данном случае оценка 70 <em>соответствует</em> условию (больше или равно 65), и после запуска программы вы получите следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Passing grade
+</code></pre>
+<p>Теперь изменим результат программы, сменив значение переменной <code>grade</code> на <code>60</code>:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := <span class="highlight">60</span>
+
+    if grade &gt;= 65 {
+        fmt.Println("Passing grade")
+    }
+}
+</code></pre>
+<p>Когда мы сохраим и запустим <em>этот</em> код, мы не получим никаких результатов, поскольку условие <em>не</em> выполнено, и мы не указали программе выполнить другое выражение.</p>
+
+<p>Рассмотрим еще один пример, где мы будем рассчитывать, является ли баланс счета отрицательным. Создайте файл <code>account.go</code> и напишите следующую программу:</p>
+<div class="code-label " title="account.go">account.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    balance := -5
+
+    if balance &lt; 0 {
+        fmt.Println("Balance is below 0, add funds now or you will be charged a penalty.")
+    }
+}
+</code></pre>
+<p>При запуске этой программы с помощью комады <code>go run account.go</code> мы получим следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Balance is below 0, add funds now or you will be charged a penalty.
+</code></pre>
+<p>В программе мы инициализировали переменную <code>balance</code> со значением <code>-5</code>, и это значение меньше 0. Поскольку баланс соответствует условию выражения <code>if</code> (<code>balance &lt; 0</code>), при сохранении и запуске этого кода будет выведена строка. Если мы изменим баланс на 0 или положительное число, ничего выводиться не будет.</p>
+
+<h2 id="Оператор-else">Оператор Else</h2>
+
+<p>Часто нам может понадобиться, чтобы программа что-то делала, даже когда оператор <code>if</code> равен false. В примере с оценкой мы хотим увидеть, сдан ли зачет.</p>
+
+<p>Для этого мы добавим к условию выражение <code>else</code> следующим образом:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := 60
+
+    if grade &gt;= 65 {
+        fmt.Println("Passing grade")
+    } else {
+        fmt.Println("Failing grade")
+    }
+}
+</code></pre>
+<p>Поскольку переменная grade имеет значение <code>60</code>, выражение <code>if</code> оценивается как ложное, и программа не распечатывает текст <code>Passing grade</code>. Однако следующее выражение <code>else</code> предписывает программе выполнить другое действие.</p>
+
+<p>Когда мы сохраним и запустим эту программу, мы увидим следующее:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Failing grade
+</code></pre>
+<p>Если мы перепишем программу и присвоим переменной значение <code>65</code> или выше, вместо этого будет <code>выводиться строка Passing grade</code>.</p>
+
+<p>Чтобы добавить выражение <code>else</code> в пример с банковским счетом, мы перепишем код следующим образом:</p>
+<div class="code-label " title="account.go">account.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    balance := 522
+
+    if balance &lt; 0 {
+        fmt.Println("Balance is below 0, add funds now or you will be charged a penalty.")
+    } else {
+        fmt.Println("Your balance is 0 or above.")
+    }
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Your balance is 0 or above.
+</code></pre>
+<p>Здесь мы изменили значение переменной <code>balance</code> на положительное число, чтобы выполнить вывод  в операторе <code>else</code>. Чтобы выполнить вывод первого оператора <code>if</code>, мы можем заменить значение отрицательным числом.</p>
+
+<p>Сочетая выражение <code>if</code> с выражением <code>else</code>, вы составляете условное выражение из двух частей, которое требует от компьютера выполнять определенный код если условие <code>if</code> выполнено, и если оно не выполнено.</p>
+
+<h2 id="Операторы-else-if">Операторы Else if</h2>
+
+<p>Мы использовали для условных выражений опцию <a href="https://www.digitalocean.com/community/tutorials/understanding-boolean-logic-in-go">Boolean</a>, с которой каждое выражение <code>if</code> оценивается или как истинное, или как ложное. Во многих случаях нам может потребоваться программа, которая будет оценивать более двух возможных результатов. Для этой цели мы используем выражение <strong>else if</strong>, которое имеет в Go синтаксис <code>else if</code>. Выражение <code>else if</code> выглядит похожим на выражение <code>if</code> и оценивает другое условие.</p>
+
+<p>В программе банковского счета нам может потребоваться три варианта вывода для трех разных случаев:</p>
+
+<ul>
+<li>Баланс меньше 0</li>
+<li>Баланс равен 0</li>
+<li>Баланс больше 0</li>
+</ul>
+
+<p>Выражение <code>else if</code> помещается между выражением <code>if</code> и выражением <code>else</code> следующим образом:</p>
+<div class="code-label " title="account.go">account.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    balance := 522
+
+    if balance &lt; 0 {
+        fmt.Println("Balance is below 0, add funds now or you will be charged a penalty.")
+    } else if balance == 0 {
+        fmt.Println("Balance is equal to 0, add funds soon.")
+    } else {
+        fmt.Println("Your balance is 0 or above.")
+    }
+}
+</code></pre>
+<p>Теперь при запуске программы возможны три результата:</p>
+
+<ul>
+<li>Если переменная <code>balance</code> равняется <code>0</code>, будет выведен результат выражения <code>else if</code> (<code>Balance is equal to 0, add funds soon.</code>)</li>
+<li>Если переменная <code>balance</code> равняется положительному числу, будет выведен результат выражения <code>else</code> (<code>Your balance is 0 or above.</code>).</li>
+<li>Если переменная <code>balance</code> равняется отрицательному числу, будет выведен результат выражения <code>if</code> (<code>Balance is below 0, add funds now or you will be charged a penalty</code>).</li>
+</ul>
+
+<p>Что делать, если нам требуется более трех вероятностей? В этом случае мы можем вставить в код несколько выражений <code>else if</code>.</p>
+
+<p>В программе <code>grade.go</code> мы перепишем код так, чтобы числовым оценкам соответствовали разные буквенные оценки:</p>
+
+<ul>
+<li>90 или выше соответствует оценке A</li>
+<li>80-89 соответствует оценке B</li>
+<li>70-79 соответствует оценке C</li>
+<li>65-69 соответствует оценке D</li>
+<li>64 или менее соответствует оценке F</li>
+</ul>
+
+<p>Для этого кода нам потребуется одно выражение <code>if</code>, три выражения <code>else if</code> и выражение <code>else</code> для всех случаев несоответствия.</p>
+
+<p>Перепишем код из предыдущего примера так, чтобы в строках распечатывались буквенные оценки. Мы можем сохранить выражение <code>else</code> без изменений.</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    grade := 60
+
+    if grade &gt;= 90 {
+        fmt.Println("A grade")
+    } else if grade &gt;= 80 {
+        fmt.Println("B grade")
+    } else if grade &gt;= 70 {
+        fmt.Println("C grade")
+    } else if grade &gt;= 65 {
+        fmt.Println("D grade")
+    } else {
+        fmt.Println("Failing grade")
+    }
+}
+</code></pre>
+<p>Поскольку выражения <code>else if</code> будут проверяться по порядку, система выражений может быть очень простой. Данная программа выполняет следующие шаги:</p>
+
+<ol>
+<li><p>Если оценка больше 90, программа выводит текст <code>A grade</code>, если оценка меньше 90, программа переходит к следующему выражению&hellip;</p></li>
+<li><p>Если оценка больше или равна 80, программа выводит текст <code>B grade</code>, если оценка равняется 79 или менее, программа переходит к следующему выражению&hellip;</p></li>
+<li><p>Если оценка больше или равна 70, программа выводит текст <code>С grade</code>, если оценка равняется 69 или менее, программа переходит к следующему выражению&hellip;</p></li>
+<li><p>Если оценка больше или равна 65, программа выводит текст <code>D grade</code>, если оценка равняется 64 или менее, программа переходит к следующему выражению&hellip;</p></li>
+<li><p>Программа выводит текст <code>Failing grade</code>, поскольку ни одно из предыдущих условий не выполнено.</p></li>
+</ol>
+
+<h2 id="Вложенные-операторы-if">Вложенные операторы If</h2>
+
+<p>Вы познакомились с выражениями <code>if</code>, <code>else if</code> и <code>else</code> и теперь можете переходить к вложенным условным выражениям. Вложенные выражения <code>if</code> используются в ситуациях, когда нам нужно проверить дополнительное условие, если первое условие определяется как истинное. Для этого мы можем использовать выражение if-else внутри другого выражения if-else. Рассмотрим синтаксис вложенного выражения <code>if</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">if statement1 { // outer if statement
+    fmt.Println("true")
+
+    if nested_statement { // nested if statement
+        fmt.Println("yes")
+    } else { // nested else statement
+        fmt.Println("no")
+    }
+
+} else { // outer else statement
+    fmt.Println("false")
+}
+</code></pre>
+<p>Этот код имеет несколько вариантов выводимых результатов:</p>
+
+<ul>
+<li>Если выражение <code>statement1</code> оценивается как истинное, программа проверяет истинность выражения <code>nested_statement</code>. Если оба выражения истинные, результат будет выглядеть следующим образом:</li>
+</ul>
+
+<blockquote>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+yes
+</code></pre></blockquote>
+
+<ul>
+<li>Если выражение <code>statement1</code> истинное, а выражение <code>nested_statement</code> — ложное, результат будет выглядеть следующим образом:</li>
+</ul>
+
+<blockquote>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+no
+</code></pre></blockquote>
+
+<ul>
+<li>Если выражение <code>statement1</code> ложное, вложенное выражение if-else не проверяется, и выполняется только выражение <code>else</code>. Результат будет выглядеть следующим образом:</li>
+</ul>
+
+<blockquote>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>false
+</code></pre></blockquote>
+
+<p>Мы можем использовать в коде несколько вложенных выражений <code>if</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">if statement1 { // outer if
+    fmt.Println("hello world")
+
+    if nested_statement1 { // first nested if
+        fmt.Println("yes")
+
+    } else if nested_statement2 { // first nested else if
+        fmt.Println("maybe")
+
+    } else { // first nested else
+        fmt.Println("no")
+    }
+
+} else if statement2 { // outer else if
+    fmt.Println("hello galaxy")
+
+    if nested_statement3 { // second nested if
+        fmt.Println("yes")
+    } else if nested_statement4 { // second nested else if
+        fmt.Println("maybe")
+    } else { // second nested else
+        fmt.Println("no")
+    }
+
+} else { // outer else
+    statement("hello universe")
+}
+</code></pre>
+<p>В этом коде вложенное выражение <code>if</code> используется внутри каждого выражения <code>if</code> в дополнение к выражению <code>else if</code>. Это дает больше вариантов для каждого условия.</p>
+
+<p>Рассмотрим пример вложенных выражений <code>if</code> в нашей программе <code>grade.go</code>. Вначале мы проверяем, соответствует ли оценка прохождению теста (больше или равняется 65%), а затем определяем буквенную оценку, которая соответствует числовой. Если оценка не соответствует прохождению, нам не нужно проверять буквенные значения, и программа просто сообщает, что тест не пройден. Наш измененный код с вложенным выражением <code>if</code> будет выглядеть следующим образом:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">
+package main
+
+import "fmt"
+
+func main() {
+    grade := 92
+    if grade &gt;= 65 {
+        fmt.Print("Passing grade of: ")
+
+        if grade &gt;= 90 {
+            fmt.Println("A")
+
+        } else if grade &gt;= 80 {
+            fmt.Println("B")
+
+        } else if grade &gt;= 70 {
+            fmt.Println("C")
+
+        } else if grade &gt;= 65 {
+            fmt.Println("D")
+        }
+
+    } else {
+        fmt.Println("Failing grade")
+    }
+}
+</code></pre>
+<p>Если мы запустим код с переменной <code>grade</code> с целочисленным значением <code>92</code>, первое условие выполняется, и программа выводит текст <code>Passing grade of:</code> . Затем программа видит, что оценка больше или равна 90, и поскольку это условие также выполнено, она выводит <code>A</code>.</p>
+
+<p>Если мы запустим код с переменной <code>grade</code> со значением <code>60</code>, первое условие не будет выполняться, и программа пропустит вложенные выражения <code>if</code> и перейдет к выражению <code>else</code>, в результате чего будет выведен текст <code>Failing grade</code>.</p>
+
+<p>Мы можем добавить еще больше вариантов и использовать второй уровень вложенных выражений if. Например, мы можем захотеть использовать отдельные оценки A+, A и A-. Для этого вначале проверяем, что тест пройден, затем проверяем, что оценка равняется 90 или более, а затем проверим, что оценка больше 96 и соответствует значению A+:</p>
+<div class="code-label " title="grade.go">grade.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+if grade &gt;= 65 {
+    fmt.Print("Passing grade of: ")
+
+    if grade &gt;= 90 {
+        if grade &gt; 96 {
+            fmt.Println("A+")
+
+        } else if grade &gt; 93 &amp;&amp; grade &lt;= 96 {
+            fmt.Println("A")
+
+        } else {
+            fmt.Println("A-")
+        }
+...
+</code></pre>
+<p>В этом коде, если для переменной <code>grade</code> задано значение <code>96</code>, программа выполняет следующие действия:</p>
+
+<ol>
+<li>Проверяет, что оценка больше или равна 65 (истина)</li>
+<li>Выводит текст <code>Passing grade of:</code></li>
+<li>Проверяет, что оценка больше или равна 90 (истина)</li>
+<li>Проверяет, что оценка больше 96 (ложь)</li>
+<li>Проверяет, что оценка больше 93 и меньше или равна 96 (истина)</li>
+<li>Выводит <code>A</code></li>
+<li>Покидает вложенные условные выражения и продолжает выполнение остальной части кода</li>
+</ol>
+
+<p>Таким образом, для оценки 96 результат выполнения программы будет выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Passing grade of: A
+</code></pre>
+<p>Вложенные выражения <code>if</code> позволяют добавлять в код несколько определенных уровней условий.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Использование условных выражений, в том числе выражения <code>if</code>, вы можете лучше контролировать выполняемый программой код. Условные выражения предписывают программе оценить выполнение определенных условий. Если условие выполнено, запускается определенный код, а если оно не выполнено — программа переходит к другому коду.</p>
+
+<p>Чтобы потренироваться в работе с условными выражениями и лучше познакомиться с ними, попробуйте использовать разные <a href="https://www.digitalocean.com/community/tutorials/how-to-do-math-in-go-with-operators">операторы</a>.</p>

@@ -1,0 +1,209 @@
+---
+layout: post
+title: Установка Apache Tomcat 9 в Ubuntu 18.04
+network: digitalocean
+date: January 24, 2020 at 04:40AM
+url: https://www.digitalocean.com/community/tutorials/install-tomcat-9-ubuntu-1804-ru
+image: https://assets.digitalocean.com/articles/tomcat8_1604/splashscreen.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Apache Tomcat — это веб-сервер и контейнер сервлетов, используемый для обслуживания приложений Java. Tomcat представляет собой реализацию технологий Java Servlet и JavaServer Pages с открытым исходным кодом, разработанную Apache Software Foundation. В настоящем руководстве описывается базовая установка и определенные моменты конфигурации последней версии Tomcat 9 на сервере Ubuntu 18.04.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<p>Прежде чем начать изучение настоящего обучающего руководства, необходимо настроить на сервере стандартного пользователя без прав root и с привилегиями <code>sudo</code>. Вы можете узнать, как это сделать, из нашего <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-16-04">руководства по начальной настройке сервера Ubuntu 16.04</a>.</p>
+
+<h2 id="Шаг-1-—-Установка-java">Шаг 1 — Установка Java</h2>
+
+<p>Tomcat требуется наличие на сервере Java, чтобы выполнять любой код веб-приложения Java. Мы можем удовлетворить это требование, установив OpenJDK с помощью apt.</p>
+
+<p>Во-первых, обновите индекс пакетов apt:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt update
+</li></ul></code></pre>
+<p>Затем установите пакет для разработки Java с помощью apt:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install default-jdk
+</li></ul></code></pre>
+<p>Теперь, когда Java установлена, мы можем создать пользователя <code>tomcat</code>, который будет использоваться для запуска службы Tomcat.</p>
+
+<h2 id="Шаг-2-—-Создание-пользователя-tomcat">Шаг 2 — Создание пользователя Tomcat</h2>
+
+<p>По соображениям безопасности Tomcat необходимо запускать с помощью пользователя без привилегий (т. е. без прав root). Мы создадим нового пользователя с группой, который будет запускать службу Tomcat.</p>
+
+<p>Во-первых, создайте новую группу <code>tomcat</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo groupadd tomcat
+</li></ul></code></pre>
+<p>Далее создайте нового пользователя <code>tomcat</code>. Мы сделаем этого пользователя членом группы <code>tomcat</code> с домашней директорией <code>/opt/tomcat</code> (куда мы будем устанавливать Tomcat) и с оболочкой в <code>/bin/false</code> (чтобы никто не мог войти в учетную запись):</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo useradd -s /bin/false -g tomcat -d /opt/tomcat tomcat
+</li></ul></code></pre>
+<p>Теперь, когда наш пользователь <code>tomcat</code> настроен, мы загрузим и установим Tomcat.</p>
+
+<h2 id="Шаг-3-—-Установка-tomcat">Шаг 3 — Установка Tomcat</h2>
+
+<p>Лучшим способом установки Tomcat 9 является загрузка последней бинарной версии, а затем ее ручная настройка.</p>
+
+<p>Найдите последнюю версию Tomcat 9 на <a href="https://tomcat.apache.org/download-90.cgi">странице загрузки Tomcat 9</a>. На момент написания номер последней версии — <strong>9.0.10</strong>, но вы должны использовать более позднюю стабильную версию, если такая будет доступна. Перейдите в раздел <strong>Binary Distributions</strong> (Бинарные дистрибутивы), а затем в списке <strong>Core</strong> скопируйте ссылку на файл &ldquo;tar.gz&rdquo;.</p>
+
+<p>Далее перейдите к директории <code>/tmp</code> на сервере. Эта директория отлично подходит для загрузки кратковременных элементов, таких как tar-архив (тарбол) Tomcat, который нам не потребуется после извлечения содержимого Tomcat:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /tmp
+</li></ul></code></pre>
+<p>Используйте <code>curl</code> для загрузки ссылки, скопированной на веб-сайте Tomcat:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">curl -O <span class="highlight">http://mirror.cc.columbia.edu/pub/software/apache/tomcat/tomcat-9/v9.0.10/bin/apache-tomcat-9.0.10.tar.gz</span>
+</li></ul></code></pre>
+<p>Мы установим Tomcat в директорию <code>/opt/tomcat</code>. Создайте директорию, а затем извлеките туда архив с помощью этих команд:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo mkdir /opt/tomcat
+</li><li class="line" prefix="$">sudo tar xzvf apache-tomcat-9*tar.gz -C /opt/tomcat --strip-components=1
+</li></ul></code></pre>
+<p>Далее мы сможем настроить соответствующие разрешения пользователя для нашей установки.</p>
+
+<h2 id="Шаг-4-—-Обновление-разрешений">Шаг 4 — Обновление разрешений</h2>
+
+<p>Пользователю <code>tomcat</code>, которого мы настроили, требуется доступ к установке Tomcat. Сейчас мы добавим нужные настройки.</p>
+
+<p>Перейдите в директорию, куда мы распаковали установку Tomcat:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd /opt/tomcat
+</li></ul></code></pre>
+<p>Предоставьте группе <code>tomcat</code> права владения для всей директории установки:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chgrp -R tomcat /opt/tomcat
+</li></ul></code></pre>
+<p>Далее предоставьте группе <code>tomcat</code> доступ для чтения для директории <code>conf</code> и всего ее содержимого, а также доступ <strong>execute</strong> для самой директории:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chmod -R g+r conf
+</li><li class="line" prefix="$">sudo chmod g+x conf
+</li></ul></code></pre>
+<p>Сделайте пользователя <code>tomcat</code> владельцем директорий <code>webapps</code>, <code>work</code>, <code>temp</code> и <code>logs</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo chown -R tomcat webapps/ work/ temp/ logs/
+</li></ul></code></pre>
+<p>Теперь, когда соответствующие разрешения настроены, мы сможем создать служебный файл systemd для управления процессом Tomcat.</p>
+
+<h2 id="Шаг-5-—-Создание-служебного-файла-systemd">Шаг 5 — Создание служебного файла systemd</h2>
+
+<p>Мы должны иметь возможность запустить Tomcat в качестве службы, поэтому мы настроим служебный файл systemd.</p>
+
+<p>Tomcat должен знать, где установлена Java. Обычно этот путь называют &ldquo;JAVA_HOME&rdquo;. Самым простым способом поиска расположения является использование этой команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo update-java-alternatives -l
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>java-1.11.0-openjdk-amd64       1081       <span class="highlight">/usr/lib/jvm/java-1.11.0-openjdk-amd64</span>
+</code></pre>
+<p>Ваш путь <code>JAVA_HOME</code> — это вывод из последнего столбца (выделено красным). Учитывая приведенный выше пример, для этого сервера правильное значение <code>JAVA_HOME</code> будет выглядеть таким образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="JAVA_HOME">JAVA_HOME</div>/usr/lib/jvm/java-1.11.0-openjdk-amd64
+</code></pre>
+<p>Ваш путь <code>JAVA_HOME</code> может отличаться.</p>
+
+<p>Получив эту информацию, мы сможем создать служебный файл systemd. Откройте файл <code>tomcat.service</code> в директории <code>/etc/systemd/system</code> с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /etc/systemd/system/tomcat.service
+</li></ul></code></pre>
+<p>Добавьте следующее содержимое в служебный файл. Измените значение <code>JAVA_HOME</code>, если потребуется, согласно значению, которое вы используете в вашей системе. Также вы можете изменить параметры распределения памяти, указанные в <code>CATALINA_OPTS</code>:</p>
+<div class="code-label " title="/etc/systemd/system/tomcat.service">/etc/systemd/system/tomcat.service</div><pre class="code-pre "><code langs="">[Unit]
+Description=Apache Tomcat Web Application Container
+After=network.target
+
+[Service]
+Type=forking
+
+Environment=JAVA_HOME=<span class="highlight">/usr/lib/jvm/java-1.11.0-openjdk-amd64</span>
+Environment=CATALINA_PID=/opt/tomcat/temp/tomcat.pid
+Environment=CATALINA_HOME=/opt/tomcat
+Environment=CATALINA_BASE=/opt/tomcat
+Environment='CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC'
+Environment='JAVA_OPTS=-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom'
+
+ExecStart=/opt/tomcat/bin/startup.sh
+ExecStop=/opt/tomcat/bin/shutdown.sh
+
+User=tomcat
+Group=tomcat
+UMask=0007
+RestartSec=10
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>После завершения редактирования сохраните и закройте файл.</p>
+
+<p>Далее перезагрузите демон systemd, чтобы он знал о существовании вашего служебного файла:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl daemon-reload
+</li></ul></code></pre>
+<p>Запустите службу Tomcat с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl start tomcat
+</li></ul></code></pre>
+<p>Дополнительно проверьте, что служба запущена без ошибок, выполнив следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status tomcat
+</li></ul></code></pre>
+<h2 id="Шаг-6-—-Настройка-брандмауэра-и-тестирование-сервера-tomcat">Шаг 6 — Настройка брандмауэра и тестирование сервера Tomcat</h2>
+
+<p>Теперь, когда служба Tomcat запущена, мы сможем протестировать ее, чтобы убедиться, что страница по умолчанию доступна.</p>
+
+<p>Перед этим нам нужно настроить брандмауэр, чтобы разрешить доступ к службе для наших запросов. Если вы выполнили предварительные требования, у вас должен быть включен брандмауэр <code>ufw</code>.</p>
+
+<p>Tomcat использует порт <code>8080</code> для принятия обычных запросов. Разрешите прием трафика для этого порта с помощью следующей команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 8080
+</li></ul></code></pre>
+<p>После изменения брандмауэра вы можете получить доступ к начальной странице по умолчанию, перейдя к вашему домену или IP-адресу с <code>:8080</code> в браузере.</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Open in web browser">Open in web browser</div>http://<span class="highlight">server_domain_or_IP</span>:8080
+</code></pre>
+<p>Вы увидите начальную страницу Tomcat по умолчанию в дополнение к другой информации. Однако, если вы воспользуетесь ссылками на диспетчер приложения, например, вам будет отказано в доступе. Мы можем настроить этот доступ далее.</p>
+
+<p>Если вы смогли успешно получить доступ к Tomcat, сейчас лучшее время для активации служебного файла, чтобы Tomcat автоматически запускался при загрузке:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl enable tomcat
+</li></ul></code></pre>
+<h2 id="Шаг-7-—-Настройка-веб-интерфейса-управления-tomcat">Шаг 7 — Настройка веб-интерфейса управления Tomcat</h2>
+
+<p>Чтобы использовать веб-приложение диспетчера, которое поставляется вместе с Tomcat, мы должны добавить вход на ваш сервер Tomcat. Для этого мы отредактируем файл <code>tomcat-users.xml</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /opt/tomcat/conf/tomcat-users.xml
+</li></ul></code></pre>
+<p>Вы должны будете добавить пользователя, который может получить доступ к <code>manager-gui</code> и <code>admin-gui</code> (веб-приложения, которые поставляются вместе с Tomcat). Вы можете сделать это, определив пользователя, аналогичного приведенному ниже примеру, между тегами <code>tomcat-users</code>. Обязательно измените имя пользователя и пароль на более безопасные:</p>
+<div class="code-label " title="tomcat-users.xml — Admin User">tomcat-users.xml — Admin User</div><pre class="code-pre "><code langs="">&lt;tomcat-users . . .&gt;
+    &lt;user username="<span class="highlight">admin</span>" password="<span class="highlight">password</span>" roles="manager-gui,admin-gui"/&gt;
+&lt;/tomcat-users&gt;
+</code></pre>
+<p>Сохраните файл и закройте его после завершения.</p>
+
+<p>По умолчанию новые версии Tomcat ограничивают доступ к приложениям диспетчера и диспетчера хостов для подключений с самого сервера. Поскольку мы выполняем установку на удаленном компьютере, вы, вероятно, захотите удалить или изменить это ограничение. Чтобы изменить подобные ограничения IP-адреса, откройте соответствующие файлы <code>context.xml</code>.</p>
+
+<p>Для приложения диспетчера введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /opt/tomcat/webapps/manager/META-INF/context.xml
+</li></ul></code></pre>
+<p>Для приложения диспетчера хостов введите:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo nano /opt/tomcat/webapps/host-manager/META-INF/context.xml
+</li></ul></code></pre>
+<p>Внутри закомментируйте ограничение IP-адреса, чтобы разрешить подключение из любого места. Также, если вы хотите разрешить доступ только для подключений с вашего IP-адреса, вы можете добавить ваш публичный IP-адрес в список:</p>
+<div class="code-label " title="context.xml files for Tomcat webapps">context.xml files for Tomcat webapps</div><pre class="code-pre "><code langs="">&lt;Context antiResourceLocking="false" privileged="true" &gt;
+  <span class="highlight">&lt;!--</span>&lt;Valve className="org.apache.catalina.valves.RemoteAddrValve"
+         allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1" /&gt;<span class="highlight">--&gt;</span>
+&lt;/Context&gt;
+</code></pre>
+<p>Сохраните файл и закройте после завершения.</p>
+
+<p>Чтобы изменения вступили в силу, перезапустите службу Tomcat:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl restart tomcat
+</li></ul></code></pre>
+<h2 id="Шаг-8-—-Доступ-к-веб-интерфейсу">Шаг 8 — Доступ к веб-интерфейсу</h2>
+
+<p>Теперь, после создания пользователя, мы снова сможем получить доступ к веб-интерфейсу управления в веб-браузере. Вы снова можете перейти к правильному интерфейсу, введя в браузере доменное имя или IP-адрес вашего сервера с портом 8080:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Open in web browser">Open in web browser</div>http://<span class="highlight">server_domain_or_IP</span>:8080
+</code></pre>
+<p>Страница, которую вы увидите, должна выглядеть аналогично странице, которую вы видели при тестировании ранее:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/tomcat8_1604/splashscreen.png" alt="root Tomcat"></p>
+
+<p>Давайте изучим приложение диспетчера, доступ к которому можно получить по ссылке или по адресу <code>http://<span class="highlight">server_domain_or_IP</span>:8080/manager/html</code>. Вам нужно будет ввести учетные данные аккаунта, которые вы добавили в файл <code>tomcat-users.xml​​​</code>. После этого вы должны увидеть страницу, которая выглядит следующим образом:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/tomcat8_1604/manager.png" alt="Веб-приложение диспетчера Tomcat"></p>
+
+<p>Веб-приложение диспетчера используется для управления приложениями Java. Здесь вы можете запустить, остановить, перезагрузить, развернуть и отменить развертывание. Также вы можете запустить инструменты диагностики для ваших приложений (например, найти утечки памяти). Информация о вашем сервере доступна в самом низу страницы.</p>
+
+<p>Теперь давайте рассмотрим диспетчер хостов, доступный по ссылке или по адресу <code>http://<span class="highlight">server_domain_or_IP</span>:8080/host-manager/html/​​​</code>:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/tomcat8_1604/host-manager.png" alt="Виртуальный диспетчер хостов Tomcat"></p>
+
+<p>На странице диспетчера виртуальных хостов вы можете добавить виртуальные хосты для обслуживания ваших приложений.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Ваша установка Tomcat завершена! Теперь вы можете развернуть ваши собственные веб-приложения Java!</p>
+
+<p>В настоящее время ваша установка Tomcat работает, но абсолютно не имеет шифрования. Это означает, что все данные, включая чувствительную информацию, например пароли, отправляются в текстовой форме и могут быть кем-либо перехвачены и прочитаны в Интернете. Чтобы предотвратить это, мы настоятельно рекомендуем шифровать ваши соединения с помощью SSL. Вы можете узнать, как реализовать шифрование ваших подключений в Tomcat в <a href="https://www.digitalocean.com/community/tutorials/how-to-encrypt-tomcat-8-connections-with-apache-or-nginx-on-ubuntu-16-04">этом руководстве</a> (<em>примечание: в настоящем руководстве описано шифрование Tomcat 8 в Ubuntu 16.04</em>).</p>

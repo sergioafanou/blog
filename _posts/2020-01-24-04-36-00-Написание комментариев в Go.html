@@ -1,0 +1,187 @@
+---
+layout: post
+title: Написание комментариев в Go
+network: digitalocean
+date: January 24, 2020 at 04:36AM
+url: https://www.digitalocean.com/community/tutorials/how-to-write-comments-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Комментарии — это строки компьютерных программ, которые игнорируются компиляторами и интерпретаторами. Добавление комментариев в программы делает код более удобным для чтения людьми, поскольку комментарии обычно содержат информацию или разъяснение того, что делает каждая часть программы.</p>
+
+<p>В зависимости от назначения программы, комментарии можно использовать в качестве заметок или напоминаний или составлять их для других программистов, чтобы они могли понять, что делает ваш код.</p>
+
+<p>Комментарии полезно использовать во время написания или обновления программы, поскольку вы можете легко забыть, о чем думали в определенный момент, а написанные впоследствии комментарии могут упускать что-то из виду.</p>
+
+<h2 id="Синтаксис-комментариев">Синтаксис комментариев</h2>
+
+<p>Комментарии в Go начинаются с набора косых черт (<code>//</code>) и продолжаются до конца строчки. После набора косых черт принято ставить пробел.</p>
+
+<p>Обычно комментарии выглядят примерно так:</p>
+<pre class="code-pre "><code class="code-highlight language-go">// This is a comment
+</code></pre>
+<p>Комментарии не выполняются, поэтому при выполнении программы с ними ничего не происходит. Комментарии в исходном коде предназначены для чтения людьми, а не для выполнения компьютерами.</p>
+
+<p>В программе Hello, World! комментарий может выглядеть так:</p>
+<div class="code-label " title="hello.go">hello.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "fmt"
+)
+
+func main() {
+    // Print “Hello, World!” to console
+    fmt.Println("Hello, World!")
+}
+
+</code></pre>
+<p>В цикле <code>for</code> с итерацией среза комментарии могут выглядеть так:</p>
+<div class="code-label " title="sharks.go">sharks.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "fmt"
+)
+
+func main() {
+    // Define sharks variable as a slice of strings
+    sharks := []string{"hammerhead", "great white", "dogfish", "frilled", "bullhead", "requiem"}
+
+    // For loop that iterates over sharks list and prints each string item
+    for _, shark := range sharks {
+        fmt.Println(shark)
+    }
+}
+</code></pre>
+<p>Комментарии следует создавать с тем же отступом, что и в комментируемом коде. Так для определения функции без отступа следует указывать комментарий без отступа, а на каждом следующем уровне отступа комментарии должны соответствовать комментируемому коду</p>
+
+<p>Например, так комментируется функция <code>main</code> в соответствии с уровнями отступа в коде:</p>
+<div class="code-label " title="color.go">color.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+const favColor string = "blue"
+
+func main() {
+    var guess string
+    // Create an input loop
+    for {
+        // Ask the user to guess my favorite color
+        fmt.Println("Guess my favorite color:")
+        // Try to read a line of input from the user. Print out the error 0
+        if _, err := fmt.Scanln(&amp;guess); err != nil {
+            fmt.Printf("%s\n", err)
+            return
+        }
+        // Did they guess the correct color?
+        if favColor == guess {
+            // They guessed it!
+            fmt.Printf("%q is my favorite color!\n", favColor)
+            return
+        }
+        // Wrong! Have them guess again.
+        fmt.Printf("Sorry, %q is not my favorite color. Guess again.\n", guess)
+    }
+}
+</code></pre>
+<p>Комментарии предназначены для помощи программистам, будь то первоначальный разработчик, его коллега или член другой команды, работающей над проектом. Комментарии необходимо обновлять и поддерживать вместе с базой кода, ведь отсутствие комментария лучше, чем наличие комментария, не соответствующего коду.</p>
+
+<p>При комментрировании кода нужно отвечать на вопрос <em>почему</em> используется такой код, а не <em>что</em> это или <em>как</em> это делается. Если код не особенно сложный, вы можете понять, <em>что</em> и <em>как</em> делается, просто посмотрев на него, и именно поэтому комментарии в основном отвечают на вопрос <em>почему</em>.</p>
+
+<h2 id="Блоки-комментариев">Блоки комментариев</h2>
+
+<p>Блоки комментариев могут использоваться для разъяснения сложного кода или кода, с которым читатель может быть незнаком.</p>
+
+<p>Вы можете создавать блоки комментариев в Go двумя способами. Первый способ заключается в использовании набора двух косых черт и их повторе для каждой строки.</p>
+<pre class="code-pre "><code class="code-highlight language-go">// First line of a block comment
+// Second line of a block comment
+</code></pre>
+<p>Второй вариант заключается в использовании открывающих тегов (<code>/*</code>) и закрывающих тегов (<code>*/</code>). Для документирования кода принято всегда использовать синтаксис <code>//</code>. Синтаксис <code>/* ... */</code> используется только для отладки, о чем мы поговорим позднее в этой статье.</p>
+<pre class="code-pre "><code class="code-highlight language-go">/*
+Everything here
+will be considered
+a block comment
+*/
+</code></pre>
+<p>В этом примере блок комментария определяет, что происходит в функции <code>MustGet()</code>:</p>
+<div class="code-label " title="function.go">function.go</div><pre class="code-pre "><code class="code-highlight language-go">// MustGet will retrieve a url and return the body of the page.
+// If Get encounters any errors, it will panic.
+func MustGet(url string) string {
+    resp, err := http.Get(url)
+    if err != nil {
+        panic(err)
+    }
+
+    // don't forget to close the body
+    defer resp.Body.Close()
+    var body []byte
+    if body, err = ioutil.ReadAll(resp.Body); err != nil {
+        panic(err)
+    }
+    return string(body)
+}
+</code></pre>
+<p>Обычно блоки комментариев размещаются в начале экспортируемых функций Go. Эти комментарии также используются для создания документации по коду. Блоки комментариев также полезны, когда операции не очень понятны с первого взгляда и требуют более подробного разъяснения. За исключением случаев документирования функций, следует избегать чрезмерного комментирования кода и ожидать, что другие программисты поймут код на Go, если только вы не пишете для конкретной аудитории.</p>
+
+<h2 id="Комментарии-внутри-строк">Комментарии внутри строк</h2>
+
+<p>Комментарии внутри строк оставляются на той же строчке, что и выражения кода, и идут за самим кодом. Как и другие комментарии, они начинаются с набора косых черт. Ставить пробел после набора косых черт не обязательно, но это является общепринятой практикой.</p>
+
+<p>Обычно комментарии внутри строк выглядят следующим образом:</p>
+<pre class="code-pre "><code class="code-highlight language-go">[code]  // Inline comment about the code
+</code></pre>
+<p>Комментарии внутри строк следует использовать с осторожностью, но они могут быть полезны для разъяснения сложных или неочевидных элементов кода. Также они могут быть полезны, если вы можете забыть определенную строчку кода в будущем, или если вы работаете в команде с людьми, которые могут быть незнакомы со всеми аспектами кода.</p>
+
+<p>Например, если вы не используете большое количество математических операций в программах Go, вы или ваши коллеги можете не знать, что следующее выражение создает комплексное число, и поэтому лучше оставить соответствующий комментарий:</p>
+<pre class="code-pre "><code class="code-highlight language-go">z := x % 2  // Get the modulus of x
+</code></pre>
+<p>Также комментарии в строках можно использовать для разъяснения причин каких-то действий или предоставления дополнительной информации, как в следующем примере:</p>
+<pre class="code-pre "><code class="code-highlight language-go">x := 8  // Initialize x with an arbitrary number
+</code></pre>
+<p>Комментарии внутри строк следует использовать только при необходимости и в случаях, когда они могут быть полезны для человека, читающего код программы.</p>
+
+<h2 id="Исключение-частей-кода-в-виде-комментариев-для-целей-тестирования">Исключение частей кода в виде комментариев для целей тестирования</h2>
+
+<p>Помимо использования комментариев для документирования кода, вы можете использовать открывающие теги (<code>/*</code>) и закрывающие теги (<code>*/</code>) для создания блока комментариев. Это позволяет отделить определенную часть кода, которую вы не хотите выполнять при тестировании или отладке создаваемой программы. Когда возникают ошибки после написания новых строчек кода, вы можете закомментировать некоторые из них, чтобы выявить источник проблемы.</p>
+
+<p>Теги <code>/*</code> и <code>*/</code> также позволяют проверять различные альтернативные варианты при определении способов настройки кода. Также блоки комментариев можно использовать, чтобы закомментировать нежелательный код во время работы над другими частями кода.</p>
+<div class="code-label " title="multiply.go">multiply.go</div><pre class="code-pre "><code class="code-highlight language-go">// Function to add two numbers
+func addTwoNumbers(x, y int) int {
+    sum := x + y
+    return sum
+}
+
+// Function to multiply two numbers
+func multiplyTwoNumbers(x, y int) int {
+    product := x * y
+    return product
+}
+
+func main() {
+    /*
+        In this example, we're commenting out the addTwoNumbers
+        function because it is failing, therefore preventing it from executing.
+        Only the multiplyTwoNumbers function will run
+
+        a := addTwoNumbers(3, 5)
+        fmt.Println(a)
+
+    */
+
+    m := multiplyTwoNumbers(5, 9)
+    fmt.Println(m)
+}
+</code></pre>
+<p><span class='note'><strong>Примечание:</strong> закомментировать части кода можно только для тестирования. Не оставляйте в окончательной версии программы закомментированные фрагменты кода. <br></span></p>
+
+<p>Исключение кода с помощью тегов комментариев <code>/*</code> и <code>*/</code> позволяет пробовать разные методы программирования или находить источники ошибок посредством последовательного исключения и запуска частей программы.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Использование комментариев в программах Go помогает делать программы более удобочитаемыми для всех работающих над проектом, включая вас. Добавление подходящих, актуальных и полезных комментариев упрощает совместную работу над программными проектами и делает ценность вашего кода более очевидной.</p>
+
+<p>Правильное комментирование кода в Go также позволяет использовать инструмент <a href="https://godoc.org/golang.org/x/tools/cmd/godoc">Godoc</a>. Godoc — это инструмент, извлекающий комментарии из кода и генерирующий документацию для вашей программы Go.</p>

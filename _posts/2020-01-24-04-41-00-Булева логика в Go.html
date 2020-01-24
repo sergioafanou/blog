@@ -1,0 +1,348 @@
+---
+layout: post
+title: Булева логика в Go
+network: digitalocean
+date: January 24, 2020 at 04:41AM
+url: https://www.digitalocean.com/community/tutorials/understanding-boolean-logic-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p>Логический тип данных (<code>bool</code>) может иметь одно из двух значений, <strong>true</strong> (истина) или <strong>false</strong> (ложь). Булевы операторы используются в программировании для сравнения и для контроля потока процессов программы.</p>
+
+<p>Булевы операторы используются для представления значений истины, связанных с логическим ответвлением математики, которое информирует алгоритмы в информатике. Они названы в честь математика Джорджа Буля, и на английском языке слово Boolean всегда пишется с заглавной буквы <code>B</code>.</p>
+
+<p>Тип данных булевых операторов в Go называется <code>bool</code>, все символы указаны строчными буквами. Значения <code>true</code> и <code>false</code> всегда обозначаются символами <code>t</code> и <code>f</code> в нижнем регистре, поскольку это особые значения в Go.</p>
+
+<p>В этом обучающем руководстве рассказывается об основах, которые помогут вам понять принципы работы типа данных <code>bool</code>, включая сравнение булевых операторов, логические операторы и таблицы истины.</p>
+
+<h2 id="Сравнительные-операторы">Сравнительные операторы</h2>
+
+<p>В программировании <em>сравнительные операторы</em> используются для сравнения значений и оценки значения отдельного булева значения true или false.</p>
+
+<p>В таблице ниже показаны булевы операторы сравнения.</p>
+
+<table><thead>
+<tr>
+<th>Оператор</th>
+<th>Значение</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>==</td>
+<td>равно</td>
+</tr>
+<tr>
+<td>! =</td>
+<td>не равно</td>
+</tr>
+<tr>
+<td>&lt;</td>
+<td>меньше</td>
+</tr>
+<tr>
+<td>&gt;</td>
+<td>больше</td>
+</tr>
+<tr>
+<td>&lt;=</td>
+<td>меньше или равно</td>
+</tr>
+<tr>
+<td>&gt;=</td>
+<td>больше или равно</td>
+</tr>
+</tbody></table>
+
+<p>Чтобы понять принцип работы этих операторов, присвоим два целочисленных значения двум переменным в программе Go:</p>
+<pre class="code-pre "><code class="code-highlight language-go">x := 5
+y := 8
+</code></pre>
+<p>Поскольку в этом примере <code>x</code> имеет значение <code>5</code>, эта переменная меньше <code>y</code> со значением <code>8</code>.</p>
+
+<p>Используем эти две переменные и их значения для проверки операторов из предыдущей таблицы. В этой программе вы предписываете Go вывести результат true или false для каждого оператора сравнения. Чтобы лучше понять результат, укажите Go распечатать строку, чтобы показывать, что именно оценивается:</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    x := 5
+    y := 8
+
+    fmt.Println("x == y:", x == y)
+    fmt.Println("x != y:", x != y)
+    fmt.Println("x &lt; y:", x &lt; y)
+    fmt.Println("x &gt; y:", x &gt; y)
+    fmt.Println("x &lt;= y:", x &lt;= y)
+    fmt.Println("x &gt;= y:", x &gt;= y)
+}
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>x == y: false
+x != y: true
+x &lt; y: true
+x &gt; y: false
+x &lt;= y: true
+x &gt;= y: false
+</code></pre>
+<p>Следуя математической логике, Go оценивает выражения следующим образом:</p>
+
+<ul>
+<li>5 (<code>x</code>) равно 8 (<code>y</code>)? <strong>false</strong></li>
+<li>5 не равно 8? <strong>true</strong></li>
+<li>5 меньше 8? <strong>true</strong></li>
+<li>5 больше 8? <strong>false</strong></li>
+<li>5 меньше или равно 8? <strong>true</strong></li>
+<li>5 не меньше или равно 8? <strong>false</strong></li>
+</ul>
+
+<p>Хотя здесь использовались целые числа, вы можете заменить их значениями с плавающей точкой.</p>
+
+<p>Также с булевыми операторами можно использовать строки. Они учитывают регистр, если вы не используете дополнительный метод строки.</p>
+
+<p>Вы можете посмотреть практический пример сравнения строк:</p>
+<pre class="code-pre "><code class="code-highlight language-go">Sammy := "Sammy"
+sammy := "sammy"
+
+fmt.Println("Sammy == sammy: ", Sammy == sammy)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy == sammy:  false
+</code></pre>
+<p>Строка <code>Sammy</code> не равна строке <code>sammy</code>, поскольку они не точно совпадают; одно значение начинается с заглавной <code>S</code>, а другое — с <code>s</code> в нижнем регистре. Однако если вы добавите другую переменную, которой присвоено значение <code>Sammy</code>, они будут равняться:</p>
+<pre class="code-pre "><code class="code-highlight language-go">Sammy := "Sammy"
+sammy := "sammy"
+alsoSammy := "Sammy"
+
+fmt.Println("Sammy == sammy: ", Sammy == sammy)
+fmt.Println("Sammy == alsoSammy", Sammy == alsoSammy)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy == sammy:  false
+Sammy == alsoSammy true
+</code></pre>
+<p>Также вы можете использовать для сравнения двух строк и другие операторы сравнения, в том числе <code>&gt;</code> и <code>&lt;</code>. Go проводит лексикографическое сравнение строк, используя значения ASCII для символов.</p>
+
+<p>Также вы можете оценить булевы значения с помощью операторов сравнения:</p>
+<pre class="code-pre "><code class="code-highlight language-go">t := true
+f := false
+
+fmt.Println("t != f: ", t != f)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>t != f:  true
+</code></pre>
+<p>Предыдущий блок кода оценил, что <code>true</code> не равняется <code>false</code>.</p>
+
+<p>Обратите внимание на различия между операторами <code>=</code> и <code>==</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-go">x = y   // Sets x equal to y
+x == y  // Evaluates whether x is equal to y
+</code></pre>
+<p>Первый оператор <code>=</code> является оператором присвоения, который задает одно значение равным другому. Второй оператор  <code>==</code> является оператором сравнения и оценивает, что два значения будут равны.</p>
+
+<h2 id="Логические-операторы">Логические операторы</h2>
+
+<p>Для сравнения используется два логических оператора. Они оценивают выражения до булевых значений, возвращая <code>true</code> или <code>false</code>. Это операторы <code>&amp;&amp;</code>, <code>||</code> и <code>!</code>, которые определены в следующем списке:</p>
+
+<ul>
+<li><strong>&amp;&amp;</strong> (<code>x &amp;&amp; y</code>) является оператором <code>и</code>. Это верно, если оба выражения верны.</li>
+<li><strong>||</strong> (<code>x || y</code>) является оператором <code>или</code>. Это верно, если хотя бы одно выражение является верным.</li>
+<li><strong>!</strong> (<code>! x</code>) является оператором <code>нет</code>. Это верно, только если выражение является ложным.</li>
+</ul>
+
+<p>Логические операторы обычно используются для оценки истинности двух или более выражений. Например, они могут использоваться для определения того, является ли оценка проходной, и зарегистрирован ли студент на курсе, и если в обоих случаях выражение является истинным, студенту будет присвоена оценка в системе. Еще один пример позволяет определить, что пользователь является действующим активным клиентом интернет-магазина на основании того, имеется ли у него кредит в магазине и совершались ли покупки за последние 6 месяцев.</p>
+
+<p>Чтобы понять принцип работы логических операторов, оценим три выражения:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println((9 &gt; 7) &amp;&amp; (2 &lt; 4))   // Both original expressions are true
+fmt.Println((8 == 8) || (6 != 6)) // One original expression is true
+fmt.Println(!(3 &lt;= 1))            // The original expression is false
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+true
+true
+</code></pre>
+<p>В первом случае <code>fmt.Println((9 &gt; 7) &amp;&amp; (2 &lt; 4))</code> оба выражения <code>9 &gt; 7</code> и <code>2 &lt; 4</code> должны быть оценены как истинные, поскольку использовался оператор <code>и</code>.</p>
+
+<p>Во втором случае <code>fmt.Println((8 == 8) || (6 ! = 6))</code>, поскольку <code>8 == 8</code> оценивается как истина, не имеет значения, что <code>6 ! = 6</code> оценивается как ложь, поскольку использовался оператор <code>или</code>. Если бы вы использовали оператор <code>и</code>, результат был бы ложным.</p>
+
+<p>В третьем случае, <code>fmt.Println(!( 3 &lt;= 1))</code>, оператор <code>нет</code> аннулирует ложное значение, возвращаемое выражением <code>3 &lt;=1</code>.</p>
+
+<p>Заменим целые числа числами с плавающей точкой и рассмотрим ложные оценки:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println((-0.2 &gt; 1.4) &amp;&amp; (0.8 &lt; 3.1))  // One original expression is false
+fmt.Println((7.5 == 8.9) || (9.2 != 9.2)) // Both original expressions are false
+fmt.Println(!(-5.7 &lt;= 0.3))               // The original expression is true
+</code></pre>
+<p>В этом примере:</p>
+
+<ul>
+<li><code>и</code> требует, чтобы хотя бы одно выражение оценивалось как ложное.</li>
+<li><code>или</code> требует, чтобы оба выражения оценивались как ложные.</li>
+<li><code>!</code> внутреннее выражение должно быть истинным, чтобы новое выражение оценивалось как ложное.</li>
+</ul>
+
+<p>Если результаты вам неясны, просмотрите <a href="#truth-tables">таблицы истины</a> для дополнительного уточнения.</p>
+
+<p>Также вы можете создавать комплексные выражения, используя операторы <code>&amp;&amp;</code>, <code>||</code> и <code>!</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">!((-0.2 &gt; 1.4) &amp;&amp; ((0.8 &lt; 3.1) || (0.1 == 0.1)))
+</code></pre>
+<p>Вначале рассмотрим внутреннее выражение: <code>(0.8 &lt; 3.1) || (0.1 == 0.1)</code>. Это выражение оценивается как истинное (<code>true</code>), поскольку оба математических выражения <code>истинные</code>.</p>
+
+<p>Затем Go берет возвращаемое значение <code>true</code> и сочетает его со следующим внутренним выражением: <code>(-0.2 &gt; 1.4) &amp;&amp; (true)</code>. В этом примере возвращается значение <code>false</code>, поскольку математическое выражение <code>-0.2 &gt; 1.4</code> является ложным, а сочетание (<code>false</code>) и (<code>true</code>) возвращает результат <code>false</code>.</p>
+
+<p>В заключение идет внешнее выражение: <code>!( false)</code>, которое оценивается как <code>true</code>, так что окончательное возвращаемое при печати этого выражения значение выглядит так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>true
+</code></pre>
+<p>Логические операторы <code>&amp;&amp;</code>, <code>||</code> и <code>!</code> оценивают выражения и возвращают булевы значения.</p>
+
+<h2 id="Таблицы-истины">Таблицы истины</h2>
+
+<p>Математическая логика — непростая дисциплина, но вы можете выборочно изучать ее для совершенствования своего алгоритмического мышления при программировании.</p>
+
+<p>Далее приведены таблицы истины для оператора сравнения <code>==</code>, а также каждого из логических операторов <code>&amp;&amp;</code>, <code>||</code> и <code>!</code>. Хотя возможно вы и не будете их использовать, запомнить их полезно, потому что это упростит процесс принятия решений при программировании.</p>
+
+<h3 id="равно-Таблица-истины"><code>==</code> (равно) Таблица истины</h3>
+
+<table><thead>
+<tr>
+<th>x</th>
+<th>==</th>
+<th>y</th>
+<th>возвращает</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>true</td>
+<td>==</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>true</td>
+<td>==</td>
+<td>false</td>
+<td>false</td>
+</tr>
+<tr>
+<td>false</td>
+<td>==</td>
+<td>true</td>
+<td>false</td>
+</tr>
+<tr>
+<td>false</td>
+<td>==</td>
+<td>false</td>
+<td>true</td>
+</tr>
+</tbody></table>
+
+<h3 id="amp-amp-и-Таблица-истины"><code>&amp;&amp;</code> (и) Таблица истины</h3>
+
+<table><thead>
+<tr>
+<th>x</th>
+<th>и</th>
+<th>y</th>
+<th>возвращает</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>true</td>
+<td>и</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>true</td>
+<td>и</td>
+<td>false</td>
+<td>false</td>
+</tr>
+<tr>
+<td>false</td>
+<td>и</td>
+<td>true</td>
+<td>false</td>
+</tr>
+<tr>
+<td>false</td>
+<td>и</td>
+<td>false</td>
+<td>false</td>
+</tr>
+</tbody></table>
+
+<h3 id="или-Таблица-истины"><code>||</code> (или) Таблица истины</h3>
+
+<table><thead>
+<tr>
+<th>x</th>
+<th>или</th>
+<th>y</th>
+<th>возвращает</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>true</td>
+<td>или</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>true</td>
+<td>или</td>
+<td>false</td>
+<td>true</td>
+</tr>
+<tr>
+<td>false</td>
+<td>или</td>
+<td>true</td>
+<td>true</td>
+</tr>
+<tr>
+<td>false</td>
+<td>или</td>
+<td>false</td>
+<td>false</td>
+</tr>
+</tbody></table>
+
+<h3 id="нет-Таблица-истины"><code>!</code> (нет) Таблица истины</h3>
+
+<table><thead>
+<tr>
+<th>нет</th>
+<th>x</th>
+<th>возвращает</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>нет</td>
+<td>true</td>
+<td>false</td>
+</tr>
+<tr>
+<td>нет</td>
+<td>false</td>
+<td>true</td>
+</tr>
+</tbody></table>
+
+<p>Таблицы истины — это обычные математические таблицы, используемые в логике. Их полезно помнить при построении алгоритмов (инструкций) в компьютерном программмировании.</p>
+
+<h2 id="Использование-булевых-операторов-для-управления-потоком">Использование булевых операторов для управления потоком</h2>
+
+<p>Для управления потоком операций и выводом программы в форме выражений управления потоком вы можете использовать <em>условие</em>, за которым идет <em>оператор</em>.</p>
+
+<p><em>Условие</em> производит оценку до булева значения true или false и представляет собой точку принятия решения в программе. Это означает, что условие позволяет оценить истинность.</p>
+
+<p><em>Оператор</em> — это блок кода, который идет за <em>условием</em> и определяет результат выполнения программы. Он показывает, что нужно сделать, в конструкции «если <code>x</code> = <code>true</code>, нужно сделать это».</p>
+
+<p>В блоке кода ниже приведен пример совместной работы операторов сравнения и условных выражений для управления потоком в программе Go:</p>
+<pre class="code-pre "><code class="code-highlight language-go">if grade &gt;= 65 {                 // Condition
+    fmt.Println("Passing grade") // Clause
+} else {
+    fmt.Println("Failing grade")
+}
+</code></pre>
+<p>Программа оценивает результат каждого ученика как проходной или непроходной. Для ученика с оценкой <code>83</code> первое выражение имеет значение <code>true</code> и активирует вывод выражения <code>Passing grade</code>. Для ученика с оценкой <code>59</code> первое выражение имеет значение <code>false</code>, и программа переходит к выражению вывода, связанному с выражением else: <code>Failing grade</code>.</p>
+
+<p>Булевы операторы предоставляют условия, которые можно использовать для определения конечных результатов программы посредством выражений управления потоком.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем руководстве мы использовали операторы сравнения и логические операторы булева типа, а также рассмотрели таблицы истины и использование булевых выражений для управления потоком программы.</p>

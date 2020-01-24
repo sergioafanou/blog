@@ -1,0 +1,144 @@
+---
+layout: post
+title: Использование выражений Break и Continue при работе с циклами в Go
+network: digitalocean
+date: January 24, 2020 at 04:42AM
+url: https://www.digitalocean.com/community/tutorials/using-break-and-continue-statements-when-working-with-loops-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Использование <strong>циклов for</strong> в Go позволяет эффективно автоматизировать и повторять выполнение задач.</p>
+
+<p>Понимание принципов контроля и работы циклов позволяет использовать в программе персонализированную логику. Вы можете контролировать циклы с помощью выражений <code>break</code> и <code>continue</code>.</p>
+
+<h2 id="Оператор-break">Оператор Break</h2>
+
+<p>В языке Go оператор <code>break</code> останавливает выполнение текущего цикла. Выражение <code>break</code> почти всегда сочетается с <a href="https://www.digitalocean.com/community/tutorials/how-to-write-conditional-statements-in-go">условным выражением <code>if</code></a>.</p>
+
+<p>Рассмотрим пример использования выражения <code>break</code> в цикле <code>for</code>:</p>
+<div class="code-label " title="break.go">break.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    for i := 0; i &lt; 10; i++ {
+        if i == 5 {
+            fmt.Println("Breaking out of loop")
+            break // break here
+        }
+        fmt.Println("The value of i is", i)
+    }
+    fmt.Println("Exiting program")
+}
+</code></pre>
+<p>Эта небольшая программа создает цикл <code>for</code>, выполняющийся пока <code>i</code> меньше <code>10</code>.</p>
+
+<p>В цикле <code>for</code> содержится выражение <code>if</code>. Выражение <code>if</code> проверяет условие <code>i</code> и сравнивает значение с <code>5</code>. Если значение <code>i</code> не равно <code>5</code>, цикл продолжается и распечатывает значение <code>i</code>. Если значение <code>i</code> равно <code>5</code>, цикл выполняет выражение <code>break</code>, печатает сообщение о выходе из цикла <code>Breaking out of loop</code> и останавливает выполнение цикла. После окончания выполнения программы распечатывается сообщение <code>Exiting program</code>, показывающее, что мы выполнили выход из цикла.</p>
+
+<p>При выполнении этого кода результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>The value of i is 0
+The value of i is 1
+The value of i is 2
+The value of i is 3
+The value of i is 4
+Breaking out of loop
+Exiting program
+</code></pre>
+<p>Это показывает, что когда целое число <code>i</code> оценивается как равное 5, цикл прекращается, о чем программу информирует выражение <code>break</code>.</p>
+
+<h3 id="Вложенные-циклы">Вложенные циклы</h3>
+
+<p>Важно отметить, что выражение <code>break</code> останавливает выполнение только цикла самого низкого выполняемого уровня. Если вы используете набор из нескольких циклов, вложенных друг в друга, вам нужно будет использовать отдельный оператор break для каждого цикла.</p>
+<div class="code-label " title="nested.go">nested.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    for outer := 0; outer &lt; 5; outer++ {
+        if outer == 3 {
+            fmt.Println("Breaking out of outer loop")
+            break // break here
+        }
+        fmt.Println("The value of outer is", outer)
+        for inner := 0; inner &lt; 5; inner++ {
+            if inner == 2 {
+                fmt.Println("Breaking out of inner loop")
+                break // break here
+            }
+            fmt.Println("The value of inner is", inner)
+        }
+    }
+    fmt.Println("Exiting program")
+}
+</code></pre>
+<p>Эта программа содержит два цикла. Хотя оба цикла выполняют 5 итераций, в каждом из них есть условное выражение <code>if</code> с выражением <code>break</code>. Внешний цикл прекращается, если значение <code>outer</code> равняется <code>3</code>. Внутренний цикл прекращается, если значение <code>inner</code> равняется <code>2</code>.</p>
+
+<p>Если мы запустим программу, результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>The value of outer is 0
+The value of inner is 0
+The value of inner is 1
+Breaking out of inner loop
+The value of outer is 1
+The value of inner is 0
+The value of inner is 1
+Breaking out of inner loop
+The value of outer is 2
+The value of inner is 0
+The value of inner is 1
+Breaking out of inner loop
+Breaking out of outer loop
+Exiting program
+</code></pre>
+<p>Обратите внимание, что при остановке внутреннего цикла внешний цикл не останавливается. Это связано с тем, что выражение <code>break</code> останавливает только цикл самого низкого уровня, где оно вызывается.</p>
+
+<p>Мы увидели, как выражение <code>break</code> останавливает выполнение цикла. Теперь посмотрим, как можно продолжить итерации цикла.</p>
+
+<h2 id="Оператор-continue">Оператор Continue</h2>
+
+<p>Выражение <code>continue</code> используется, когда вы хотите пропустить оставшуюся часть цикла, вернуться в начало цикла и продолжить новую итерацию этого цикла.</p>
+
+<p>Как и выражение <code>break,</code> выражение <code>continue</code> обычно используется вместе с условным выражением <code>if</code>.</p>
+
+<p>Мы используем ту же программу с циклом <code>for</code>, что и в предыдущем разделе <a href="https://www.digitalocean.com/community/tutorials/how-to-use-break-and-continue-statements-when-working-with-loops-in-go#break-statement">«Выражение Break»</a>, но при этом используем выражение <code>continue</code> вместо выражения <code>break</code>:</p>
+<div class="code-label " title="continue.go">continue.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+func main() {
+    for i := 0; i &lt; 10; i++ {
+        if i == 5 {
+            fmt.Println("Continuing loop")
+            continue // break here
+        }
+        fmt.Println("The value of i is", i)
+    }
+    fmt.Println("Exiting program")
+}
+</code></pre>
+<p>Отличие выражения <code>continue</code> от выражения <code>break</code> заключается в том, что код продолжит выполняться несмотря на прерывание, если переменная <code>i</code> будет оценена как равная <code>5</code>. Посмотрим на результаты:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>The value of i is 0
+The value of i is 1
+The value of i is 2
+The value of i is 3
+The value of i is 4
+Continuing loop
+The value of i is 6
+The value of i is 7
+The value of i is 8
+The value of i is 9
+Exiting program
+</code></pre>
+<p>Здесь вы видим, что строка <code>The value of i is 5</code> не появляется в результатах, но цикл продолжает выполнение после этой точки и распечатывает строки для чисел 6-10 перед остановкой цикла.</p>
+
+<p>Вы можете использовать выражение <code>continue</code>, чтобы избежать использования глубоко вложенного условного кода, или чтобы оптимизировать цикл, устранив часто встречающиеся случаи, которые вы хотите отклонять.</p>
+
+<p>Выражение <code>continue</code> заставляет программу пропустить определенную часть цикла, а затем продолжить выполнение оставшейся части цикла.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Выражения <code>break</code> и <code>continue</code> в Go позволят вам более эффективно использовать циклы <code>for</code> в программном коде.</p>

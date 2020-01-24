@@ -1,0 +1,315 @@
+---
+layout: post
+title: Написание пакетов в Go
+network: digitalocean
+date: January 24, 2020 at 04:36AM
+url: https://www.digitalocean.com/community/tutorials/how-to-write-packages-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<p>Пакет состоит из файлов Go, которые находятся в том же каталоге и имеют одинаковое выражение пакета в начале. Вы можете добавить дополнительные функции из пакетов, чтобы усложнить программы. Некоторые пакеты доступны в стандартной библиотеке Go и устанавливаются вместе с Go. Другие можно установить с помощью команды <code>go get</code> в Go. Также вы можете создавать собственные пакеты Go, создавая файлы Go в том же каталоге, где вы хотите разместить общий код, используя необходимое выражение пакета.</p>
+
+<p>В этом обучающем руководстве вы научитесь писать пакеты Go для использования в других программных файлах.</p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<ul>
+<li>Настройте среду программирования Go в соответствии с указаниями одного из обучающих руководств серии <a href="https://www.digitalocean.com/community/tutorial_series/how-to-install-and-set-up-a-local-programming-environment-for-go">Установка и настройка локальной среды программирования Go</a>. Создайте рабочее пространство Go, следуя указаниям шага 5 обучающих руководств по локальной среде программирования. Чтобы следовать примерам и правилам присвоения имен из этой статьи, прочитайте первый раздел, посвященный написанию и импорту пакетов.</li>
+<li>Чтобы узнать больше о GOPATH, прочитайте нашу статью <a href="https://www.digitalocean.com/community/tutorials/understanding-the-gopath">Знакомство с GOPATH</a>.</li>
+</ul>
+
+<h2 id="Написание-и-импорт-пакетов">Написание и импорт пакетов</h2>
+
+<p>Пакеты пишутся так же, как любые другие файлы Go. Пакеты могут содержать определения функций, <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-go">типов</a> и <a href="https://www.digitalocean.com/community/tutorials/how-to-use-variables-and-constants-in-go#understanding-variables">переменных</a>, которые могут использоваться в других программах Go.</p>
+
+<p>Перед созданием нового пакета необходимо перейти в рабочее пространство Go. Обычно его можно найти по адресу <code>gopath</code>. Например, в этом обучающем модуле мы назовем пакет <code>greet</code>. Для этого мы создали каталог с именем <code>greet</code> с путем <code>gopath</code> в рабочем пространстве проекта. Допустим наша организация называется <code>gopherguides</code>, и мы хотим создать пакет <code>greet</code> в каталоге организации, используя Github в качестве хранилища кода. В этом случае наш каталог будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+</code></pre>
+<p>Каталог <code>greet</code> находится внутри каталога <code>gopherguides</code>:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                └── greet
+</code></pre>
+<p>Наконец, мы можем добавлять в каталог первый файл. Обычно <code>первичному</code> файлу или файлу <code>точки входа</code> в пакете присваивается имя каталога. В этом случае мы создадим файл с именем <code>greet.go</code> в каталоге <code>greet</code>:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                └── greet
+                    └── greet.go
+</code></pre>
+<p>После создания файла мы можем начать писать код для повторного использования или совместного использования в нескольких проектах. В данном случае мы создадим функцию с именем <code>Hello</code>, которая выводит текст <code>Hello World</code>.</p>
+
+<p>Откройте файл <code>greet.go</code> в текстовом редакторе и добавьте следующий код:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code class="code-highlight language-go">package greet
+
+import "fmt"
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Разделим первый файл на части. В первой строке каждого файла нужно указать имя <code>пакета</code>, с которым вы работаете. Поскольку вы находитесь в пакете <code>greet</code>, вы используете ключевое слово <code>package</code>, за которым идет имя пакета:</p>
+<pre class="code-pre "><code class="code-highlight language-go">package greet
+</code></pre>
+<p>Так компилятор будет рассматривать все содержание файла как часть пакета <code>greet</code>.</p>
+
+<p>Затем вы декларируете все другие пакеты, которые вам нужно использовать, с помощью выражения <code>import</code>. В этом файле вы используете только пакет <code>fmt</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">import "fmt"
+</code></pre>
+<p>В заключение вы создадите функцию <code>Hello</code>. Она будет использовать пакет <code>fmt</code> для вывода текста <code>Hello, World!</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Теперь вы записали пакет <code>greet</code> и можете использовать его в любом другом создаваемом вами пакете. Создадим новый пакет, в котором будет использоваться ваш пакет <code>greet</code>.</p>
+
+<p>Вы создадите пакет с именем <code>example</code>, и это означает, что вам требуется каталог с именем <code>example</code>. Создайте пакет в организации <code>gopherguides</code>, чтобы структура каталогов выглядела следующим образом:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                    └── example
+</code></pre>
+<p>Теперь у вас есть каталог нового пакета, и вы можете создать файл точки входа. Поскольку это исполняемая программа, следует присвоить файлу точки входа имя <code>main.go</code>:</p>
+<pre class="code-pre "><code langs="">└── $GOPATH
+    └── src
+        └── github.com
+            └── gopherguides
+                └── example
+                    └── main.go
+</code></pre>
+<p>Откройте в текстовом редакторе файл <code>main.go</code> и добавьте следующий код для вызова пакета <code>greet</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "github.com/gopherguides/greet"
+
+func main() {
+    greet.Hello()
+}
+</code></pre>
+<p>Поскольку вы импортируете пакет, вам нужно вызвать функцию, сославшись на имя пакета в точечной нотации. <em>Точечная нотация</em> — это практика, предусматривающая постановку точки <code>.</code> между именем используемого пакета и ресурсом этого пакета, который вы хотите использовать. Например, в пакете <code>greet</code> вы можете использовать функцию <code>Hello</code> в качестве ресурса. Если вы хотите вызвать этот ресурс, вы можете использовать точечную нотацию <code>greet.Hello()</code>.</p>
+
+<p>Теперь вы можете открыть терминал и запустить команду из командной строки:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>В этом случае вы получите следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+</code></pre>
+<p>Чтобы посмотреть, как использовать переменные в пакете, добавим определение переменной в файл <code>greet.go</code>:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+<span class="highlight">var Shark = "Sammy"</span>
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Откройте файл <code>main.go</code> и добавьте следующую выделенную строку для вызова переменной из <code>greet.go</code> в функции <code>fmt.Println()</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    <span class="highlight">fmt.Println(greet.Shark)</span>
+}
+</code></pre>
+<p>После повторного запуска программы:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>Вывод должен выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+Sammy
+</code></pre>
+<p>В заключение определим тип в файле <code>greet.go</code>. Вы создадите тип <code>Octopus</code> с полями <code>name</code> и <code>color</code>, а также функцию, которая будет выводить поля при вызове:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+var Shark = "Sammy"
+
+<span class="highlight">type Octopus struct {</span>
+    <span class="highlight">Name  string</span>
+    <span class="highlight">Color string</span>
+<span class="highlight">}</span>
+
+<span class="highlight">func (o Octopus) String() string {</span>
+    <span class="highlight">return fmt.Sprintf("The octopus's name is %q and is the color %s.", o.Name, o.Color)</span>
+<span class="highlight">}</span>
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>Откройте файл <code>main.go</code> для создания экземпляра этого типа в конце файла:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    fmt.Println(greet.Shark)
+
+    <span class="highlight">oct := greet.Octopus{</span>
+        <span class="highlight">Name:  "Jesse",</span>
+        <span class="highlight">Color: "orange",</span>
+    <span class="highlight">}</span>
+
+    <span class="highlight">fmt.Println(oct.String())</span>
+}
+</code></pre>
+<p>После создания экземпляра типа <code>Octopus</code> с помощью выражения <code>oct := greet.Octopus</code> вы сможете получить доступ к функциям и полям типа в пространстве имен файла <code>main.go</code>. Это позволит вам записать <code>oct.String()</code> в последнюю строку без вызова <code>greet</code>. Например, вы можете вызвать одно из полей типа, например <code>oct.Color</code>, не ссылаясь на имя пакета <code>greet</code>.</p>
+
+<p>Метод <code>String</code> типа <code>Octopus</code> использует функцию <code>fmt.Sprintf</code> для создания предложения и <code>возвращает</code> результат в виде строки вызывающему компоненту (в данном случае, основной программе).</p>
+
+<p>При запуске программы вы получите следующий результат:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+Sammy
+The octopus's name is "Jesse" and is the color orange.
+</code></pre>
+<p>Создавая метод <code>String</code> в типе <code>Octopus</code>, вы получаете возможность многократно выводить информацию о своем пользовательском типе. Если вы захотите изменить поведение этого метода, вам нужно будет только отредактировать этот метод.</p>
+
+<h2 id="Экспортированный-код">Экспортированный код</h2>
+
+<p>Возможно вы заметили, что все декларации в вызванном вами файле <code>greet.go</code> были указаны заглавными буквами. В Go отсутствует концепция модификаторов <code>public</code>, <code>private</code> и <code>protected</code>, как в других языках. Видимость для внешних элементов определяется использованием заглавных букв. Типы, переменные, функции и другие элементы, которые начинаются с заглавной буквы, находятся в публичной зоне видимости. Символ, видимый вне пакета, считается <code>экспортируемым</code>.</p>
+
+<p>Если вы добавите в <code>Octopus</code> новый метод с именем <code>reset</code>, вы можете вызвать его из пакета <code>greet</code>, но не из файла <code>main.go</code>, который находится вне пакета <code>greet</code>:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+var Shark = "Sammy"
+
+type Octopus struct {
+    Name  string
+    Color string
+}
+
+func (o Octopus) String() string {
+    return fmt.Sprintf("The octopus's name is %q and is the color %s.", o.Name, o.Color)
+}
+
+<span class="highlight">func (o *Octopus) reset() {</span>
+    <span class="highlight">o.Name = ""</span>
+    <span class="highlight">o.Color = ""</span>
+<span class="highlight">}</span>
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+
+</code></pre>
+<p>Если вы попробуете вызвать метод <code>reset</code> из файла <code>main.go</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    fmt.Println(greet.Shark)
+
+    oct := greet.Octopus{
+        Name:  "Jesse",
+        Color: "orange",
+    }
+
+    fmt.Println(oct.String())
+
+    <span class="highlight">oct.reset()</span>
+}
+</code></pre>
+<p>Вы получите следующую ошибку компиляции:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>oct.reset undefined (cannot refer to unexported field or method greet.Octopus.reset)
+</code></pre>
+<p>Чтобы выполнить <code>экспорт</code> функции <code>reset</code> из <code>Octopus</code>, нужно сделать заглавной букву <code>R</code> в имени метода <code>reset</code>:</p>
+<div class="code-label " title="greet.go">greet.go</div><pre class="code-pre "><code langs="">package greet
+
+import "fmt"
+
+var Shark = "Sammy"
+
+type Octopus struct {
+    Name  string
+    Color string
+}
+
+func (o Octopus) String() string {
+    return fmt.Sprintf("The octopus's name is %q and is the color %s.", o.Name, o.Color)
+}
+
+func (o *Octopus) <span class="highlight">R</span>eset() {
+    o.Name = ""
+    o.Color = ""
+}
+
+func Hello() {
+    fmt.Println("Hello, World!")
+}
+</code></pre>
+<p>В результате вы можете вызвать метод <code>Reset</code> из другого пакета без сообщения об ошибке:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code langs="">package main
+
+import (
+    "fmt"
+
+    "github.com/gopherguides/greet"
+)
+
+func main() {
+    greet.Hello()
+
+    fmt.Println(greet.Shark)
+
+    oct := greet.Octopus{
+        Name:  "Jesse",
+        Color: "orange",
+    }
+
+    fmt.Println(oct.String())
+
+    <span class="highlight">oct.Reset()</span>
+
+    fmt.Println(oct.String())
+}
+</code></pre>
+<p>Теперь, если вы запустите программу:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run main.go
+</li></ul></code></pre>
+<p>Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, World!
+Sammy
+The octopus's name is "Jesse" and is the color orange
+The octopus's name is "" and is the color .
+</code></pre>
+<p>Вызывая метод <code>Reset</code>, вы очистили всю информацию в полях <code>Name</code> и <code>Color</code>. При вызове метода <code>String</code> он не будет выводить никакого текста, где появляются <code>Name</code> и <code>Color</code>, поскольку теперь эти поля пустые.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Написание пакета Go аналогично написанию любого другого файла Go, однако его размещение в другом каталоге позволяет изолировать код для повторного использования в любом месте. В этом обучающем руководстве мы показали, как написать определения пакета, продемонстрировали использование этих определений в другом файле Go и описали варианты хранения пакета для доступа к нему.</p>

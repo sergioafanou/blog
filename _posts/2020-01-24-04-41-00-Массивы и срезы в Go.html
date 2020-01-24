@@ -1,0 +1,361 @@
+---
+layout: post
+title: Массивы и срезы в Go
+network: digitalocean
+date: January 24, 2020 at 04:41AM
+url: https://www.digitalocean.com/community/tutorials/understanding-arrays-and-slices-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>В Go <em>массивы</em> и *срезы *представляют собой <a href="https://en.wikipedia.org/wiki/Data_structure">структуры данных</a>, состоящие из упорядоченных последовательностей элементов. Эти наборы данных очень удобно использовать, когда вам требуется работать с большим количеством связанных значений. Они позволяют хранить вместе связанные данные, концентрировать код и одновременно применять одни и те же методы и операции к нескольким значениям.</p>
+
+<p>Хотя и массивы, и срезы в Go представляют собой упорядоченные последовательности элементов, между ними имеются существенные отличия. <em>Массив</em> в Go представляет собой <a href="https://en.wikipedia.org/wiki/Data_structure">структуру данных</a>, состоящую из упорядоченной последовательности элементов, емкость которой определяется в момент создания. После определения размера массива его нельзя изменить. <em>Срез</em> — это версия массива с переменной длиной, дающая разработчикам дополнительную гибкость использования этих структур данных. Срезы — это то, что обычно называют массивами в других языках.</p>
+
+<p>С учетом этих отличий массивы и срезы предпочтительнее использовать в определенных ситуациях. Если вы только начинаете работать с Go, вам может быть сложно определить, что использовать в каком-либо конкретном случае. Благодаря универсальному характеру срезов, они будут полезнее в большинстве случаев, однако в некоторых ситуациях именно массивы могут помочь оптимизировать производительность программы.</p>
+
+<p>В этой статье мы подробно расскажем о массивах и срезах и предоставим вам информацию, необходимую для правильного выбора между этими типами данных. Также вы узнаете о наиболее распространенных способах декларирования массивов и срезов и работы с ними. Вначале мы опишем массивы и манипуляции с ними, а затем расскажем о срезах и их отличиях.</p>
+
+<h2 id="Массивы">Массивы</h2>
+
+<p>Массивы представляют собой структурированные наборы данных с заданным количеством элементов. Поскольку массивы имеют фиксированный размер, память для структуры данных нужно выделить только один раз, в то время как для структур данных переменной длины требуется динамическое выделение памяти в большем или меньшем объеме. Хотя из-за фиксированной длины массивов они не отличаются гибкостью в использовании, одноразовое выделение памяти позволяет повысить скорость и производительность вашей программы. В связи с этим, разработчики обычно используют массивы при оптимизации программ, в том числе, когда для структур данных не требуется переменное количество элементов.</p>
+
+<h3 id="Определение-массива">Определение массива</h3>
+
+<p>Массивы определяются посредством декларирования размера массива в квадратных скобках <code>[ ]</code>, после которых указывается тип данных элементов. Все элементы массива в Go должны относиться к одному и тому же <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-go">типу данных</a>. После типа данных вы можете декларировать отдельные значения элементов массива в фигурных скобках <code>{ }</code>.</p>
+
+<p>Ниже показана общая схема декларирования массива:</p>
+<pre class="code-pre "><code class="code-highlight language-go">[<span class="highlight">capacity</span>]<span class="highlight">data_type</span>{<span class="highlight">element_values</span>}
+</code></pre>
+<p><span class='note'><strong>Примечание:</strong> важно помнить, что в каждом случае декларирования нового массива создается отдельный тип. Поэтому, хотя <code>[2]int</code> и <code>[3]int</code> содержат целочисленные элементы, из-за разницы длины типы данных этих массивов несовместимы друг с другом.<br></span></p>
+
+<p>Если вы не декларируете значения элементов массива, по умолчанию используются нулевые значения, т. е. по умолчанию элементы массива будут пустыми. Это означает, что целочисленные элементы будут иметь значение <code>0</code>, а строки будут пустыми.</p>
+
+<p>Например, следующий массив <code>numbers</code> имеет три целочисленных элемента, у которых еще нет значения:</p>
+<pre class="code-pre "><code class="code-highlight language-go">var numbers [3]int
+</code></pre>
+<p>Если вы выведете  массив <code>numbers</code>, результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[0 0 0]
+</code></pre>
+<p>Если вы хотите назначить значения элементов при создании массива, эти значения следует поместить в фигурные скобки. Массив строк с заданными значениями будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code class="code-highlight language-go">[4]string{"blue coral", "staghorn coral", "pillar coral", "elkhorn coral"}
+</code></pre>
+<p>Вы можете сохранить массив в переменной и вывести его:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral := [4]string{"blue coral", "staghorn coral", "pillar coral", "elkhorn coral"}
+fmt.Println(coral)
+</code></pre>
+<p>Запуск программы с вышеуказанными строчками даст следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[blue coral staghorn coral pillar coral elkhorn coral]
+</code></pre>
+<p>Обратите внимание, что при печати элементы массива не разделяются, и поэтому сложно сказать, где заканчивается один элемент и начинается другой. Поэтому иногда бывает полезно использовать функцию <code>fmt.Printf</code> вместо простой печати, поскольку данная функция форматирует строки перед их выводом на экран. Используйте с этой командой оператор <code>%q</code>, чтобы функция ставила кавычки вокруг значений:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Printf("%q\n", coral)
+</code></pre>
+<p>Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "staghorn coral" "pillar coral" "elkhorn coral"]
+</code></pre>
+<p>Теперь все элементы заключены в кавычки. Оператор <code>\n</code> предписывает добавить в конце символ возврата строки.</p>
+
+<p>Теперь вы понимаете основные принципы декларирования массивов и их содержание, и мы можем перейти к изложению того, как задавать элементы в массиве по номеру индекса.</p>
+
+<h3 id="Индексация-массивов-и-срезов">Индексация массивов (и срезов)</h3>
+
+<p>Каждый элемент массива (и среза) можно вызвать отдельно, используя индексацию. Каждый элемент соответствует номеру индекса, который представляет собой значение <code>int</code>, начиная с номера индекса <code>0</code> с увеличением в восходящем порядке.</p>
+
+<p>В следующих примерах мы будем использовать массив, однако данные правила верны и для срезов, поскольку индексация массивов и срезов выполняется одинаково.</p>
+
+<p>Для массива <code>coral</code> индекс будет выглядеть следующим образом:</p>
+
+<table><thead>
+<tr>
+<th>&ldquo;blue coral&rdquo;</th>
+<th>&ldquo;staghorn coral&rdquo;</th>
+<th>&ldquo;pillar coral&rdquo;</th>
+<th>&ldquo;elkhorn coral&rdquo;</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>3</td>
+</tr>
+</tbody></table>
+
+<p>Первый элемент, строка <code>"blue coral"</code>, начинается с индекса <code>0</code>, а заканчивается срез индексом <code>3</code> с элементом <code>"elkhorn coral"</code>.</p>
+
+<p>Поскольку каждый элемент среза или массива имеет соответствующий ему номер индекса, мы можем получать доступ к этим элементам и выполнять с ними манипуляции точно так же, как и с другими последовательными типами данных.</p>
+
+<p>Теперь мы можем вызвать дискретный элемент среза по его номеру индекса:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[1])
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>staghorn coral
+</code></pre>
+<p>Номера индекса для этого среза входят в диапазон <code>0-3</code>, как показано в предыдущей таблице. Поэтому для вызова любого отдельного элемента мы будем ссылаться на номера индекса, как показано здесь:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral[0] = "blue coral"
+coral[1] = "staghorn coral"
+coral[2] = "pillar coral"
+coral[3] = "elkhorn coral"
+</code></pre>
+<p>Если мы вызовем массив <code>coral</code> с любым номером индекса больше <code>3</code>, результат будет за пределами диапазона и запрос будет недействителен:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[18])
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>panic: runtime error: index out of range
+</code></pre>
+<p>При индексации массива или среза всегда следует использовать положительные числа. В отличие от некоторых языков, поддерживающих обратную индексацию с использованием отрицательных чисел, в Go такая индексация приводит к ошибке:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[-1])
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>invalid array index -1 (index must be non-negative)
+</code></pre>
+<p>Мы можем объединять элементы строк массива или среза с другими строками, используя оператор <code>+</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println("Sammy loves " + coral[0])
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy loves blue coral
+</code></pre>
+<p>Например, мы можем объединить элемент строки с номером индекса <code>0</code> со строкой <code>"Sammy loves "</code>.</p>
+
+<p>Поскольку номера индекса соответствуют элементам массива или среза, мы можем получать отдельный доступ к каждому элементу и работать с этими элементами. Чтобы продемонстрировать это, мы покажем, как можно изменить элемент с определенным индексом.</p>
+
+<h3 id="Изменение-элементов">Изменение элементов</h3>
+
+<p>Мы можем использовать индексацию для изменения элементов массива или среза, задав для индексированного элемента другое значение. Это дает нам дополнительные возможности контроля данных в срезах и массивах и позволяет программно изменять отдельные элементы.</p>
+
+<p>Если мы хотим изменить значение строки элемента с индексом <code>1</code> в массиве <code>coral</code> с <code>"staghorn coral"</code> на <code>"foliose coral"</code>, мы можем сделать это так:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral[1] = "foliose coral"
+</code></pre>
+<p>Теперь, когда мы будем распечатывать массив <code>coral</code>, он будет выглядеть по другому:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Printf("%q\n", coral)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "foliose coral" "pillar coral" "elkhorn coral"]
+</code></pre>
+<p>Теперь вы знаете, как выполнять манипуляции с отдельными элементами массива или среза, и мы рассмотрим несколько функций, дающих дополнительную гибкость при работе с типами данных в коллекциях.</p>
+
+<h3 id="Подсчет-элементов-с-помощью-len">Подсчет элементов с помощью <code>len()</code></h3>
+
+<p>В Go имеется встроенная функция <code>len()</code>, помогающая работать с массивами и срезами. Как и в случае со строками, вы можете рассчитать длину массива или среза, используя команду <code>len()</code> с указанием массива или среза в качестве параметра.</p>
+
+<p>Например, чтобы определить количество элементов внутри массива <code>coral</code>, мы используем следующую команду:</p>
+<pre class="code-pre "><code class="code-highlight language-go">len(coral)
+</code></pre>
+<p>Если вы распечатаете длину массива <code>coral</code>, результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>4
+</code></pre>
+<p>Это дает длину массива <code>4</code> в типе данных <code>int</code>, что соответствует действительности, поскольку массив <code>coral</code> содержит четыре элемента:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral := [4]string{"blue coral", "foliose coral", "pillar coral", "elkhorn coral"}
+</code></pre>
+<p>Если вы создадите массив целых чисел с большим количеством элементов, вы можете использовать функцию <code>len()</code> и в этом случае:</p>
+<pre class="code-pre "><code class="code-highlight language-go">numbers := [13]int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+fmt.Println(len(numbers))
+</code></pre>
+<p>Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>13
+</code></pre>
+<p>Хотя примеры массивов содержат относительно немного элементов, функция <code>len()</code> особенно полезна при определении количества элементов внутри очень больших массивов.</p>
+
+<p>Далее мы рассмотрим процедуру добавления элемента в тип данных коллекции и покажем, как это сделать, поскольку в связи с фиксированной длиной массивов добавление таких статических типов данных может повлечь за собой ошибку.</p>
+
+<h3 id="Добавление-элементов-с-помощью-append">Добавление элементов с помощью <code>append()</code></h3>
+
+<p><code>append()</code> — это встроенный метод Go для добавления элементов в тип данных коллекции. Но данный метод не будет работать с помощью массива. Как уже отмечалось, основное отличие массивов от срезов заключается в том, что размер массива нельзя изменить. Это означает, что хотя вы можете изменять значения элементов в массиве, вы не можете сделать массив больше или меньше после его определения.</p>
+
+<p>Рассмотрим наш массив <code>coral</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral := [4]string{"blue coral", "foliose coral", "pillar coral", "elkhorn coral"}
+</code></pre>
+<p>Допустим, вы хотите добавить в массив элемент <code>"black coral"</code>. Если вы попробуете использовать функцию <code>append()</code> в массиве с помощью следующей команды:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral = append(coral, "black coral")
+</code></pre>
+<p>В результате вы получите сообщение об ошибке:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>first argument to append must be slice; have [4]string
+</code></pre>
+<p>Для решения подобных проблем нам нужно больше узнать о типе данных среза, определении среза и процедуре конвертации массива в срез.</p>
+
+<h2 id="Срезы">Срезы</h2>
+
+<p><em>Срез *— это тип данных Go, представляющий собой *мутируемую</em> или изменяемую упорядоченную последовательность элементов. Поскольку размер срезов не постоянный, а переменный, его использование сопряжено с дополнительной гибкостью. При работе с наборами данных, которые в будущем могут увеличиваться или уменьшаться, использование среза обеспечит отсутствие ошибок при попытке изменения размера набора. В большинстве случаев возможность изменения стоит издержек перераспределения памяти, которое иногда требуется для срезов, в отличие от массивов. Если вам требуется сохранить большое количество элементов или провести итерацию большого количества элементов, и при этом вам нужна возможность быстрого изменения этих элементов, вам подойдет тип данных среза.</p>
+
+<h3 id="Определение-среза">Определение среза</h3>
+
+<p>Срезы определяются посредством декларирования типа данных, перед которым идут пустые квадратные скобки (<code>[]</code>) и список элементов в фигурных скобках (<code>{}</code>). Вы видите, что в отличие от массивов, для которых требуется поставить в скобки значения <code>int</code> для декларирования определенной длины, в срезе скобки пустые, что означает переменную длину.</p>
+
+<p>Создадим срез, содержащий элементы строкового типа данных:</p>
+<pre class="code-pre "><code class="code-highlight language-go">seaCreatures := []string{"shark", "cuttlefish", "squid", "mantis shrimp", "anemone"}
+</code></pre>
+<p>При выводе среза мы видим содержащиеся в срезе элементы:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Printf("%q\n", seaCreatures)
+</code></pre>
+<p>Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["shark" "cuttlefish" "squid" "mantis shrimp" "anemone"]
+</code></pre>
+<p>Если вы хотите создать срез определенной длины без заполнения элементов коллекции, вы можете использовать встроенную функцию <code>make()</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">oceans := make([]string, 3)
+</code></pre>
+<p>При печати этого среза вы получите следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["" "" ""]
+</code></pre>
+<p>Если вы хотите заранее выделить определенный объем памяти, вы можете использовать в команде <code>make()</code> третий аргумент:</p>
+<pre class="code-pre "><code class="code-highlight language-go">oceans := make([]string, 3, 5)
+</code></pre>
+<p>При этом будет создан обнуленный срез с длиной <code>3</code> и заранее выделенной емкостью в <code>5</code> элементов.</p>
+
+<p>Теперь вы знаете, как декларировать срез. Однако это не решает проблему с массивом <code>coral</code>, которая возникала у нас ранее. Чтобы использовать функцию <code>append()</code> с <code>coral</code>, нужно вначале научиться преобразовывать разделы массива в срезы.</p>
+
+<h3 id="Разделение-массивов-на-срезы">Разделение массивов на срезы</h3>
+
+<p>Используя числовые индексы для определения начальных и конечных точек, вы можете вызывать подразделы значений внутри массива. Эта операция называется <em>разделением массива на слайсы</em>, и вы можете сделать это посредством создания диапазона числовых индексов, разделенных двоеточием, в форме:<code>[<span class="highlight">first_index</span>:<span class="highlight">second_index</span>]</code>. Важно отметить, что при разделении массива на срезы в результате получается срез, а не массив.</p>
+
+<p>Допустим, вы хотите вывести средние элементы массива <code>coral</code>, не включая первый и последний элемент. Для этого вы можете создать срез, начинающийся с индекса <code>1</code> и заканчивающийся перед индексом <code>3</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[1:3])
+</code></pre>
+<p>Запуск программы с этой строкой даст следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[foliose coral pillar coral]
+</code></pre>
+<p>При создании среза (например, <code>[1:3]</code>), первое число означает начало среза (включительно), а второе число — это сумма первого числа и общего количества элементов, которое вы хотите получить:</p>
+<pre class="code-pre plain"><code langs="">array[starting_index : (starting_index + length_of_slice)]
+</code></pre>
+<p>В этом случае вы вызываете второй элемент (или индекс 1) в качестве начальной точки, а всего вызываете два элемента. Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre plain"><code langs="">array[1 : (1 + 2)]
+</code></pre>
+<p>Вот как это было получено:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral[1:3]
+</code></pre>
+<p>Если вы хотите задать начало или конец массива в качестве начальной или конечной точки среза, вы можете пропустить одно из чисел в синтаксисе <code>array[<span class="highlight">first_index</span>:<span class="highlight">second_index</span>]</code>. Например, если вы хотите вывести первые три элемента массива <code>coral</code>, а именно <code>"blue coral"</code>, <code>"foliose coral"</code> и <code>"pillar coral"</code>, вы можете использовать следующий синтаксис:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[:3])
+</code></pre>
+<p>В результате будет выведено следующее:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[blue coral foliose coral pillar coral]
+</code></pre>
+<p>Команда распечатала начало массива, остановившись непосредственно перед индексом <code>3</code>.</p>
+
+<p>Чтобы включить все элементы до конца массива, нужно использовать обратный синтаксис:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(coral[1:])
+</code></pre>
+<p>Получившийся срез будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[foliose coral pillar coral elkhorn coral]
+</code></pre>
+<p>В этом разделе мы рассказали о вызове отдельных частей массива посредством разделения массива на срезы. Далее мы расскажем, как преобразовывать полные массивы в срезы.</p>
+
+<h3 id="Преобразование-массива-в-срез">Преобразование массива в срез</h3>
+
+<p>Если вы создали массив и считаете, что для него требуется переменная длина, вы можете преобразовать этот массив в срез. Чтобы преобразовать массив в срез, используйте процесс разделения на срезы, описанный в разделе <strong>Разделение массивов на срезы</strong> настоящего документа, но пропустите указание обоих числовых индексов, определяющих конечные точки:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coral[:]
+</code></pre>
+<p>Учтите, что вы не сможете конвертировать саму переменную <code>coral</code> в срез, поскольку после определения переменной в Go ее тип нельзя изменить. Чтобы обойти эту проблему, вы можете скопировать полное содержание массива в новую переменную в качестве среза:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coralSlice := coral[:]
+</code></pre>
+<p>Если вы выводите <code>coralSlice</code>, результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[blue coral foliose coral pillar coral elkhorn coral]
+</code></pre>
+<p>Теперь попробуйте добавить элемент <code>black coral</code> как в разделе массива, используя функцию <code>append()</code> в новом конвертированном срезе:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coralSlice = append(coralSlice, "black coral")
+fmt.Printf("%q\n", coralSlice)
+</code></pre>
+<p>В результате будет выведен срез с добавленным элементом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "foliose coral" "pillar coral" "elkhorn coral" "black coral"]
+</code></pre>
+<p>В одном выражении <code>append()</code> можно добавить несколько элементов:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coralSlice = append(coralSlice, "antipathes", "leptopsammia")
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "foliose coral" "pillar coral" "elkhorn coral" "black coral" "antipathes" "leptopsammia"]
+</code></pre>
+<p>Чтобы объединить два среза также можно использовать выражение <code>append()</code>, но при этом необходимо раскрыть аргумент второго элемента, используя синтаксис расширения <code>...</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">moreCoral := []string{"massive coral", "soft coral"}
+coralSlice = append(coralSlice, moreCoral...)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "foliose coral" "pillar coral" "elkhorn coral" "black coral" "antipathes" "leptopsammia" "massive coral" "soft coral"]
+</code></pre>
+<p>Вы научились добавлять элементы в срез, а теперь мы покажем, как удалять их из срезов.</p>
+
+<h3 id="Удаление-элемента-из-среза">Удаление элемента из среза</h3>
+
+<p>В отличие от других языков, в Go отсутствуют встроенные функции для удаления элементов из среза. Для удаления элементов из среза их нужно вырезать.</p>
+
+<p>Чтобы удалить элемент, нужно выделить в срез элементы до него, затем элементы после него, а затем объединить два новых среза в один срез, не содержащий удаленного элемента.</p>
+
+<p>Если <code>i</code> — индекс удаляемого элемента, формат этого процесса будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code class="code-highlight language-go">slice = append(slice[:i], slice[i+1:]...)
+</code></pre>
+<p>Удалим из среза <code>coralSlice</code> элемент <code>"elkhorn coral"</code>. Этот элемент располагается на позиции индекса <code>3</code>.</p>
+<pre class="code-pre "><code class="code-highlight language-go">coralSlice := []string{"blue coral", "foliose coral", "pillar coral", "elkhorn coral", "black coral", "antipathes", "leptopsammia", "massive coral", "soft coral"}
+
+coralSlice = append(coralSlice[:3], coralSlice[4:]...)
+
+fmt.Printf("%q\n", coralSlice)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "foliose coral" "pillar coral" "black coral" "antipathes" "leptopsammia" "massive coral" "soft coral"]
+</code></pre>
+<p>Теперь элемент на позиции индекса <code>3</code>, строка <code>"elkhorn coral"</code>, больше не находится в срезе <code>coralSlice.</code></p>
+
+<p>Такой же подход можно применить и для удаления диапазона элементов. Допустим, мы хотим удалить не только элемент <code>"elkhorn coral"</code>, но и элементы <code>"black coral"</code> и <code>"antipathes".</code> Для этого мы можем использовать в выражении диапазон:</p>
+<pre class="code-pre "><code class="code-highlight language-go">coralSlice := []string{"blue coral", "foliose coral", "pillar coral", "elkhorn coral", "black coral", "antipathes", "leptopsammia", "massive coral", "soft coral"}
+
+coralSlice = append(coralSlice[:3], coralSlice[6:]...)
+
+fmt.Printf("%q\n", coralSlice)
+</code></pre>
+<p>Этот код убирает из среза индексы <code>3</code>, <code>4</code> и <code>5</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>["blue coral" "foliose coral" "pillar coral" "leptopsammia" "massive coral" "soft coral"]
+</code></pre>
+<p>Теперь вы знаете, как добавлять и удалять элементы среза, и мы перейдем к измерению объема данных, который может храниться в срезе в любой момент времени.</p>
+
+<h3 id="Измерение-емкости-среза-с-помощью-cap">Измерение емкости среза с помощью <code>cap()</code></h3>
+
+<p>Поскольку срезы имеют переменную длину, для определения размера этого типа данных метод <code>len()</code> подходит не очень хорошо. Вместо него лучше использовать функцию <code>cap()</code> для определения емкости слайса. Данная функция показывает, сколько элементов может содержать срез. Емкость определяется объемом памяти, который уже выделен для этого среза.</p>
+
+<p><span class='note'><strong>Примечание:</strong> поскольку длина и емкость массива всегда совпадают, функция <code>cap()</code> не работает с массивами.<br></span></p>
+
+<p>Функция <code>cap()</code> обычно используется для создания среза с заданным числом элементов и заполнения этих элементов с помощью программных методов. Это позволяет предотвратить выделение лишнего объема памяти при использовании команды <code>append()</code> для добавления элементов сверх выделенной емкости.</p>
+
+<p>Допустим, мы хотим составить список чисел от <code>0</code> до <code>3</code>. Мы можем использовать для этого функцию <code>append()</code> в цикле или мы можем заранее выделить срез и использовать функцию <code>cap()</code> в цикле для заполнения значений.</p>
+
+<p>Вначале рассмотрим использование <code>append()</code>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">numbers := []int{}
+for i := 0; i &lt; 4; i++ {
+    numbers = append(numbers, i)
+}
+fmt.Println(numbers)
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[0 1 2 3]
+</code></pre>
+<p>В этом примере мы создали срез, а затем создали цикл <code>for</code> с четырьмя итерациями. Каждая итерация добавляла текущее значение переменной цикла <code>i</code> к индексу среза <code>numbers</code>. Однако это могло повлечь выделение ненужного объема памяти, что могло бы замедлить реализацию программы. При добавлении к пустому срезу при каждом вызове функции append программа проверяет емкость среза. Если при добавлении элемента емкость среза превышает это значение, программа выделяет дополнительную память с учетом этого. При этом возникают дополнительные издержки программы, которые могут замедлить выполнение.</p>
+
+<p>Теперь заполним срез без использования <code>append()</code> посредством выделения определенной длины / емкости:</p>
+<pre class="code-pre "><code class="code-highlight language-go">numbers := make([]int, 4)
+for i := 0; i &lt; cap(numbers); i++ {
+    numbers[i] = i
+}
+
+fmt.Println(numbers)
+
+</code></pre><pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>[0 1 2 3]
+</code></pre>
+<p>В этом примере мы использовали <code>make()</code> для создания среза и предварительно выделили <code>4</code> элемента. Затем мы использовали функцию <code>cap()</code> в цикле для итерации по всем обнуленным элементам, заполняя каждый до достижения выделенной емкости. В каждом цикле мы поместили текущее значение переменной цикла <code>i</code> в индекс среза <code>numbers</code>.</p>
+
+<p>Хотя с функциональной точки зрения использование <code>append()</code> и <code>cap()</code> эквивалентно, в примере с <code>cap()</code> не выделяется лишняя память, которая потребовалась бы при использовании функции <code>append()</code>.</p>
+
+<h3 id="Построение-многомерных-срезов">Построение многомерных срезов</h3>
+
+<p>Также вы можете определять срезы, содержащие в качестве элементов другие срезы, при этом каждый список в скобках содержится также в скобках родительского среза. Такие наборы срезов называются <em>многомерными срезами</em>. Их можно представить как описание многомерных координат. Например, набор из пяти срезов, каждый из которых содержит шесть элементов, можно представить как двухмерную сетку с длиной пять и высотой шесть.</p>
+
+<p>Рассмотрим следующий многомерный срез:</p>
+<pre class="code-pre "><code class="code-highlight language-go">seaNames := [][]string{{"shark", "octopus", "squid", "mantis shrimp"}, {"Sammy", "Jesse", "Drew", "Jamie"}}
+</code></pre>
+<p>Чтобы получить доступ к элементу этого среза, нам нужно использовать несколько индексов, каждый из которых соответствует одному измерению конструкции:</p>
+<pre class="code-pre "><code class="code-highlight language-go">fmt.Println(seaNames[1][0])
+fmt.Println(seaNames[0][0])
+</code></pre>
+<p>В приведенном выше коде мы вначале определяем элемент с индексом <code>0</code> среза с индексом <code>1</code>, а затем указываем элемент с индексом <code>0</code> среза с индексом <code>0</code>. Результат будет выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Sammy
+shark
+</code></pre>
+<p>Далее идут значения индекса для остальных отдельных элементов:</p>
+<pre class="code-pre "><code class="code-highlight language-go">seaNames[0][0] = "shark"
+seaNames[0][1] = "octopus"
+seaNames[0][2] = "squid"
+seaNames[0][3] = "mantis shrimp"
+
+seaNames[1][0] = "Sammy"
+seaNames[1][1] = "Jesse"
+seaNames[1][2] = "Drew"
+seaNames[1][3] = "Jamie"
+</code></pre>
+<p>При работе с многомерными срезами важно помнить, что для доступа к конкретным элементам вложенного среза нужно ссылаться на несколько числовых индексов.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем руководстве вы изучили основы работы с массивами и среза в Go. Вы выполнили несколько упражнений, демонстрирующих отличия между массивами с фиксированной длиной и срезами с переменной длиной, и определили, как эти отличия влияют на ситуативное использование этих структур данных.</p>
+
+<p>Чтобы продолжить изучение структур данных в Go, ознакомьтесь со статьей <a href="https://www.digitalocean.com/community/tutorials/understanding-maps-in-go">Карты в Go</a> или со всей серией <a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-go">статей по программированию на языке Go</a>.</p>

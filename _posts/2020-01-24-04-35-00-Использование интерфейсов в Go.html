@@ -1,0 +1,372 @@
+---
+layout: post
+title: Использование интерфейсов в Go
+network: digitalocean
+date: January 24, 2020 at 04:35AM
+url: https://www.digitalocean.com/community/tutorials/how-to-use-interfaces-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Для разработки гибких и универсальных программ очень важно создавать гибкий, модульный и многоразовый код. Такая модель работы упрощает обслуживание кода, устраняя необходимость вносить одинаковые изменения в разных местах. Конкретный способ достижения цели зависит от языка. Например, <a href="https://en.wikipedia.org/wiki/Inheritance_(object-oriented_programming)"><em>концепция наследования</em></a> представляет собой распространенный подход, используемый в таких языках как Java, C++, C# и другие.</p>
+
+<p>Также разработчики могут добиться тех же целей с помощью <a href="https://en.wikipedia.org/wiki/Object_composition"><em>композиции</em></a>. Композиция — это способ комбинирования объектов или типов данных в более сложные элементы. Go использует этот подход для поддержки многократного использования кода, модульного принципа и гибкости. Интерфейсы в Go дают возможность организовывать сложные конструкции, и если вы научитесь их использовать, вы сможете создавать стандартный код для многоразового использования.</p>
+
+<p>В этой статье мы расскажем о том, как объединять персонализированные типы, имеющие общее поведение, для последующего многократного использования кода. Также мы узнаем, как реализовывать интерфейсы собственных типов так, чтобы они соответствовали интерфейсам, определяемым в других пакетах.</p>
+
+<h2 id="Определение-поведения">Определение поведения</h2>
+
+<p>Использование интерфейсов является одной из базовых реализаций объединения типов. Интерфейс определяет поведение типа. Один из самых часто используемых интерфейсов стандартной библиотеки Go — интерфейс <a href="https://golang.org/pkg/fmt/#Stringer"><code>fmt.Stringer</code></a>:</p>
+<pre class="code-pre "><code class="code-highlight language-go">type Stringer interface {
+    String() string
+}
+</code></pre>
+<p>Первая строка кода определяет <code>тип</code> с именем <code>Stringer</code>. Затем указывается, что это <code>интерфейс</code>. Как и при определении структуры, Go использует фигурные скобки (<code>{}</code>) для определения интерфейса. В отличие от структур, для интерфейсов мы определяем только <em>поведение</em>, то есть «что может делать этот тип».</p>
+
+<p>В случае с интерфейсом <code>Stringer</code> единственным поведением будет метод <code>String()</code>. Этот метод не принимает аргументов и возвращает строку.</p>
+
+<p>Теперь рассмотрим код с поведением <code>fmt.Stringer:</code></p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type Article struct {
+    Title string
+    Author string
+}
+
+func (a Article) String() string {
+    return fmt.Sprintf("The %q article was written by %s.", a.Title, a.Author)
+}
+
+func main() {
+    a := Article{
+        Title: "Understanding Interfaces in Go",
+        Author: "Sammy Shark",
+    }
+    fmt.Println(a.String())
+}
+</code></pre>
+<p>Прежде всего мы создадим новый тип <code>Article</code>. Этот тип имеет поля <code>Title</code> и <code>Author</code>, оба из которых относятся к строковому <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-go">типу данных</a>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+type Article struct {
+    Title string
+    Author string
+}
+...
+</code></pre>
+<p>Далее мы определим <a href="https://www.digitalocean.com/community/tutorials/defining-methods-in-go"><code>метод</code></a> с именем <code>String</code> для типа <code>Article</code>. Метод <code>String</code> будет возвращать строку, представляющую тип <code>Article</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+func (a Article) String() string {
+    return fmt.Sprintf("The %q article was written by %s.", a.Title, a.Author)
+}
+...
+</code></pre>
+<p>Затем в <a href="https://www.digitalocean.com/community/tutorials/how-to-define-and-call-functions-in-go">функции</a> <code>main</code> мы создадим экземпляр типа <code>Article</code> и назначим его для <a href="https://www.digitalocean.com/community/tutorials/how-to-use-variables-and-constants-in-go">переменной</a> с именем <code>a</code>. Мы зададим значение <code>"Understanding Interfaces in Go"</code> для поля <code>Title</code> и значение <code>"Sammy Shark"</code> для поля <code>Author</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+a := Article{
+    Title: "Understanding Interfaces in Go",
+    Author: "Sammy Shark",
+}
+...
+</code></pre>
+<p>Затем мы выведем результат метода <code>String</code> посредством вызова <code>fmt.Println</code> и передачи результата вызова метода <code>a.String()</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+fmt.Println(a.String())
+</code></pre>
+<p>После запуска программы вы увидите следующее:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>The "Understanding Interfaces in Go" article was written by Sammy Shark.
+</code></pre>
+<p>Мы пока еще не использовали интерфейс, но создали тип, имеющий поведение. Это поведение соответствовало интерфейсу <code>fmt.Stringer</code>. Теперь посмотрим, как можно использовать это поведение для многократного использования кода в будущем.</p>
+
+<h2 id="Определение-интерфейса">Определение интерфейса</h2>
+
+<p>Мы определили тип с желаемым поведением, и теперь посмотрим, как можно использовать это поведение.</p>
+
+<p>Предварительно посмотрим, что нужно делать, если мы хотим вызвать метод <code>String</code> из типа <code>Article</code> в функции:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre plain"><code langs="">package main
+
+import "fmt"
+
+type Article struct {
+    Title string
+    Author string
+}
+
+func (a Article) String() string {
+    return fmt.Sprintf("The %q article was written by %s.", a.Title, a.Author)
+}
+
+func main() {
+    a := Article{
+        Title: "Understanding Interfaces in Go",
+        Author: "Sammy Shark",
+    }
+    <span class="highlight">Print(a)</span>
+}
+
+<span class="highlight">func Print(a Article) {</span>
+    <span class="highlight">fmt.Println(a.String())</span>
+<span class="highlight">}</span>
+</code></pre>
+<p>В этом коде мы добавляем новую функцию <code>Print</code>, использующую <code>Article</code> в качестве аргумента. Функция <code>Print</code> просто вызывает метод <code>String</code>. Поэтому мы можем определить интерфейс для передачи в функцию:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre plain"><code langs="">package main
+
+import "fmt"
+
+type Article struct {
+    Title string
+    Author string
+}
+
+func (a Article) String() string {
+    return fmt.Sprintf("The %q article was written by %s.", a.Title, a.Author)
+}
+
+<span class="highlight">type Stringer interface {</span>
+    <span class="highlight">String() string</span>
+<span class="highlight">}</span>
+
+func main() {
+    a := Article{
+        Title: "Understanding Interfaces in Go",
+        Author: "Sammy Shark",
+    }
+    Print(a)
+}
+
+func Print(<span class="highlight">s Stringer</span>) {
+    fmt.Println(<span class="highlight">s.String()</span>)
+}
+</code></pre>
+<p>Здесь мы создали интерфейс с именем <code>Stringer</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+type Stringer interface {
+    String() string
+}
+...
+</code></pre>
+<p>Интерфейс <code>Stringer</code> имеет только один метод с именем <code>String()</code>, и этот метод возвращает <code>строку</code>. <a href="https://www.digitalocean.com/community/tutorials/defining-methods-in-go">Метод</a> — это специальная функция, относящаяся к определенному типу в Go. В отличие от функции, метод можно вызвать только из экземпляра типа, для которого он определен.</p>
+
+<p>Затем мы обновим сигнатуру метода <code>Print</code> для использования <code>String</code>er, а не конкретного типа <code>Article</code>. Поскольку компилятор знает, что интерфейс <code>Stringer</code> определяет метод <code>String</code>, он будет принимать только типы, для которых также определен метод <code>String</code>.</p>
+
+<p>Теперь мы можем использовать метод <code>Print</code> с любыми типами, соответствующими интерфейсу <code>Stringer</code>. Для демонстрации этого создадим еще один тип:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre plain"><code langs="">package main
+
+import "fmt"
+
+type Article struct {
+    Title  string
+    Author string
+}
+
+func (a Article) String() string {
+    return fmt.Sprintf("The %q article was written by %s.", a.Title, a.Author)
+}
+
+<span class="highlight">type Book struct {</span>
+    <span class="highlight">Title  string</span>
+    <span class="highlight">Author string</span>
+    <span class="highlight">Pages  int</span>
+<span class="highlight">}</span>
+
+<span class="highlight">func (b Book) String() string {</span>
+    <span class="highlight">return fmt.Sprintf("The %q book was written by %s.", b.Title, b.Author)</span>
+<span class="highlight">}</span>
+
+type Stringer interface {
+    String() string
+}
+
+func main() {
+    a := Article{
+        Title:  "Understanding Interfaces in Go",
+        Author: "Sammy Shark",
+    }
+    Print(a)
+
+    <span class="highlight">b := Book{</span>
+        <span class="highlight">Title:  "All About Go",</span>
+        <span class="highlight">Author: "Jenny Dolphin",</span>
+        <span class="highlight">Pages:  25,</span>
+    <span class="highlight">}</span>
+    <span class="highlight">Print(b)</span>
+}
+
+func Print(s Stringer) {
+    fmt.Println(s.String())
+}
+</code></pre>
+<p>Теперь мы добавили второй тип с именем <code>Book</code>. Для него также определен метод <code>String</code>. Это означает, что он также соответствует интерфейсу <code>Stringer</code>. Поэтому мы можем отправить его в нашу функцию <code>Print</code>:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>The "Understanding Interfaces in Go" article was written by Sammy Shark.
+The "All About Go" book was written by Jenny Dolphin. It has 25 pages.
+</code></pre>
+<p>Итак, мы продемонстрировали использование одиночного интерфейса. Однако для интерфейса может быть определено несколько поведений. Далее мы посмотрим, как можно сделать интерфейсы более универсальными посредством декларирования дополнительных методов.</p>
+
+<h2 id="Различные-варианты-поведения-в-интерфейсе">Различные варианты поведения в интерфейсе</h2>
+
+<p>Программирование на Go предусматривает написание кратких типов и их объединение в большие и сложные типы. То же самое относится и к объединению интерфейсов. Для начала мы определим только один интерфейс. Мы определим две формы, <code>Circle</code> и <code>Square</code>, и обе они будут определять метод с именем <code>Area</code>. Этот метод будет возвращать геометрическую площадь соответствующих фигур:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "fmt"
+    "math"
+)
+
+type Circle struct {
+    Radius float64
+}
+
+func (c Circle) Area() float64 {
+    return math.Pi * math.Pow(c.Radius, 2)
+}
+
+type Square struct {
+    Width  float64
+    Height float64
+}
+
+func (s Square) Area() float64 {
+    return s.Width * s.Height
+}
+
+type Sizer interface {
+    Area() float64
+}
+
+func main() {
+    c := Circle{Radius: 10}
+    s := Square{Height: 10, Width: 5}
+
+    l := Less(c, s)
+    fmt.Printf("%+v is the smallest\n", l)
+}
+
+func Less(s1, s2 Sizer) Sizer {
+    if s1.Area() &lt; s2.Area() {
+        return s1
+    }
+    return s2
+}
+</code></pre>
+<p>Поскольку каждый тип декларирует метод <code>Area</code>, мы можем создать интерфейс, определяющий это поведение. Мы создадим следующий интерфейс <code>Sizer</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+type Sizer interface {
+    Area() float64
+}
+...
+</code></pre>
+<p>Затем мы определим функцию <code>Less</code>, которая берет два значения <code>Sizer</code> и возвращает наименьшее:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+func Less(s1, s2 Sizer) Sizer {
+    if s1.Area() &lt; s2.Area() {
+        return s1
+    }
+    return s2
+}
+...
+</code></pre>
+<p>Обратите внимание, что мы не только принимаем оба аргумента как тип <code>Sizer</code>, но и возвращаем результат как тип <code>Sizer</code>. Это означает, что мы больше не возвращаем тип <code>Square</code> или тип <code>Circle</code>, но возвращаем интерфейс <code>Sizer</code>.</p>
+
+<p>Наконец, мы распечатываем объект с наименьшей площадью:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{Width:5 Height:10} is the smallest
+</code></pre>
+<p>Добавим еще одно поведение для каждого типа. Теперь мы добавим метод <code>String()</code>, который возвращает строку. Это обеспечит соответствие интерфейса <code>fmt.Stringer</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre plain"><code langs="">package main
+
+import (
+    "fmt"
+    "math"
+)
+
+type Circle struct {
+    Radius float64
+}
+
+func (c Circle) Area() float64 {
+    return math.Pi * math.Pow(c.Radius, 2)
+}
+
+<span class="highlight">func (c Circle) String() string {</span>
+    <span class="highlight">return fmt.Sprintf("Circle {Radius: %.2f}", c.Radius)</span>
+<span class="highlight">}</span>
+
+type Square struct {
+    Width  float64
+    Height float64
+}
+
+func (s Square) Area() float64 {
+    return s.Width * s.Height
+}
+
+<span class="highlight">func (s Square) String() string {</span>
+    <span class="highlight">return fmt.Sprintf("Square {Width: %.2f, Height: %.2f}", s.Width, s.Height)</span>
+<span class="highlight">}</span>
+
+type Sizer interface {
+    Area() float64
+}
+
+type Shaper interface {
+    Sizer
+    fmt.Stringer
+}
+
+func main() {
+    c := Circle{Radius: 10}
+    <span class="highlight">PrintArea(c)</span>
+
+    s := Square{Height: 10, Width: 5}
+    <span class="highlight">PrintArea(s)</span>
+
+    l := Less(c, s)
+    fmt.Printf("%v is the smallest\n", l)
+
+}
+
+func Less(s1, s2 Sizer) Sizer {
+    if s1.Area() &lt; s2.Area() {
+        return s1
+    }
+    return s2
+}
+
+<span class="highlight">func PrintArea(s Shaper) {</span>
+    <span class="highlight">fmt.Printf("area of %s is %.2f\n", s.String(), s.Area())</span>
+<span class="highlight">}</span>
+</code></pre>
+<p>Поскольку типы <code>Circle</code> и <code>Square</code> реализуют методы <code>Area</code> и <code>String</code>, мы можем создать другой интерфейс, описывающий более широкий набор поведений. Для этого мы создадим интерфейс с именем <code>Shaper</code>. Мы составим его из интерфейса <code>Sizer</code> и интерфейса <code>fmt.Stringer</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+type Shaper interface {
+    Sizer
+    fmt.Stringer
+}
+...
+</code></pre>
+<p><span class='note'><strong>Примечание:</strong> принято присваивать интерфейсам имена, заканчивающиеся на <code>er</code>, например, <code>fmt.Stringer</code>, <code>io.Writer</code> и т. д. Поэтому мы назвали наш интерфейс <code>Shaper,</code> а не <code>Shape</code>.<br></span></p>
+
+<p>Теперь мы можем создать функцию <code>PrintArea</code>, которая принимает <code>Shaper</code> в качестве аргумента. Это означает, что мы можем вызывать оба метода для переданного значения методов <code>Area</code> и <code>String</code>:</p>
+<div class="code-label " title="main.go">main.go</div><pre class="code-pre "><code class="code-highlight language-go">...
+func PrintArea(s Shaper) {
+    fmt.Printf("area of %s is %.2f\n", s.String(), s.Area())
+}
+</code></pre>
+<p>Если мы запустим программу, результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>area of Circle {Radius: 10.00} is 314.16
+area of Square {Width: 5.00, Height: 10.00} is 50.00
+Square {Width: 5.00, Height: 10.00} is the smallest
+</code></pre>
+<p>Мы увидели, как можно создавать небольшие интерфейсы и составлять из них более крупные интерфейсы по мере необходимости. Хотя мы могли начать с большого интерфейса и передать его во все наши функции, более оптимальным считается отправлять функции только минимальный требуемый интерфейс. В результате обычно получается более ясный код, поскольку все, что принимает конкретный небольшой интерфейс, работает исключительно с заданным поведением.</p>
+
+<p>Например, если мы передадим <code>Shaper</code> в функцию <code>Less</code>, мы можем предполагать, что она вызовет методы <code>Area</code> и <code>String</code>. Но поскольку мы намереваемся вызывать только метод <code>Area</code>, это делает функцию <code>Less</code> прозрачной, поскольку мы знаем, что она будет вызывать только метод <code>Area</code> для любого переданного аргумента.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Мы увидели, как создание небольших интерфейсов и их объединение в более крупные интерфейсы позволяет передавать в функцию или метод только необходимое. Также мы узнали, что можем составлять наши интерфейсы из других интерфейсов, включая определенные в других пакетах, а не только в наших пакетах.</p>
+
+<p>Если вы хотите узнать больше о языке программирования Go, ознакомьтесь с нашей <a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-go">серией статей о программировании на языке Go</a>.</p>

@@ -1,0 +1,298 @@
+---
+layout: post
+title: Использование тегов структур в Go
+network: digitalocean
+date: January 24, 2020 at 04:35AM
+url: https://www.digitalocean.com/community/tutorials/how-to-use-struct-tags-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Структуры используются для сбора различных элементов информации внутри одной единицы. Эти <a href="https://www.digitalocean.com/community/tutorials/defining-structs-in-go">наборы информации</a> используются для описания концепций более высокого уровня. Так, <code>адрес</code> состоит из <code>области</code>, <code>города</code>, <code>улицы</code>, <code>почтового индекса</code> и т. д. Когда вы считываете эту информацию из баз данных, API или других подобных систем, вы можете использовать теги структур для контроля присвоения этой информации в поля структуры. Структурные теги — это небольшие элементы метаданных, прикрепленные к полям структуры. Они содержат инструкции для другого кода Go, который работает с этой структурой.</p>
+
+<h2 id="Как-выглядит-структурный-тег">Как выглядит структурный тег?</h2>
+
+<p>Структурные теги в Go представляют собой аннотации, которые отображаются после типа в декларации структуры Go. Каждый тег состоит из коротких строк, которым назначены определенные значения.</p>
+
+<p>Структурный тег выделяется символами апострофа &ldquo;&rdquo;` и выглядит следующим образом:</p>
+<pre class="code-pre "><code class="code-highlight language-go">type User struct {
+    Name string `example:"name"`
+}
+</code></pre>
+<p>Другой код Go может оценивать структуры и извлекать значения, назначенные определенным ключам, которые он запрашивает. Структурные теги не влияют на работу кода без кода, который их использует.</p>
+
+<p>С помощью этого примера вы увидите, как выглядят структурные теги, и как они не действуют без кода из другого пакета.</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import "fmt"
+
+type User struct {
+    Name string `example:"name"`
+}
+
+func (u *User) String() string {
+    return fmt.Sprintf("Hi! My name is %s", u.Name)
+}
+
+func main() {
+    u := &amp;User{
+        Name: "Sammy",
+    }
+
+    fmt.Println(u)
+}
+</code></pre>
+<p>Результат будет выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hi! My name is Sammy
+</code></pre>
+<p>В этом примере определяется тип <code>User</code> с полем <code>Name</code>. Для поля <code>Name</code> назначен структурный тег <code>example:"name"</code>. Мы ссылаемся на этот тег как на &ldquo;структурный тег example&rdquo;, поскольку в качестве ключа в нем используется слово example. Структурный тег <code>example</code> имеет значение <code>"name"</code> для поля <code>Name</code>. Для типа <code>User</code> мы также определим метод <code>String()</code>, который требуется для интерфейса <code>fmt.Stringer</code>. Он вызывается автоматически при передаче типа в <code>fmt.Println</code> и позволяет нам вывести хорошо отформатированную версию нашей структуры.</p>
+
+<p>В теле <code>main</code> мы создадим новый экземпляр типа <code>User</code> и передадим его в <code>fmt.Println</code>. Хотя в структуре имеется структурный тег, он не влияет на выполнение этого кода Go. Он выполняется точно так же, как если бы структурного тега не было.</p>
+
+<p>Чтобы использовать структурные теги для каких-либо целей, необходимо написать другой код Go, который будет запрашивать их во время исполнения. В стандартной библиотеке имеются пакеты, которые используют структурные теги в своей работе. Наиболее популярный из них — пакет <code>encoding/json</code>.</p>
+
+<h2 id="Кодировка-json">Кодировка JSON</h2>
+
+<p>JavaScript Object Notation (JSON) представляет собой текстовый формат кодирования наборов данных, организованных по различным ключам строк. Он обычно используется для обмена данными между разными программами, поскольку имеет достаточно простой формат для расшифровки библиотеками многих разных языков. Ниже приведен пример JSON:</p>
+<pre class="code-pre "><code class="code-highlight language-json">{
+  "language": "Go",
+  "mascot": "Gopher"
+}
+</code></pre>
+<p>Этот объект JSON содержит два ключа, <code>language</code> и <code>mascot</code>. За этими ключами идут связанные с ними значения. Ключ <code>language</code> имеет значение <code>Go</code>, а ключу <code>mascot</code> присвоено значение <code>Gopher</code>.</p>
+
+<p>Кодировщик JSON в стандартной библиотеке использует структурные теги как аннотацию, указывая кодировщику, какие имена вы хотите присвоить полям в выводимых JSON результатах. Эти механизмы кодировки и декодировки JSON содержатся в <a href="https://godoc.org/encoding/json">пакете</a> <code>encoding/json</code>.</p>
+
+<p>В этом примере показана кодировка JSON без структурных тегов:</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+type User struct {
+    Name          string
+    Password      string
+    PreferredFish []string
+    CreatedAt     time.Time
+}
+
+func main() {
+    u := &amp;User{
+        Name:      "Sammy the Shark",
+        Password:  "fisharegreat",
+        CreatedAt: time.Now(),
+    }
+
+    out, err := json.MarshalIndent(u, "", "  ")
+    if err != nil {
+        log.Println(err)
+        os.Exit(1)
+    }
+
+    fmt.Println(string(out))
+}
+</code></pre>
+<p>Этот код распечатывает следующее:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "Name": "Sammy the Shark",
+  "Password": "fisharegreat",
+  "CreatedAt": "2019-09-23T15:50:01.203059-04:00"
+}
+</code></pre>
+<p>Мы определили структурный тег, описывающий пользователя с помощью полей, включая имя, пароль и время создания пользователя. В функции <code>main</code> мы создаем экземпляр этого пользователя, предоставляя значения для всех полей, кроме <code>PreferredFish</code> (Sammy нравятся все рыбы). Затем мы передаем экземпляр <code>User</code> в функцию <code>json.MarshalIndent</code>. Это позволяет нам просматривать результаты выполнения JSON в удобном виде без внешнего инструмента форматирования. Этот вызов можно заменить на <code>json.Marshal(u)</code> для получения JSON без дополнительных пробелов. Два дополнительных аргумента <code>json.MarshalIndent</code> определяют префикс результатов (который мы пропустили при выводе пустой строки) и символы отступа, в данном случае — два символа пробела. Любые ошибки <code>json.MarshalIndent</code> регистрируются, и программа завершает работу с помощью <code>os.Exit(1)</code>. Наконец, мы кастуем <code>[]byte</code>, возвращаемый <code>json.MarshalIndent,</code> в <code>string</code>, а затем передаем эту строку в функцию <code>fmt.Println</code> для печати на терминале.</p>
+
+<p>Поля структуры соответствуют присвоенным им именам. Это не обычный стиль JSON, где используются названия полей, где первая буква каждого слова, кроме первого, — заглавная («верблюжий стиль»). Вы можете изменить имена полей в соответствии с «верблюжьим стилем», как показано в следующем примере. Как видно при выполнении этого образца, это не сработает, поскольку желаемые имена полей противоречат правилам Go в отношении имен экспортируемых полей.</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+type User struct {
+    name          string
+    password      string
+    preferredFish []string
+    createdAt     time.Time
+}
+
+func main() {
+    u := &amp;User{
+        name:      "Sammy the Shark",
+        password:  "fisharegreat",
+        createdAt: time.Now(),
+    }
+
+    out, err := json.MarshalIndent(u, "", "  ")
+    if err != nil {
+        log.Println(err)
+        os.Exit(1)
+    }
+
+    fmt.Println(string(out))
+}
+</code></pre>
+<p>В результате выводится следующее:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{}
+</code></pre>
+<p>В этой версии мы изменили имена полей в соответствии с «верблюжьим стилем». Теперь <code>Name</code> соответствует <code>name</code>, <code>Password</code> соответствует <code>password</code>, а <code>CreatedAt</code> соответствует <code>createdAt</code>. В теле <code>main</code> мы изменили инициациализацию структуры для использования новых имен. Затем мы передаем структуру в функцию <code>json.MarshalIndent</code>, как и ранее. Сейчас в результате выводится пустой объект JSON, <code>{}</code>.</p>
+
+<p>Для правильного отображения полей в «верблюжьем стиле» требуется, чтобы первый символ был в нижнем регистре. Хотя JSON не важны имена полей, для Go они имеют значение, поскольку от этого зависит видимость полей вне пакета. Поскольку пакет <code>encoding/json</code> является отдельным пакетом от используемого нами пакета <code>main</code>, первый символ его имени должен быть в верхнем регистре, чтобы он был видимым для <code>encoding/json</code>. Похоже мы в безвыходном положении, и нам нужен способ передать кодировщику JSON желаемое имя этого поля.</p>
+
+<h3 id="Использование-структурных-тегов-для-управления-кодировкой">Использование структурных тегов для управления кодировкой</h3>
+
+<p>Вы можете изменить предыдущий пример так, чтобы экспортируемые поля правильно кодировались с именами полей в «верблюжьем стиле». Для этого мы аннотируем каждое поле структурным тегом. Структурный тег, распознаваемый <code>encoding/json</code>, имеет ключ <code>json</code> и значение, определяющее выводимый результат. Если мы поместим имена полей в «верблюжьем стиле» в качестве значения ключа <code>json</code>, кодировщик будет использовать эти имена. В данном примере решена проблема, наблюдавшаяся в предыдущих двух попытках:</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+type User struct {
+    Name          string    `json:"name"`
+    Password      string    `json:"password"`
+    PreferredFish []string  `json:"preferredFish"`
+    CreatedAt     time.Time `json:"createdAt"`
+}
+
+func main() {
+    u := &amp;User{
+        Name:      "Sammy the Shark",
+        Password:  "fisharegreat",
+        CreatedAt: time.Now(),
+    }
+
+    out, err := json.MarshalIndent(u, "", "  ")
+    if err != nil {
+        log.Println(err)
+        os.Exit(1)
+    }
+
+    fmt.Println(string(out))
+}
+</code></pre>
+<p>Результат будет выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "name": "Sammy the Shark",
+  "password": "fisharegreat",
+  "preferredFish": null,
+  "createdAt": "2019-09-23T18:16:17.57739-04:00"
+}
+</code></pre>
+<p>Мы снова изменили имена полей так, чтобы сделать их видимыми для других пакетов. Для этого мы сделали заглавными первые буквы имен этих полей. Однако в этот раз мы добавили структурные теги в форме <code>json:"name"</code>, где <code>"name"</code> — имя, которое <code>json.MarshalIndent</code> должен использовать при печати нашей структуры в формате JSON.</p>
+
+<p>Мы успешно и правильно отформатировали код JSON. Однако следует отметить, что поля для некоторых значений были распечатаны, хотя мы и не задавали эти значения. Если вы захотите, кодировщик JSON может ликвидировать эти поля.</p>
+
+<h3 id="Удаление-пустых-полей-json">Удаление пустых полей JSON</h3>
+
+<p>Чаще всего мы не хотим выводить поля, которые не заданы в JSON. Поскольку все типы Go имеют заданное по умолчанию «нулевое значение», пакету <code>encoding/json</code> требуется дополнительная информация, чтобы он считал поле не заданным, если оно имеет это нулевое значение. В части значения любого структурного тега <code>json</code> вы можете задать суффикс желаемого имени поля с опцией <code>,omitempty</code>, чтобы кодировщик JSON не выводил это поле, если для него задано нулевое значение. В следующем примере мы устранили заметную в предыдущих примерах проблему вывода пустых полей:</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+type User struct {
+    Name          string    `json:"name"`
+    Password      string    `json:"password"`
+    PreferredFish []string  `json:"preferredFish,omitempty"`
+    CreatedAt     time.Time `json:"createdAt"`
+}
+
+func main() {
+    u := &amp;User{
+        Name:      "Sammy the Shark",
+        Password:  "fisharegreat",
+        CreatedAt: time.Now(),
+    }
+
+    out, err := json.MarshalIndent(u, "", "  ")
+    if err != nil {
+        log.Println(err)
+        os.Exit(1)
+    }
+
+    fmt.Println(string(out))
+}
+</code></pre>
+<p>Результат выполнения будет выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "name": "Sammy the Shark",
+  "password": "fisharegreat",
+  "createdAt": "2019-09-23T18:21:53.863846-04:00"
+}
+</code></pre>
+<p>Мы изменили предыдущие примеры так, что теперь поле <code>PreferredFish</code> имеет структурный тег <code>json:"preferredFish,omitempty"</code>. Благодаря опции <code>,omitempty</code> кодировщик JSON пропускает это поле, поскольку мы не задаем его. В предыдущих примерах результатом было значение <code>null</code>.</p>
+
+<p>Теперь результаты выглядят намного лучше, однако мы по прежнему распечатываем пароль пользователя. Пакет <code>encoding/json</code> дает нам еще один способ полностью игнорировать конфиденциальные поля.</p>
+
+<h3 id="Игнорирование-конфиденциальных-полей">Игнорирование конфиденциальных полей</h3>
+
+<p>Некоторые поля необходимо экспортировать из структур, чтобы другие пакеты могли правильно взаимодействовать с типом. Однако эти поля могут носить конфиденциальный характер, и в данном случае мы хотим, чтобы кодировщик JSON полностью игнорировал поле—даже если оно задано. Для этого используется специальное значение <code>-</code> в качестве аргумента для структурного тега <code>json:</code>.</p>
+
+<p>В этом примере мы исправили проблему раскрытия пароля пользователя.</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+)
+
+type User struct {
+    Name      string    `json:"name"`
+    Password  string    `json:"-"`
+    CreatedAt time.Time `json:"createdAt"`
+}
+
+func main() {
+    u := &amp;User{
+        Name:      "Sammy the Shark",
+        Password:  "fisharegreat",
+        CreatedAt: time.Now(),
+    }
+
+    out, err := json.MarshalIndent(u, "", "  ")
+    if err != nil {
+        log.Println(err)
+        os.Exit(1)
+    }
+
+    fmt.Println(string(out))
+}
+</code></pre>
+<p>При запуске этого примера вы увидите следующие результаты:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>{
+  "name": "Sammy the Shark",
+  "createdAt": "2019-09-23T16:08:21.124481-04:00"
+}
+</code></pre>
+<p>Единственное изменение в этом примере по сравнению с предыдущими заключается в том, что в поле пароля теперь используется специальное значение <code>"-"</code> для структурного тега <code>json:</code>. В результатах в этом примере мы видим, что поле <code>password</code> больше не отображается.</p>
+
+<p>Эти возможности пакета <code>encoding/json</code>, <code>,omitempty</code> и <code>"-"</code> не являются стандартными. Действия пакета со значениями структурного тега зависят от реализации. Поскольку пакет <code>encoding/json</code> является частью стандартной библиотеки, в других пакетах эти возможности также реализованы стандартным образом. Однако важно ознакомиться с документацией по любым сторонним пакетам, использующим теги структуры, чтобы узнать, что поддерживается, а что нет.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Структурные теги дают мощные возможности улучшения функциональности кода, работающего с вашими структурами. Многие стандартные библиотеки и сторонние пакеты поддерживают индивидуальные настройки с помощью структурных тегов. Их эффективное использование в коде поддерживает персонализацию поведения, а также в них кратко документируется использование этих полей будущими разработчиками.</p>

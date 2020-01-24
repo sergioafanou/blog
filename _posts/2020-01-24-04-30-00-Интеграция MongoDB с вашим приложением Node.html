@@ -1,0 +1,807 @@
+---
+layout: post
+title: Интеграция MongoDB с вашим приложением Node
+network: digitalocean
+date: January 24, 2020 at 04:30AM
+url: https://www.digitalocean.com/community/tutorials/how-to-integrate-mongodb-with-your-node-application-ru
+image: https://assets.digitalocean.com/articles/node_mongo/shark_added.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>При работе с <a href="https://nodejs.org/">Node.js</a> вы можете столкнуться с ситуацией, когда вы разрабатываете проект, который будет сохранять и запрашивать данные. В данном случае вам нужно будет выбрать решение для базы данных, которое будет отвечать характеристикам данных приложения и типов запросов.</p>
+
+<p>В этом обучающем руководстве вы будете интегрировать базу данных <a href="https://www.mongodb.com/">MongoDB</a> с существующим приложением Node. <a href="https://www.digitalocean.com/community/tutorials/digitalocean-community-glossary#nosql">NoSQL базы данных</a>, такие как MongoDB, могут быть полезными, если список ваших требований для данных включают масштабируемость и гибкость. MongoDB отлично интегрируется с Node, поскольку она предназначена для асинхронной работы с объектами <a href="https://www.digitalocean.com/community/tutorials/an-introduction-to-json">JSON</a>.</p>
+
+<p>Для интеграции MongoDB с вашим проектом вы будете использовать <em>Object Document Mapper</em> (ODM) <a href="https://mongoosejs.com/">Mongoose</a> для создания схем и моделей данных вашего приложения. Это позволит вам организовать код приложения в соответствии с архитектурным шаблоном <a href="https://en.wikipedia.org/wiki/Model%E2%80%93view%E2%80%93controller"><em>модель-представление-контроллер</em> (MVC)</a>, который позволяет отделить логику обработки вводимых пользователей данных и логику структурирования данных и их отображения для пользователя. Использование такого шаблона может упрощать будущие тестирование и разработку, реализуя разделение проблем в базе кода.</p>
+
+<p>После прохождения руководства у вас будет рабочее приложение с информацией об акулах, которое будет принимать вводимые пользователем данные об их любимых акулах и отображать результаты в браузере:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_added.png" alt="Вывод акулы"></p>
+
+<h2 id="Предварительные-требования">Предварительные требования</h2>
+
+<ul>
+<li>Локальный компьютер или сервер для разработки на базе Ubuntu 18.04, а также пользователь без прав <code>root с привилегиями sudo</code> и активный брандмауэр. Дополнительные инструкции по настройке сервера на базе Ubuntu 18.04 см. в <a href="https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-18-04">руководстве по начальной настройке сервера</a>.</li>
+<li>Node.js и <a href="https://www.npmjs.com/">npm</a>, установленные на компьютере или сервере согласно <a href="https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-ubuntu-18-04#installing-using-a-ppa">этим инструкциям по установке с помощью PPA под управлением NodeSource</a>.</li>
+<li>MongoDB, установленная на компьютере или сервере согласно шагу 1 руководства <a href="https://www.digitalocean.com/community/tutorials/how-to-install-mongodb-on-ubuntu-18-04">Установка MongoDB в Ubuntu 18.04</a>.</li>
+</ul>
+
+<h2 id="Шаг-1-—-Создание-пользователя-mongo">Шаг 1 — Создание пользователя Mongo</h2>
+
+<p>Прежде чем мы начнем работу с кодом приложения, нам нужно будет создать административного пользователя, который будет иметь доступ к базе данных приложения. Этот пользователь будет иметь административные права в любой базе данных, что предоставит вам необходимую гибкость при переключении и создании новых баз данных при необходимости.</p>
+
+<p>Во-первых, проверьте, что MongoDB запущена на вашем сервере:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo systemctl status mongodb
+</li></ul></code></pre>
+<p>Следующий вывод показывает, что MongoDB запущена:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>● mongodb.service - An object/document-oriented database
+   Loaded: loaded (/lib/systemd/system/mongodb.service; enabled; vendor preset: enabled)
+   Active: <span class="highlight">active (running)</span> since Thu 2019-01-31 21:07:25 UTC; 21min ago
+...
+</code></pre>
+<p>Далее откройте командную строку Mongo для создания вашего пользователя:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mongo
+</li></ul></code></pre>
+<p>После этого вы будете должны попасть в командную строку администратора:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>MongoDB shell version v3.6.3
+connecting to: mongodb://127.0.0.1:27017
+MongoDB server version: 3.6.3
+...
+&gt;
+</code></pre>
+<p>При открытии командной строки вы увидите ряд административных предупреждений о том, что вам предоставляется неограниченный доступ к базе данных <code>admin</code>. Дополнительную информацию об ограничении такого доступа см. в руководстве <a href="https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-mongodb-on-ubuntu-16-04">«Установка и обеспечение безопасности MongoDB на Ubuntu 16.04»</a>, которая будет полезна вам при переходе к финальной настройке.</p>
+
+<p>А сейчас вы можете воспользоваться своим доступом к базе данных <code>admin</code> для создания пользователя с привилегиями <a href="https://docs.mongodb.com/manual/reference/built-in-roles/#userAdminAnyDatabase"><code>userAdminAnyDatabase</code></a>, которые позволят получать защищенный паролем доступ к базам данных вашего приложения.</p>
+
+<p>в командной строке укажите, что вы хотите использовать базу данных <code>admin</code> для создания вашего пользователя:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">use admin
+</li></ul></code></pre>
+<p>Далее создайте роль и пароль, добавив имя пользователя и пароль с помощью команды <code>db.createUser</code>. Когда вы введете эту команду, командная строка будет добавлять три точки перед каждой строкой, пока работа команды не будет завершена. Обязательно замените пользователя и пароль, предоставленные здесь, на ваши имя пользователя и пароль:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">db.createUser(
+</li><li class="line" prefix="&gt;">  {
+</li><li class="line" prefix="&gt;">    user: "<span class="highlight">sammy</span>",
+</li><li class="line" prefix="&gt;">    pwd: "<span class="highlight">your_password</span>",
+</li><li class="line" prefix="&gt;">    roles: [ { role: "userAdminAnyDatabase", db: "admin" } ]
+</li><li class="line" prefix="&gt;">  }
+</li><li class="line" prefix="&gt;">)
+</li></ul></code></pre>
+<p>В результате этих действий будет создана запись для пользователя <code><span class="highlight">sammy</span></code> в базе данных <code>admin</code>. Имя пользователя, которое вы выбрали, и база данных <code>admin</code> будут служить идентификаторами для вашего пользователя.</p>
+
+<p>Вывод для всего процесса будет выглядеть следующим образом, включая сообщение о том, что ввод был выполнен успешно:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>&gt; db.createUser(
+...  {
+...    user: "<span class="highlight">sammy</span>",
+...    pwd: "<span class="highlight">your_password</span>",
+...    roles: [ { role: "userAdminAnyDatabase", db: "admin" } ]
+...  }
+...)
+Successfully added user: {
+        "user" : "<span class="highlight">sammy</span>",
+        "roles" : [
+                {
+                        "role" : "userAdminAnyDatabase",
+                        "db" : "admin"
+                }
+        ]
+}
+</code></pre>
+<p>После создания вашего пользователя и пароля вы можете закрыть командную строку Mongo:</p>
+<pre class="code-pre custom_prefix"><code langs=""><ul class="prefixed"><li class="line" prefix="&gt;">exit
+</li></ul></code></pre>
+<p>Теперь, когда вы создали пользователя для базы данных, вы можете перейти к клонированию кода начального проекта и добавлению библиотеки Mongoose, которая позволит вам реализовать схемы и модели для коллекций в ваших базах данных.</p>
+
+<h2 id="Шаг-2-—-Добавление-информации-о-mongoose-и-базе-данных-в-проект">Шаг 2 — Добавление информации о Mongoose и базе данных в проект</h2>
+
+<p>Нашими следующими действия будут клонирование начального кода приложения и добавление в проект информации о Mongoose и нашей базе данных MongoDB.</p>
+
+<p>В корневой директории пользователя без прав root клонируйте репозиторий <a href="https://github.com/do-community/nodejs-image-demo"><code>nodejs-image-demo</code></a> из <a href="https://github.com/do-community">учетной записи DigitalOcean на GitHub</a>. Этот репозиторий содержит код настройки, описанной в <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker">руководстве Сборка приложения Node.js с помощью Docker</a>.</p>
+
+<p>Клонируйте репозиторий в директорию с именем <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">git clone https://github.com/do-community/nodejs-image-demo.git <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Перейдите в директорию <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cd  <span class="highlight">node_project</span>
+</li></ul></code></pre>
+<p>Прежде чем изменить код проекта, давайте посмотрим на структуру проекта с помощью команды <code>tree</code>.</p>
+
+<span class='note'><p>
+<strong>Подсказка:</strong> <code>tree</code> — это полезная команда для просмотра структур файлов и каталогов из командной строки. Для установки вы можете использовать следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo apt install tree
+</li></ul></code></pre>
+<p>Для ее использования перейдите в заданную директорию с помощью команды <code>cd</code> и введите <code>tree</code>. Также вы можете указать путь для начальной точки с помощью команды:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree /home/<span class="highlight">sammy</span>/<span class="highlight">sammys-project</span>
+</li></ul></code></pre>
+<p></p></span>
+
+<p>Введите следующее для просмотра директории <code><span class="highlight">node_project</span></code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree
+</li></ul></code></pre>
+<p>Структура текущего проекта выглядит следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── Dockerfile
+├── README.md
+├── app.js
+├── package-lock.json
+├── package.json
+└── views
+    ├── css
+    │   └── styles.css
+    ├── index.html
+    └── sharks.html
+</code></pre>
+<p>Мы будем добавлять директории в этот проект по мере прохождения руководства, и команда <code>tree</code> будет полезна для оценки нашего прогресса.</p>
+
+<p>Далее добавьте в проект пакет <code>mongoose</code> npm с помощью команды <code>npm install</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install mongoose
+</li></ul></code></pre>
+<p>Эта команда создаст директорию <code>node_modules</code> в директории вашего проекта, используя зависимости, перечисленные в файле <code>package.json</code> проекта, и добавит <code>mongoose</code> в эту директорию. Также она добавит <code>mongoose</code> в зависимости, перечисленные в файле <code>package.json</code>. Более подробную информацию о файле <code>package.json</code> см. в <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker#step-1-%E2%80%94-installing-your-application-dependencies">шаге 1</a> <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-node-js-application-with-docker">руководства по сборке приложения Node.js с помощью Docker</a>.</p>
+
+<p>Перед созданием любых схем или моделей мы добавим информацию о подключении базы данных, чтобы наше приложение смогло подключиться к нашей базе данных.</p>
+
+<p>Чтобы максимально разделить интересы вашего приложения, создайте отдельный файл для информации о подключении базы данных с именем <code>db.js</code>. Откройте файл в <code>nano</code> или вашем любимом редакторе:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano db.js
+</li></ul></code></pre>
+<p>Во-первых, импортируйте <a href="https://nodejs.org/api/modules.html#modules_modules">модуль</a> <code>mongoose</code> с помощью функции <code>require</code>:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+</code></pre>
+<p>Это позволит вам получить доступ к встроенным методам Mongoose, которые вы будете использовать для создания подключения к вашей базе данных.</p>
+
+<p>Далее добавьте следующие <a href="https://www.digitalocean.com/community/tutorials/understanding-variables-scope-hoisting-in-javascript#constants">константы</a> для определения информации для URI подключения к Mongo. Хотя использование имени пользователя и пароля не является обязательным, мы добавим их, чтобы с их помощью можно было запрашивать аутентификацию для нашей базы данных. Обязательно замените имя пользователя и пароль, представленные ниже, на ваши собственные. Также вы можете назвать базу данных как-то иначе, чем <code>«^&gt;sharkinfo&lt;^&gt;</code>, если захотите:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">const mongoose = require('mongoose');
+
+const MONGO_USERNAME = '<span class="highlight">sammy</span>';
+const MONGO_PASSWORD = '<span class="highlight">your_password</span>';
+const MONGO_HOSTNAME = '127.0.0.1';
+const MONGO_PORT = '27017';
+const MONGO_DB = '<span class="highlight">sharkinfo</span>';
+</code></pre>
+<p>Поскольку мы запускаем нашу базу данных локально, то в качестве имени хоста будем использовать <code>127.0.0.1</code>. Это могло быть иначе в другом контексте разработки: например, если бы вы использовали отдельный сервер базы данных или работали с несколькими узлами в контейнеризированном рабочем процессе.</p>
+
+<p>Наконец, необходимо определить константу для URI и создать соединение с помощью метода <a href="https://mongoosejs.com/docs/api.html#connection_Connection"><code>mongoose.connect()</code></a>:</p>
+<div class="code-label " title="~/node_project/db.js">~/node_project/db.js</div><pre class="code-pre "><code langs="">...
+const url = `mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOSTNAME}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+
+mongoose.connect(url, {useNewUrlParser: true});
+</code></pre>
+<p>Обратите внимание, что в URI мы указали значение <code>authSource</code> для нашего пользователя в качестве базы данных <code>admin</code>. Это необходимо, поскольку мы указали имя пользователя в нашей строке подключения. С помощью флага  <code>useNewUrlParser</code> и <code>mongoose.connect()</code> мы указали, что хотим использовать <a href="https://mongoosejs.com/docs/deprecations.html">новый парсер URL-адресов</a> Mongo.</p>
+
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>В качестве заключительного шага добавьте информацию о подключении базы данных в файл <code>app.js</code>, чтобы приложение могло использовать ее. Откройте <code>app.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Первая строка скрипта будет выглядеть следующим образом:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const app = express();
+const router = express.Router();
+
+const path = __dirname + '/views/';
+...
+</code></pre>
+<p>Под определением константы <code>router</code>, расположенным в верхней части файла, добавьте следующую строку:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+const router = express.Router();
+<span class="highlight">const db = require('./db');</span>
+
+const path = __dirname + '/views/';
+...
+</code></pre>
+<p>С помощью этого мы укажем приложению на необходимость использования информации о подключении базы данных, указанной в файле <code>db.js</code>.</p>
+
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>После добавления информации о базе данных и Mongoose в ваш проект вы можете настроить схемы и модели, которые будут определять форму данных в вашей коллекции <code><span class="highlight">sharks</span></code>.</p>
+
+<h2 id="Шаг-3-—-Создание-схем-и-моделей-mongoose">Шаг 3 — Создание схем и моделей Mongoose</h2>
+
+<p>Нашим следующим шагом будет изучение структуры коллекции <code><span class="highlight">sharks</span></code>, которую будут создавать пользователи в базе данных <code><span class="highlight">sharkinfo</span></code> с помощью ввода данных. Какую структуру должны иметь создаваемые нами документы? Страница информации об акуле в нашем текущем приложении содержит некоторые сведения о разных акулах и их поведении:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/sharks.png" alt="Страница информации об акулах"></p>
+
+<p>В соответствии с этой темой мы можем попросить пользователей добавлять новых акул с общими данными о них. Эта цель будет определять то, как мы создадим нашу схему.</p>
+
+<p>Чтобы обеспечить отличие ваших схем и моделей от других частей приложения, создайте директорию <code>models</code> в текущей директории проекта:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir models
+</li></ul></code></pre>
+<p>Далее откройте файл <code>sharks.js</code> для создания вашей схемы и модели:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano models/sharks.js
+</li></ul></code></pre>
+<p>Импортируйте модуль <code>mongoose</code> в верхней части файла:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+</code></pre>
+<p>Ниже определите объект <code>Schema</code> для использования в качестве основы для вашей схемы акулы:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+<span class="highlight">const Schema = mongoose.Schema;</span>
+</code></pre>
+<p>Теперь вы можете определить поля, которые хотите включить в свою схему. Поскольку мы хотим создать коллекцию с отдельными акулами и информацией об их поведении, давайте добавим <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-javascript#objects">ключ</a> <code>name</code> и ключ <code>character</code>. Добавьте следующую схему <code>Shark</code> под определениями ваших констант:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+const Shark = new Schema ({
+        name: { type: String, required: true },
+        character: { type: String, required: true },
+});
+</code></pre>
+<p>Это определение включает информацию о том, какой тип ввода мы ожидаем от пользователей, в данном случае <a href="https://www.digitalocean.com/community/tutorials/understanding-data-types-in-javascript#strings">string</a>, а также о том, обязательно ли вводить эти данные.</p>
+
+<p>Наконец, создайте модель <code>Shark</code> с помощью <a href="https://mongoosejs.com/docs/api.html#mongoose_Mongoose-model">функции <code>model()</code> в Mongoose</a>. Эта модель позволит запрашивать документы из вашей коллекции и выполнять валидацию новых документов. Добавьте следующую строку внизу файла:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+module.exports = mongoose.model('Shark', Shark)
+</code></pre>
+<p>Эта последняя строка делает нашу модель <code>Shark</code> доступной для использования в качестве модуля с помощью <a href="https://nodejs.org/api/modules.html#modules_exports_shortcut">свойства <code>module.exports</code></a>. Это свойство определяет значения, которые модуль будет экспортировать, делая их доступными для использования в любом месте приложения.</p>
+
+<p>Итоговый файл <code>models/sharks.js</code> выглядит следующим образом:</p>
+<div class="code-label " title="~/node_project/models/sharks.js">~/node_project/models/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
+
+const Shark = new Schema ({
+        name: { type: String, required: true },
+        character: { type: String, required: true },
+});
+
+module.exports = mongoose.model('Shark', Shark)
+</code></pre>
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>После настройки схемы <code>Shark</code> и модели вы можете начать работу над логикой, которая будет определять, как приложение будет обрабатывать вводимые данные пользователя.</p>
+
+<h2 id="Шаг-4-—-Создание-контроллеров">Шаг 4 — Создание контроллеров</h2>
+
+<p>На следующем шаге мы сможем создать компонент контроллера, который будет определять, как  вводимые пользователем данные будут сохраняться в нашей базе данных и извлекаться из нее.</p>
+
+<p>Во-первых, создайте директорию для контроллера:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir controllers
+</li></ul></code></pre>
+<p>Далее откройте в этой папке файл <code>sharks.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano controllers/sharks.js
+</li></ul></code></pre>
+<p>Сверху файла мы импортируем модуль в нашу модель <code>Shark</code>, чтобы мы могли использовать его в логике нашего контроллера. Также мы импортируем <a href="https://nodejs.org/api/path.html">модуль <code>path</code></a> для доступа к утилитам, которые позволят нам задать путь к форме, куда пользователи будут вводить данные об акулах.</p>
+
+<p>Добавьте следующие <code>обязательные</code> функции в начало файла:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const path = require('path');
+const Shark = require('../models/sharks');
+</code></pre>
+<p>Далее мы напишем последовательность функций, которые мы будем экспортировать в модуль контроллера с помощью <a href="https://nodejs.org/api/modules.html#modules_exports_shortcut">сочетания клавиш <code>exports</code></a>. Эти функции будут включать три задачи, связанные с данными об акулах нашего пользователя:</p>
+
+<ul>
+<li>Отправка пользователям формы ввода акулы.</li>
+<li>Создание новой записи акулы.</li>
+<li>Отображение акул для пользователей.</li>
+</ul>
+
+<p>Для начала создайте функцию <code>index</code> для отображения страницы с акулами с формой ввода. Добавьте эту функцию под импортами:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+exports.index = function (req, res) {
+    res.sendFile(path.resolve('views/sharks.html'));
+};
+</code></pre>
+<p>Затем под функцией <code>index</code> добавьте функцию с именем <code>create</code> для создания новой записи акулы в коллекции <code>sharks</code>:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+exports.create = function (req, res) {
+    var newShark = new Shark(req.body);
+    console.log(req.body);
+    newShark.save(function (err) {
+            if(err) {
+            res.status(400).send('Unable to save shark to database');
+        } else {
+            res.redirect('/sharks/getshark');
+        }
+  });
+               };
+</code></pre>
+<p>Эта функция будет вызываться, когда пользователь публикует данные об акуле в форме на странице <code>sharks.html</code>. Мы создадим маршрут с конечной точкой POST позже в этом руководстве, когда мы будем создавать маршруты нашего приложения. Используя <code>body</code> запроса POST, наша функция <code>create</code> будет создавать новый объект документа акулы, который называется здесь <code>newShark</code> с помощью модели <code>Shark</code>, которую мы импортировали. Мы добавили <a href="https://developer.mozilla.org/en-US/docs/Web/API/Console/log">метод <code>console.log</code></a> для вывода записи акулы в консоль, чтобы убедиться, что наш метод POST работает надлежащим образом, но вы можете пропустить этот шаг, если хотите.</p>
+
+<p>Используя объект <code>newShark</code>, функция <code>create</code> будет вызывать <a href="https://mongoosejs.com/docs/api.html#model_Model-save">метод <code>model.save()</code></a> Mongoose для создания нового документа акулы, используя ключ, который вы определили в модели <code>Shark</code>. Эта <a href="https://developer.mozilla.org/en-US/docs/Glossary/Callback_function">функция обратного вызова</a> соответствует <a href="http://thenodeway.io/posts/understanding-error-first-callbacks/">стандартной схеме обратного вызова Node</a>: <code>callback(error, results)</code>. В случае ошибки мы будем отправлять сообщение об ошибке нашим пользователям, а в случае успеха мы будем использовать <a href="https://expressjs.com/en/api.html#res.redirect">метод <code>res.redirect()</code></a> для отправки пользователей в конечную точку, которая будет возвращать им информацию об акуле в браузере.</p>
+
+<p>Наконец, функция <code>list</code> будет отображать содержимое коллекции для пользователя. Добавьте следующий код под функцией <code>create</code>:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+exports.list = function (req, res) {
+        Shark.find({}).exec(function (err, sharks) {
+                if (err) {
+                        return res.send(500, err);
+                }
+                res.render('getshark', {
+                        sharks: sharks
+             });
+        });
+};
+</code></pre>
+<p>Эта функция использует модель <code>Shark</code> с <a href="https://mongoosejs.com/docs/api.html#model_Model.find">методом <code>model.find()</code></a> Mongoose для возврата акул, которые были добавлены в коллекцию <code>sharks</code>. Она выполняет эту задачу, возвращая объект запроса — в данном случае это все записи в коллекции <code>sharks</code> — в качестве обеспечения, используя <a href="https://mongoosejs.com/docs/api.html#query_Query-exec">функцию <code>exec()</code></a> Mongoose. В случае ошибки функция обратного вызова будет отправлять ошибку с кодом 500.</p>
+
+<p>Возвращаемый объект запроса с коллекцией <code>sharks</code> будет отображаться на странице <code>getshark</code>, которую мы создадим на следующем шаге с помощью языка шаблонов <a href="https://ejs.co/">EJS</a>.</p>
+
+<p>Итоговый файл будет выглядеть примерно так:</p>
+<div class="code-label " title="~/node_project/controllers/sharks.js">~/node_project/controllers/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const path = require('path');
+const Shark = require('../models/sharks');
+
+exports.index = function (req, res) {
+    res.sendFile(path.resolve('views/sharks.html'));
+};
+
+exports.create = function (req, res) {
+    var newShark = new Shark(req.body);
+    console.log(req.body);
+    newShark.save(function (err) {
+            if(err) {
+            res.status(400).send('Unable to save shark to database');
+        } else {
+            res.redirect('/sharks/getshark');
+        }
+  });
+               };
+
+exports.list = function (req, res) {
+        Shark.find({}).exec(function (err, sharks) {
+                if (err) {
+                        return res.send(500, err);
+                }
+                res.render('getshark', {
+                        sharks: sharks
+             });
+        });
+};
+</code></pre>
+<p>Обязательно учитывайте, что мы не будем использовать здесь <a href="https://www.digitalocean.com/community/tutorials/how-to-define-functions-in-javascript#arrow-functions">стрелочные функции</a>, вы можете включить их в этот код, если будете использовать этот код в собственной разработке.</p>
+
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>Перед переходом к следующему шагу вы снова можете запустить <code>tree</code> из директории <code><span class="highlight">node_project</span></code> для просмотра структуры проекта на данный момент. На этот раз для лаконичности мы будем использовать <code>tree</code>, чтобы пропустить <code>node_modules</code>, используя параметр <code>-I:</code></p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree -I node_modules
+</li></ul></code></pre>
+<p>После внесения этих изменений ваш проект будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── Dockerfile
+├── README.md
+├── app.js
+├── controllers
+│   └── sharks.js
+├── db.js
+├── models
+│   └── sharks.js
+├── package-lock.json
+├── package.json
+└── views
+    ├── css
+    │   └── styles.css
+    ├── index.html
+    └── sharks.html
+</code></pre>
+<p>Теперь, когда у вас есть компонент контроллера для управления тем, как пользовательский ввод будет сохраняться и передаваться пользователю, вы можете перейти к созданию представлений, которые будут реализовывать логику вашего контроллера.</p>
+
+<h2 id="Шаг-5-—-Использование-ejs-и-межплатформенное-ПО-express-для-сбора-и-отображения-данных">Шаг 5 — Использование EJS и межплатформенное ПО Express для сбора и отображения данных</h2>
+
+<p>Чтобы наше приложение могло работать с данными пользователя, нам нужно сделать две вещи: сначала мы добавим встроенную функцию межплатформенного ПО Express, <a href="https://expressjs.com/en/4x/api.html#express.urlencoded"><code>urlencoded()</code></a>, которая позволит нашему приложению парсить вводимые пользователем данные. А затем мы добавим теги шаблона в наши представления, чтобы активировать динамическое взаимодействие с данными пользователя в нашем коде.</p>
+
+<p>Для работы с функцией <code>urlencoded()</code> Express откройте ваш файл <code>app.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Над функцией <code>express.static()</code> добавьте следующую строку:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+<span class="highlight">app.use(express.urlencoded({ extended: true }));</span>
+app.use(express.static(path));
+...
+</code></pre>
+<p>Добавление этой функции позволит получить доступ к распарсенным данным POST из нашей формы информации об акуле. Мы укажем значение <code>true</code> параметра <code>extended</code> для обеспечения большей гибкости в отношении типа данных, который будет парсить ваше приложение (включая такие вещи как вложенные объекты). Дополнительную информацию о параметрах см. в <a href="https://expressjs.com/en/4x/api.html#express.urlencoded">документации для функции</a>.</p>
+
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>Далее мы добавим функциональность шаблона для наших представлений. Во-первых, установите пакет <a href="https://www.npmjs.com/package/ejs"><code>ejs</code></a> с помощью команды <code>npm install</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">npm install ejs
+</li></ul></code></pre>
+<p>Далее откройте файл <code>sharks.html</code> в папке <code>views</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano views/sharks.html
+</li></ul></code></pre>
+<p>На шаге 3 мы просматривали эту страницу для определения того, как мы должны записать нашу схему и модель Mongoose:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/sharks.png" alt="Страница информации об акулах"></p>
+
+<p>Теперь, вместо того, чтобы использовать дизайн с <a href="https://getbootstrap.com/docs/4.1/layout/grid/">двумя столбцами</a>, мы добавим третий столбец с формой, где пользователи смогут вводить информацию об акулах.</p>
+
+<p>В качестве первого шага укажите размеры <code>4</code> для существующих столбцов, чтобы создать три столбца одинакового размера. Обратите внимание, что вам нужно внести эти изменения в двух строках, которые сейчас выглядят следующим образом: <code>&lt;div class="col-lg-6"&gt;</code>. Укажите значения <code>&lt;div class="col-lg-<span class="highlight">4</span>"&gt;</code>:</p>
+<div class="code-label " title="~/node_project/views/sharks.html">~/node_project/views/sharks.html</div><pre class="code-pre "><code langs="">...
+&lt;div class="container"&gt;
+    &lt;div class="row"&gt;
+        &lt;div class="col-lg-<span class="highlight">4</span>"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Some sharks are known to be dangerous to humans, though many more are not. The sawshark, for example, is not considered a threat to humans.
+                &lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sawshark.jpg" alt="Sawshark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class="col-lg-<span class="highlight">4</span>"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Other sharks are known to be friendly and welcoming!&lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sammy.png" alt="Sammy the Shark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+ &lt;/html&gt;
+</code></pre>
+<p>Чтобы познакомиться с системой Bootstrap, включая схемы столбцов и рядов, см. <a href="https://www.taniarascia.com/what-is-bootstrap-and-how-do-i-use-it/">Введение в Bootstrap</a>.</p>
+
+<p>Далее добавьте другой столбец, который включает конечную точку для запроса POST с пользовательскими данными об акуле и тегами шаблона EJS, который будут получать эти данные. Этот столбец будет располагаться под закрывающими тегами <code>&lt;/p&gt;</code> и <code>&lt;/div&gt;</code> предыдущего столбца и над закрывающими тегами для ряда, контейнера и HTML документа. Эти закрывающие теги уже есть в коде; они также обозначены ниже комментариями. Оставьте их на месте, когда вы добавите следующий код для создания нового столбца:</p>
+<div class="code-label " title="~/node_project/views/sharks.html">~/node_project/views/sharks.html</div><pre class="code-pre "><code langs="">...
+       &lt;/p&gt; <span class="highlight">&lt;!-- closing p from previous column --&gt;</span>
+   &lt;/div&gt; <span class="highlight">&lt;!-- closing div from previous column --&gt;</span>
+&lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;form action="/sharks/addshark" method="post"&gt;
+                    &lt;div class="caption"&gt;Enter Your Shark&lt;/div&gt;
+                    &lt;input type="text" placeholder="Shark Name" name="name" &lt;%=sharks[i].name; %&gt;
+                    &lt;input type="text" placeholder="Shark Character" name="character" &lt;%=sharks[i].character; %&gt;
+                    &lt;button type="submit"&gt;Submit&lt;/button&gt;
+                &lt;/form&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt; <span class="highlight">&lt;!-- closing div for row --&gt;</span>
+&lt;/div&gt; <span class="highlight">&lt;!-- closing div for container --&gt;</span>
+
+&lt;/html&gt; <span class="highlight">&lt;!-- closing html tag --&gt;</span>
+</code></pre>
+<p>В теге <code>form</code> вы добавите конечную точку <code>"/sharks/addshark"</code> для пользовательских данных об акуле и укажете метод POST для их передачи. В полях ввода вы задали поля для параметров <code>«Shark name»</code> и <code>«Shark Character»</code> в соответствие с определенной ранее моделью <code>«Shark»</code>.</p>
+
+<p>Чтобы добавить пользовательских ввод в коллекцию <code>sharks</code>, вы используете теги шаблона EJS (<code>&lt;%=</code>,<code>%&gt;</code>) вместе с синтаксисом JavaScript для разметки пользовательских записей в соответствующие поля во вновь созданном документе. Дополнительные данные об объектах JavaScript см. в статье <a href="https://www.digitalocean.com/community/tutorials/understanding-objects-in-javascript">Знакомство с объектами JavaScript</a>. Дополнительные данные о тегах шаблона EJS см. в <a href="https://ejs.co/#docs">документации EJS</a>.</p>
+
+<p>Весь контейнер со всеми тремя столбцами, включая столбец с формой ввода акулы, будет выглядеть следующим образом после завершения этих действий:</p>
+<div class="code-label " title="~/node_project/views/sharks.html">~/node_project/views/sharks.html</div><pre class="code-pre "><code langs="">...
+&lt;div class="container"&gt;
+    &lt;div class="row"&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Some sharks are known to be dangerous to humans, though many more are not. The sawshark, for example, is not considered a threat to humans.
+                &lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sawshark.jpg" alt="Sawshark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Other sharks are known to be friendly and welcoming!&lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sammy.png" alt="Sammy the Shark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;form action="/sharks/addshark" method="post"&gt;
+                    &lt;div class="caption"&gt;Enter Your Shark&lt;/div&gt;
+                    &lt;input type="text" placeholder="Shark Name" name="name" &lt;%=sharks[i].name; %&gt;
+                    &lt;input type="text" placeholder="Shark Character" name="character" &lt;%=sharks[i].character; %&gt;
+                    &lt;button type="submit"&gt;Submit&lt;/button&gt;
+                &lt;/form&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>Теперь, когда у вас есть возможность собирать пользовательские данные, вы можете создать конечную точку для отображения возвращаемых акул и связанную с ними информацию.</p>
+
+<p>Скопируйте модифицированный файл <code>sharks.html</code> в файл с именем <code>getshark.html</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">cp views/sharks.html views/getshark.html
+</li></ul></code></pre>
+<p>Откройте <code>getshark.html</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano views/getshark.html
+</li></ul></code></pre>
+<p>Внутри файла мы изменим столбец, который мы использовали для создания нашей формы ввода акул, заменив его на столбец, который будет отображать акул в нашей коллекции <code>sharks</code>. Ваш код будет размещаться между существующими тегами <code>&lt;/p&gt;</code> и <code>&lt;/div&gt;</code> из предыдущего столбца и закрывающими тегами для ряда, контейнера и HTML документа. Обязательно оставьте эти теги на месте, когда вы будете добавлять следующий код для создания столбца:</p>
+<div class="code-label " title="~/node_project/views/getshark.html">~/node_project/views/getshark.html</div><pre class="code-pre "><code langs="">...
+       &lt;/p&gt; <span class="highlight">&lt;!-- closing p from previous column --&gt;</span>
+   &lt;/div&gt; <span class="highlight">&lt;!-- closing div from previous column --&gt;</span>
+&lt;div class="col-lg-4"&gt;
+           &lt;p&gt;
+              &lt;div class="caption"&gt;Your Sharks&lt;/div&gt;
+                  &lt;ul&gt;
+                     &lt;% sharks.forEach(function(shark) { %&gt;
+                        &lt;p&gt;Name: &lt;%= shark.name %&gt;&lt;/p&gt;
+                        &lt;p&gt;Character: &lt;%= shark.character %&gt;&lt;/p&gt;
+                     &lt;% }); %&gt;
+                  &lt;/ul&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt; <span class="highlight">&lt;!-- closing div for row --&gt;</span>
+&lt;/div&gt; <span class="highlight">&lt;!-- closing div for container --&gt;</span>
+
+&lt;/html&gt; <span class="highlight">&lt;!-- closing html tag --&gt;</span>
+</code></pre>
+<p>Здесь вы используете теги шаблона EJS и <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach">метод <code>forEach()</code></a> для вывода каждого значения в коллекции <code>sharks</code>, включая информацию о последней добавленной акуле.</p>
+
+<p>Весь контейнер со всеми тремя столбцами, включая столбец с коллекцией <code>sharks</code>, будет выглядеть следующим образом после завершения этих действий:</p>
+<div class="code-label " title="~/node_project/views/getshark.html">~/node_project/views/getshark.html</div><pre class="code-pre "><code langs="">...
+&lt;div class="container"&gt;
+    &lt;div class="row"&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Some sharks are known to be dangerous to humans, though many more are not. The sawshark, for example, is not considered a threat to humans.
+                &lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sawshark.jpg" alt="Sawshark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+        &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+                &lt;div class="caption"&gt;Other sharks are known to be friendly and welcoming!&lt;/div&gt;
+                &lt;img src="https://assets.digitalocean.com/articles/docker_node_image/sammy.png" alt="Sammy the Shark"&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;div class="col-lg-4"&gt;
+            &lt;p&gt;
+              &lt;div class="caption"&gt;Your Sharks&lt;/div&gt;
+                  &lt;ul&gt;
+                     &lt;% sharks.forEach(function(shark) { %&gt;
+                        &lt;p&gt;Name: &lt;%= shark.name %&gt;&lt;/p&gt;
+                        &lt;p&gt;Character: &lt;%= shark.character %&gt;&lt;/p&gt;
+                     &lt;% }); %&gt;
+                  &lt;/ul&gt;
+            &lt;/p&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+&lt;/html&gt;
+</code></pre>
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>Чтобы приложение могло использовать созданные вами шаблоны, вам нужно будет добавить несколько строк в файл <code>app.js</code>. Откройте его снова:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Над местом, куда вы добавили функцию <code>express.urlencoded()</code>, добавьте следующие строки:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+<span class="highlight">app.engine('html', require('ejs').renderFile);</span>
+<span class="highlight">app.set('view engine', 'html');</span>
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path));
+
+...
+</code></pre>
+<p>Метод <a href="https://expressjs.com/en/4x/api.html#app.engine"><code>app.engine</code></a> указывает приложению на необходимость преобразования движка шаблона EJS в HTML файлы, а  <a href="https://expressjs.com/en/4x/api.html#app.set"><code>app.set</code></a> определяет движок представления по умолчанию.</p>
+
+<p>Теперь ваш файл <code>app.js</code> будет выглядеть следующим образом:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const app = express();
+const router = express.Router();
+const db = require('./db');
+
+const path = __dirname + '/views/';
+const port = 8080;
+
+router.use(function (req,res,next) {
+  console.log('/' + req.method);
+  next();
+});
+
+router.get('/',function(req,res){
+  res.sendFile(path + 'index.html');
+});
+
+router.get('/sharks',function(req,res){
+  res.sendFile(path + 'sharks.html');
+});
+
+app.engine('html', require('ejs').renderFile);
+app.set('view engine', 'html');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path));
+app.use('/', router);
+
+app.listen(port, function () {
+  console.log('Example app listening on port 8080!')
+})
+</code></pre>
+<p>Теперь, когда вы создали представления, которые могут динамически работать с данными пользователя, пришло время создать маршруты вашего проекта для объединения представлений и логики контроллера.</p>
+
+<h2 id="Шаг-6-—-Создание-маршрутов">Шаг 6 — Создание маршрутов</h2>
+
+<p>Завершающим шагом сборки всех компонентов приложения будет создание маршрутов. Мы разделим наши маршруты согласно функциям, включая маршрут к начальной странице нашего приложения и другой маршрут к нашей странице с акулами. Наш маршрут <code>sharks</code> будет находиться там, где мы будем интегрировать логику нашего контроллера с представлениями, которые мы создали на предыдущем шаге.</p>
+
+<p>Во-первых, создайте директорию <code>routes</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">mkdir routes
+</li></ul></code></pre>
+<p>Далее откройте в этой директории файл с именем <code>index.js</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano routes/index.js
+</li></ul></code></pre>
+<p>Этот файл будет импортировать объекты <code>express</code>, <code>router</code> и <code>path</code>, позволяющие нам определить маршруты, которые мы хотим экспортировать с объектом <code>router</code>, и делая возможной динамическую работу с путем файла. Добавьте следующую строку вверху файла:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+const path = require('path');
+</code></pre>
+<p>Далее добавьте следующую функцию <code>router.use</code>, которая загружает <a href="https://expressjs.com/en/guide/writing-middleware.html">промежуточную функцию</a>, которая будет регистрировать запросы маршрутизатора и передавать их на маршрут приложения:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+router.use (function (req,res,next) {
+  console.log('/' + req.method);
+  next();
+});
+</code></pre>
+<p>Запросы к корню нашего приложения будут направляться сначала сюда, а уже отсюда пользователи будут направляться на начальную страницу нашего приложения согласно маршруту, который мы определим здесь. Добавьте следующий код под функцией <code>router.use</code> для определения маршрута к начальной странице:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+router.get('/',function(req,res){
+  res.sendFile(path.resolve('views/index.html'));
+});
+</code></pre>
+<p>Когда пользователи будут посещать наше приложение, первым местом, куда мы будем направлять их, будет начальная страница <code>index.html</code>, которую мы разместили в директории <code>views</code>.</p>
+
+<p>Наконец, чтобы сделать эти маршруты доступными в качестве импортируемого модуля в любом месте приложения, добавьте закрывающее выражение в конце файла для экспорта объекта <code>router</code>:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+module.exports = router;
+</code></pre>
+<p>Итоговый файл будет выглядеть примерно так:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+const path = require('path');
+
+router.use (function (req,res,next) {
+  console.log('/' + req.method);
+  next();
+});
+
+router.get('/',function(req,res){
+  res.sendFile(path.resolve('views/index.html'));
+});
+
+module.exports = router;
+</code></pre>
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>Далее откройте файл <code>sharks.js</code> для определения того, как приложение будет использовать различные конечные точки и представления, которые мы создали для работы с пользовательским вводом данных об акулах:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano routes/sharks.js
+</li></ul></code></pre>
+<p>Вверху файла импортируйте объекты <code>express</code> и <code>router</code>:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+</code></pre>
+<p>Далее импортируйте модуль <code>с именем sharks</code>, который позволит нам работать с экспортируемыми функциями, определенными с помощью контроллера:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+<span class="highlight">const shark = require('../controllers/sharks');</span>
+</code></pre>
+<p>Теперь вы можете создавать маршруты с помощью функций <code>index</code>, <code>create</code> и <code>list</code>, определенных в файле контроллера <code>sharks</code>. Каждый маршрут будет ассоциироваться с соответствующим методом HTTP: GET в случае отображения главной страницы с информацией об акулах и возврата списка акул пользователю, и POST в случае создания новой записи акулы:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+router.get('/', function(req, res){
+    shark.index(req,res);
+});
+
+router.post('/addshark', function(req, res) {
+    shark.create(req,res);
+});
+
+router.get('/getshark', function(req, res) {
+    shark.list(req,res);
+});
+</code></pre>
+<p>Каждый маршрут использует соответствующую функцию в <code>controllers/sharks.js</code>, поскольку мы сделали этот модуль доступным, импортировав его в верхней части этого файла.</p>
+
+<p>После этого закройте файл, привязав эти маршруты к объекту <code>router</code> и выполнив их экспорт:</p>
+<div class="code-label " title="~/node_project/routes/index.js">~/node_project/routes/index.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+
+module.exports = router;
+</code></pre>
+<p>Итоговый файл будет выглядеть примерно так:</p>
+<div class="code-label " title="~/node_project/routes/sharks.js">~/node_project/routes/sharks.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const router = express.Router();
+const shark = require('../controllers/sharks');
+
+router.get('/', function(req, res){
+    shark.index(req,res);
+});
+
+router.post('/addshark', function(req, res) {
+    shark.create(req,res);
+});
+
+router.get('/getshark', function(req, res) {
+    shark.list(req,res);
+});
+
+module.exports = router;
+</code></pre>
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>Последний шаг на пути к предоставлению доступа к этим маршрутам для вашего приложения будет состоять в их добавлении в <code>app.js</code>. Откройте этот файл снова:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano app.js
+</li></ul></code></pre>
+<p>Под вашей константой <code>db</code> добавьте следующий импорт для ваших маршрутов:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+const db = require('./db');
+<span class="highlight">const sharks = require('./routes/sharks');</span>
+</code></pre>
+<p>Далее <strong>замените</strong> функцию <code>app.use</code>, которая в настоящее время монтирует ваш объект <code>router</code>, на следующую строку, которая будет монтировать модуль маршрута <code>sharks</code>:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">...
+app.use(express.static(path));
+<span class="highlight">app.use('/sharks', sharks);</span>
+
+app.listen(port, function () {
+        console.log("Example app listening on port 8080!")
+})
+</code></pre>
+<p>Теперь вы можете удалить маршруты, которые были определены в этом файле ранее, поскольку вы импортируете маршруты вашего приложения с помощью модуля маршрутизации <code>sharks</code>.</p>
+
+<p>Окончательная версия файла <code>app.js</code> будет выглядеть следующим образом:</p>
+<div class="code-label " title="~/node_project/app.js">~/node_project/app.js</div><pre class="code-pre "><code class="code-highlight language-js">const express = require('express');
+const app = express();
+const router = express.Router();
+const db = require('./db');
+const sharks = require('./routes/sharks');
+
+const path = __dirname + '/views/';
+const port = 8080;
+
+app.engine('html', require('ejs').renderFile);
+app.set('view engine', 'html');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path));
+app.use('/sharks', sharks);
+
+app.listen(port, function () {
+  console.log('Example app listening on port 8080!')
+})
+</code></pre>
+<p>Сохраните и закройте файл после завершения редактирования.</p>
+
+<p>Теперь вы можете снова запустить <code>tree</code> для просмотра окончательной структуры вашего проекта:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">tree -I node_modules
+</li></ul></code></pre>
+<p>Теперь структура проекта будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>├── Dockerfile
+├── README.md
+├── app.js
+├── controllers
+│   └── sharks.js
+├── db.js
+├── models
+│   └── sharks.js
+├── package-lock.json
+├── package.json
+├── routes
+│   ├── index.js
+│   └── sharks.js
+└── views
+    ├── css
+    │   └── styles.css
+    ├── getshark.html
+    ├── index.html
+    └── sharks.html
+</code></pre>
+<p>После создания и добавления всех компонентов вашего приложения вы можете добавить тестовую акулу в базу данных!</p>
+
+<p>Если вы следовали указаниям руководства по начальной настройке сервера из предварительных требований, вам нужно будет изменить ваш брандмауэр, поскольку в настоящее время он пропускает только трафик SSH. Чтобы разрешить трафик на порт <code>8080</code>, выполните команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">sudo ufw allow 8080
+</li></ul></code></pre>
+<p>Запустите приложение:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">node app.js
+</li></ul></code></pre>
+<p>Откройте в браузере адрес <code>http://<span class="highlight">your_server_ip</span>:8080</code>. Вы увидите следующую начальную страницу:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/docker_node_image/landing_page.png" alt="Начальная страница приложения"></p>
+
+<p>Нажмите кнопку <strong>Get Shark Info (Получить информацию об акулах)</strong>. Вы увидите следующую информационную страницу с добавленной формой ввода акулы:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_form.png" alt="Форма информации об акуле"></p>
+
+<p>В этой форме добавьте акулу по вашему выбору. В демонстрационных целях мы добавим <code><span class="highlight">Megalodon Shark</span></code> в поле <strong>Shark Name</strong> (Имя акулы) и <code><span class="highlight">Ancient</span></code> в поле <strong>Shark Character</strong> (Тип акулы):</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_filled.png" alt="Заполненная форма акулы"></p>
+
+<p>Нажмите кнопку <strong>Submit</strong> (Отправить). Вы увидите страницу с информацией об акуле, отображаемая для вас:</p>
+
+<p><img src="https://assets.digitalocean.com/articles/node_mongo/shark_added.png" alt="Вывод акулы"></p>
+
+<p>Также вы увидите вывод в консоли, указывающий, что акула добавлена в вашу коллекцию:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Example app listening on port 8080!
+{ name: 'Megalodon Shark', character: 'Ancient' }
+</code></pre>
+<p>Если вы хотите создать новую запись акулы, вернитесь на страницу <strong>Sharks</strong> и повторите процесс добавления акулы.</p>
+
+<p>Теперь у вас есть рабочее приложение с информацией об акулах, позволяющее пользователям добавить информацию о своих любимых акулах.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>В этом обучающем руководстве вы создали приложение Node, выполнив интеграцию с базой данных MongoDB и переписав логику приложения с помощью шаблона архитектуры MVC. Это приложение может выступать в качестве хорошей начальной точки для полномасштабного <a href="https://en.wikipedia.org/wiki/Create,_read,_update_and_delete">CRUD</a> приложения.</p>
+
+<p>Дополнительную информацию по использованию шаблонов MVC в другом контексте см. в нашей <a href="https://www.digitalocean.com/community/tutorial_series/django-development">серии о разработке Django</a> или руководстве <a href="https://www.digitalocean.com/community/tutorials/how-to-build-a-modern-web-application-to-manage-customer-information-with-django-and-react-on-ubuntu-18-04">Создание современного веб-приложения для управления данными клиента с помощью Django и React в Ubuntu 18.04</a>.</p>
+
+<p>Дополнительную информацию о работе с MongoDB см. в нашей библиотеке <a href="https://www.digitalocean.com/community/tags/mongodb?type=tutorials">обучающих материалов для MongoDB</a>.</p>

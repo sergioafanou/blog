@@ -1,0 +1,277 @@
+---
+layout: post
+title: Использование пакета Flag в Go
+network: digitalocean
+date: January 24, 2020 at 04:35AM
+url: https://www.digitalocean.com/community/tutorials/how-to-use-the-flag-package-in-go-ru
+image: http://ifttt.com/images/no_image_card.png
+tags: docker
+feedtitle: DigitalOcean Community Tutorials
+feedurl: https://www.digitalocean.com/community/tutorials
+author: DigitalOcean
+---
+<h3 id="Введение">Введение</h3>
+
+<p>Утилиты командной строки редко можно использовать в готовом виде без дополнительной настройки. Хорошие значения по умолчанию очень важны, однако полезные утилиты должны принимать конфигурацию от пользователей. В большинстве платформ утилиты командной строки принимают флаги для настройки выполнения команд. Флаги — это ограниченные значениями ключей строки, добавляемые после имени команды. Go позволяет настраивать утилиты командной строки, принимающие флаги посредством пакета <code>flag</code> из стандартной библиотеки.</p>
+
+<p>В этом обучающем руководстве мы покажем различные способы использования пакета <code>flag</code> для построения различных видов утилит командной строки. Флаги используются для контроля вывода программы, ввода аргументов позиционирования с сочетанием флагов и других данных, а также для реализации субкоманд.</p>
+
+<h2 id="Использование-флага-для-изменения-поведения-программы">Использование флага для изменения поведения программы</h2>
+
+<p>Использование пакета <code>flag</code> предусматривает три шага. Вначале <a href="https://www.digitalocean.com/community/tutorials/how-to-use-variables-and-constants-in-go">определяются переменные</a> для сбора значений флагов, затем определяются флаги для использования приложением Go, и в заключение производится проверка синтаксиса флагов, переданных приложению при выполнении. Большинство функций в пакете <code>flag</code> связаны с определением флагов и их привязке к определенным вами переменным. Синтаксическая проверка выполняется функцией <code>Parse().</code></p>
+
+<p>Для иллюстрации мы создадим программу, определяющую флаг <a href="https://www.digitalocean.com/community/tutorials/understanding-boolean-logic-in-go">Boolean</a> для изменения сообщения, которое потом выводится стандартным способом. Если используется флаг <code>-color</code>, программа выводит сообщение синим цветом. Если флаг не указан, сообщение выводится без цветов.</p>
+
+<p>Создайте новый файл с именем <code>boolean.go</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">nano boolean.go
+</li></ul></code></pre>
+<p>Добавьте в файл следующий код для создания программы:</p>
+<div class="code-label " title="boolean.go">boolean.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "flag"
+    "fmt"
+)
+
+type Color string
+
+const (
+    ColorBlack  Color = "\u001b[30m"
+    ColorRed          = "\u001b[31m"
+    ColorGreen        = "\u001b[32m"
+    ColorYellow       = "\u001b[33m"
+    ColorBlue         = "\u001b[34m"
+    ColorReset        = "\u001b[0m"
+)
+
+func colorize(color Color, message string) {
+    fmt.Println(string(color), message, string(ColorReset))
+}
+
+func main() {
+    useColor := flag.Bool("color", false, "display colorized output")
+    flag.Parse()
+
+    if *useColor {
+        colorize(ColorBlue, "Hello, DigitalOcean!")
+        return
+    }
+    fmt.Println("Hello, DigitalOcean!")
+}
+</code></pre>
+<p>В этом примере используются <a href="https://en.wikipedia.org/wiki/ANSI_escape_code">управляющие последовательности ANSI</a>, предписывающие терминалу выводить цветной текст. Это специальные последовательности символов, поэтому для них полезно определить новый тип. В этом примере мы присвоили типу имя <code>Color</code> и определили его как <code>string</code>. Затем мы определили палитру цветов для использования в следующем блоке <code>const</code>. Функция <code>colorize</code>, определяемая после блока <code>const</code>, принимает одну из констант <code>Color</code> и переменную <code>string</code> для сообщения, которому назначается цвет. Затем она предписывает терминалу изменить цвет, сначала выводя управляющую последовательность для запрошенного цвета, а затем выводя сообщение, и, наконец, запрашивает сброс цвета терминала посредством вывода специальной последовательности сброса цвета.</p>
+
+<p>В <code>main</code> мы используем функцию <code>flag.Bool</code> для определения флага логического оператора с именем <code>color</code>. Второй параметр этой функции, <code>false</code>, задает значение этого флага по умолчанию, если оно отсутствует. Хотя вы можете ожидать иного, установка значения <code>true</code> не меняет поведения, так как при задании флага оно становится ложным. Поэтому этот параметр почти всегда будет иметь значение <code>false</code> с флагами логических операторов.</p>
+
+<p>Последний параметр — это строка документации, которая может быть выведена как сообщение об использовании. Возвращаемое этой функцией значение представляет собой указатель на <code>bool</code>. Функция <code>flag.Parse</code> на следующей строке использует этот указатель, чтобы задать переменную <code>bool</code> на базе флагов, передаваемых пользователем. Мы сможем проверить значение этого указателя <code>bool</code>, сняв ссылку на указатель. Дополнительную информацию о переменных указателей можно найти в <a href="https://www.digitalocean.com/community/conceptual_articles/understanding-pointers-in-go">обучающем руководстве по указателям</a>. Используя это логическое значение, мы можем вызывать функцию <code>colorize</code>, если флаг <code>-color</code> установлен, и вызывать переменную <code>fmt.Println</code>, если флаг отсутствует.</p>
+
+<p>Сохраните файл и запустите программу без флагов:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run boolean.go
+</li></ul></code></pre>
+<p>Вывод должен выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello, DigitalOcean!
+</code></pre>
+<p>Теперь запустите эту программу еще раз с помощью флага <code>-color</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run boolean.go -color
+</li></ul></code></pre>
+<p>При этом также будет выведен текст, но при этом синим цветом.</p>
+
+<p>Флаги — не единственные значения, которые передаются командам. Также вы можете отправлять имена файлов или другие данные.</p>
+
+<h2 id="Работа-с-позиционными-аргументами">Работа с позиционными аргументами</h2>
+
+<p>Обычно команды принимают несколько аргументов, которые выступают в качестве субъекта фокуса команды. Например, команда <code>head</code>, которая распечатывает первые строки файла, часто вызывается как <code>head example.txt</code>. Файл <code>example.txt</code> представляет собой позиционный аргумент вызова команды <code>head</code>.</p>
+
+<p>Функция <code>Parse()</code> продолжает выполнять синтаксическую проверку появляющихся флагов, пока не обнаружит аргумент, не являющийся флагом. Пакет <code>flag</code> делает их доступными через функции <code>Args()</code> и <code>Arg()</code>.</p>
+
+<p>В качестве иллюстрации построим упрощенную реализацию команды <code>head</code>, отображающей первые несколько строк указанного файла:</p>
+
+<p>Создайте новый файл <code>head.go</code> и добавьте следующий код:</p>
+<div class="code-label " title="head.go">head.go</div><pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "bufio"
+    "flag"
+    "fmt"
+    "io"
+    "os"
+)
+
+func main() {
+    var count int
+    flag.IntVar(&amp;count, "n", 5, "number of lines to read from the file")
+    flag.Parse()
+
+    var in io.Reader
+    if filename := flag.Arg(0); filename != "" {
+        f, err := os.Open(filename)
+        if err != nil {
+            fmt.Println("error opening file: err:", err)
+            os.Exit(1)
+        }
+        defer f.Close()
+
+        in = f
+    } else {
+        in = os.Stdin
+    }
+
+    buf := bufio.NewScanner(in)
+
+    for i := 0; i &lt; count; i++ {
+        if !buf.Scan() {
+            break
+        }
+        fmt.Println(buf.Text())
+    }
+
+    if err := buf.Err(); err != nil {
+        fmt.Fprintln(os.Stderr, "error reading: err:", err)
+    }
+}
+</code></pre>
+<p>Вначале мы определяем переменную <code>count</code>, где будет храниться количество строк, которое программа должна считывать из файла. Мы определяем флаг <code>-n</code>, используя <code>flag.IntVar</code>, что отражает поведение первоначальной программы <code>head</code>. Эта функция позволяет нам передать собственный <a href="https://www.digitalocean.com/community/conceptual_articles/understanding-pointers-in-go">указатель</a> в переменную в отличие от функций <code>flag</code>, у которых нет суффикса <code>Var</code>. Помимо этой разницы остальные параметры <code>flag.IntVar</code> соответствуют параметрам <code>flag.Int</code>: имя флага, значение по умолчанию и описание. Как и в предыдущем примере, мы вызовем <code>flag.Parse()</code> для обработки пользовательских данных.</p>
+
+<p>Следующий раздел выполняет чтение файла. Мы определим переменную <code>io.Reader</code>, для которой будет задан запрошенный пользователем файл или которой будут передаваться стандартные входные данные программы. В выражении <code>if</code> мы используем функцию <code>flag.Arg</code> для доступа к первому аргументу после всех флагов. Если пользователь указал имя файла, оно будет задано. В противном случае, это будет пустая строка (<code>""</code>). Если имя файла имеется в наличии, мы используем функцию <code>os.Open</code> для открытия файла и задаем предварительно определенный для этого файла <code>io.Reader</code>. В противном случае мы используем <code>os.Stdin</code> для считывания стандартных исходных данных.</p>
+
+<p>В заключительном разделе используется <code>*bufio.Scanner</code>, созданный с помощью <code>bufio.NewScanner</code>, для считывания строк из переменной <code>io.Reader</code> <code>in</code>. Мы проводим итерацию до значения <code>count</code> в <a href="https://www.digitalocean.com/community/tutorials/how-to-construct-for-loops-in-go">цикле <code>for</code></a> и вызываем <code>break</code>, если при сканировании строчки <code>buf.Scan</code> получается значение <code>false</code>, показывающее, что количество строчек меньше, чем запрошенное пользователем.</p>
+
+<p>Запустите эту программу и выведите содержимое записанного файла, используя <code>head.go</code> в качестве аргумента файла:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run head.go -- head.go
+</li></ul></code></pre>
+<p>Разделитель <code>--</code> представляет собой специальный флаг, который распознается пакетом <code>flag</code> и показывает, что за ним не идут другие аргументы флагов. При запуске этой команды выводится следующее:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>package main
+
+import (
+        "bufio"
+        "flag"
+</code></pre>
+<p>Используйте определенный вами флаг <code>-n</code> для изменения объема выводимых данных:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go run head.go -n 1 head.go
+</li></ul></code></pre>
+<p>Так выводится только выражение пакета:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>package main
+</code></pre>
+<p>Наконец, если программа определяет отсутствие аргументов позиции, она считывает исходные данные из стандартного источника, как и команда <code>head</code>. Попробуйте запустить следующую команду:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">echo "fish\nlobsters\nsharks\nminnows" | go run head.go -n 3
+</li></ul></code></pre>
+<p>Результат должен выглядеть так:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>fish
+lobsters
+sharks
+</code></pre>
+<p>Поведение функций <code>flag</code>, которое мы наблюдали, ограничено исследованием вызова всей команды. Такое поведение требуется не всегда, особенно если вы пишете инструмент командной строки, поддерживающий субкоманды.</p>
+
+<h2 id="Использование-flagset-для-реализации-субкоманд">Использование FlagSet для реализации субкоманд</h2>
+
+<p>В современных приложениях командной строки часто реализуются субкоманды, что позволяет объединить набор инструментов в одной команде. Самый известный инструмент, использующий такую схему, называется <code>git</code>. При проверке такой команды как <code>git init</code> командой является <code>git</code>, а <code>init</code> является субкомандой <code>git</code>. Важная характеристика субкоманд заключается в том, что каждая субкоманда может иметь собственный набор флагов.</p>
+
+<p>Приложения Go могут поддерживать субкоманды с собственным набором флагов, используя оператор типа <code>flag.( *FlagSet)</code>. Для иллюстрации мы создадим программу, которая будет реализовать команду, используя две субкоманды с разными флагами.</p>
+
+<p>Создайте новый файл с именем <code>subcommand.go</code> и добавьте в него следующий код:</p>
+<pre class="code-pre "><code class="code-highlight language-go">package main
+
+import (
+    "errors"
+    "flag"
+    "fmt"
+    "os"
+)
+
+func NewGreetCommand() *GreetCommand {
+    gc := &amp;GreetCommand{
+        fs: flag.NewFlagSet("greet", flag.ContinueOnError),
+    }
+
+    gc.fs.StringVar(&amp;gc.name, "name", "World", "name of the person to be greeted")
+
+    return gc
+}
+
+type GreetCommand struct {
+    fs *flag.FlagSet
+
+    name string
+}
+
+func (g *GreetCommand) Name() string {
+    return g.fs.Name()
+}
+
+func (g *GreetCommand) Init(args []string) error {
+    return g.fs.Parse(args)
+}
+
+func (g *GreetCommand) Run() error {
+    fmt.Println("Hello", g.name, "!")
+    return nil
+}
+
+type Runner interface {
+    Init([]string) error
+    Run() error
+    Name() string
+}
+
+func root(args []string) error {
+    if len(args) &lt; 1 {
+        return errors.New("You must pass a sub-command")
+    }
+
+    cmds := []Runner{
+        NewGreetCommand(),
+    }
+
+    subcommand := os.Args[1]
+
+    for _, cmd := range cmds {
+        if cmd.Name() == subcommand {
+            cmd.Init(os.Args[2:])
+            return cmd.Run()
+        }
+    }
+
+    return fmt.Errorf("Unknown subcommand: %s", subcommand)
+}
+
+func main() {
+    if err := root(os.Args[1:]); err != nil {
+        fmt.Println(err)
+        os.Exit(1)
+    }
+}
+</code></pre>
+<p>Эта программа разделена на несколько частей: функция <code>main</code>, функция <code>root</code> и отдельные функции для реализации субкоманды. Функция <code>main</code> обрабатывает ошибки, возвращаемые командами. Если любая функция возвращает <a href="https://www.digitalocean.com/community/tutorials/handling-errors-in-go">ошибку</a>, выражение <code>if</code> определит ее, распечатает ошибку и закроет программу с кодом состояния <code>1</code>, сообщающим операционной системе о возникновении ошибки. Внутри функции <code>main</code> мы передаем все аргументы вызова программы в функцию <code>root</code>. Удалим первый аргумент, представляющий собой имя программы (в предыдущих примерах <code>./subcommand</code>), выделив срез <code>os.Args.</code></p>
+
+<p>Функция <code>root</code> определяет <code>[]Runner</code>, где определяются все субкоманды. <code>Runner</code> — это <a href="https://www.digitalocean.com/community/tutorials/how-to-use-interfaces-in-go">интерфейс</a> субкоманд, позволяющий функции <code>root</code> получить имя субкоманды с помощью <code>Name()</code> и сравнить его с содержанием переменной <code>subcommand</code>. После обнаружения правильной субкоманды посредством итерации переменной <code>cmds</code> мы инициализируем субкоманду с остальными аргументами и вызываем метод <code>Run()</code> для этой команды.</p>
+
+<p>Мы определяем только одну субкоманду, хотя данная структура позволяет легко создавать и другие команды. Экземпляр <code>GreetCommand</code> создается с помощью <code>NewGreetCommand</code> при создани нового <code>*flag.FlagSet</code> с помощью <code>flag.NewFlagSet</code>. <code>flag.NewFlagSet</code> принимает два аргумента: имя набора флагов и стратегию отчета об ошибках проверки синтаксиса. Имя <code>*flag.FlagSet</code> доступно с помощью <code>flag.( *FlagSet).</code> Метод Name. Мы используем этот метод в <code>(*GreetCommand). Name()</code> так, что имя субкоманды соответствует имени, которое мы присвоили <code>*flag.FlagSet</code>. <code>NewGreetCommand</code> также определяет флаг <code>-name</code> аналогично предыдущим примерам, но вместо этого вызывает его как метод поля <code>*flag.FlagSet</code> <code>*GreetCommand</code>, <code>gc.fs</code>. Когда функция <code>root</code> вызывает метод <code>Init()</code> команды <code>*GreetCommand</code>, мы передаем указанные аргументы методу <code>Parse</code> поля <code>*flag.FlagSet</code>.</p>
+
+<p>Субкоманды будет проще увидеть, если вы соберете эту программу и запустите ее. Выполните сборку программы:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">go build subcommand.go
+</li></ul></code></pre>
+<p>Теперь запустите программу без аргументов:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./subcommand
+</li></ul></code></pre>
+<p>Вы увидите следующий результат:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>You must pass a sub-command
+</code></pre>
+<p>Теперь запустите команду с субкомандой <code>greet</code>:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./subcommand greet
+</li></ul></code></pre>
+<p>Результат будет выглядеть следующим образом:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello World !
+</code></pre>
+<p>Теперь используйте флаг <code>-name</code> с <code>greet</code> для указания имени:</p>
+<pre class="code-pre command"><code langs=""><ul class="prefixed"><li class="line" prefix="$">./subcommand greet -name <span class="highlight">Sammy</span>
+</li></ul></code></pre>
+<p>Программа выведет следующее:</p>
+<pre class="code-pre "><code langs=""><div class="secondary-code-label " title="Output">Output</div>Hello <span class="highlight">Sammy</span> !
+</code></pre>
+<p>В этом примере проиллюстрированы некоторые принципы структурирования больших приложений командной строки в Go. Наборы <code>FlagSet</code> разработаны так, чтобы дать разработчикам больше контроля над местом и способом обработки флагов логикой синтаксической проверки флагов.</p>
+
+<h2 id="Заключение">Заключение</h2>
+
+<p>Флаги делают приложения более полезными в разных условиях, поскольку они дают пользователям контроль над способом выполнения программы. Очень важно дать пользователям полезные параметры по умолчанию, но также следует дать им возможностям изменять параметры, которые не подходят для их конкретной ситуации. Вы увидели, что пакет <code>flag</code> предоставляет вашим пользователям гибкие возможности выбора конфигурации. Вы можете выбрать несколько простых флагов или создать разветвленный набор субкоманд. В любом случае, использование пакета <code>flag</code> поможет вам выполнить сборку утилит в стиле длинной истории гибких инструментов командной строки с поддержкой сценариев.</p>
+
+<p>Ознакомьтесь с <a href="https://www.digitalocean.com/community/tutorial_series/how-to-code-in-go">серией статей по программированию на Go</a>, чтобы узнать больше о языке программирования Go.</p>

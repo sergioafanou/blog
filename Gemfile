@@ -10,7 +10,7 @@ gem "observer"
 gem "ostruct"
 
 # Jekyll core
-gem "jekyll", "~> 4.2.2"
+gem "jekyll", "~> 4.3.4"
 gem "webrick", "~> 1.7"
 
 # Windows platform support

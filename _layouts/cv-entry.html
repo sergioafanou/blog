@@ -1,0 +1,106 @@
+---
+layout: default
+---
+
+<div class="container">
+<div class="row">
+<div class="col-md-8 mx-auto">
+
+  <nav aria-label="breadcrumb" class="mb-4">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ site.baseurl }}/">Home</a></li>
+      <li class="breadcrumb-item"><a href="{{ site.baseurl }}/cv/">Selected Work</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ page.title }}</li>
+    </ol>
+  </nav>
+
+  <article class="cv-entry">
+
+    <header class="cv-entry__header mb-4">
+      <div class="d-flex align-items-start justify-content-between flex-wrap">
+        <div>
+          <h1 class="cv-entry__title">{{ page.title }}</h1>
+          {% if page.role %}
+          <p class="cv-entry__role text-muted mb-1">{{ page.role }}{% if page.company %} · {{ page.company }}{% endif %}</p>
+          {% endif %}
+          {% if page.period %}
+          <p class="cv-entry__period">
+            <i class="far fa-calendar-alt mr-1"></i>
+            <time>{{ page.period }}</time>
+          </p>
+          {% endif %}
+        </div>
+        <div class="cv-entry__badges mt-2">
+          {% if page.type %}
+          <span class="badge badge-secondary mr-1">{{ page.type }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if page.skills and page.skills.size > 0 %}
+      <div class="cv-entry__skills mt-3">
+        {% for skill in page.skills %}
+        <span class="badge badge-light border mr-1 mb-1">{{ skill }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </header>
+
+    {% if page.summary %}
+    <div class="cv-entry__summary alert alert-light mb-4">
+      <strong>{{ page.summary }}</strong>
+    </div>
+    {% endif %}
+
+    {% if page.description %}
+    <div class="cv-entry__description mb-4">
+      <p>{{ page.description }}</p>
+    </div>
+    {% endif %}
+
+    {{ content }}
+
+    {% if page.achievements and page.achievements.size > 0 %}
+    <div class="cv-entry__achievements mb-4">
+      <h4>Key Achievements</h4>
+      <ul class="list-group list-group-flush">
+        {% for achievement in page.achievements %}
+        <li class="list-group-item px-0">
+          <i class="fas fa-check-circle text-success mr-2"></i>{{ achievement }}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if page.learnings and page.learnings.size > 0 %}
+    <div class="cv-entry__learnings mb-4">
+      <h4>Key Learnings</h4>
+      <ul class="list-group list-group-flush">
+        {% for learning in page.learnings %}
+        <li class="list-group-item px-0">
+          <i class="fas fa-lightbulb text-warning mr-2"></i>{{ learning }}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <footer class="cv-entry__footer mt-5 pt-4 border-top">
+      <a href="{{ site.baseurl }}/cv/" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left mr-1"></i> Back to Selected Work
+      </a>
+    </footer>
+
+  </article>
+
+</div>
+</div>
+</div>
+
+<style>
+.cv-entry__title { font-size: 1.8rem; font-weight: 700; }
+.cv-entry__role  { font-size: 1rem; }
+.cv-entry__period { font-size: 0.9rem; color: #6c757d; }
+.cv-entry__summary { border-left: 4px solid #343a40; }
+</style>

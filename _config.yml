@@ -9,6 +9,19 @@ google_analytics: 'UA-46278016-1'
 disqus: 'demowebsite'
 mailchimp-list: 'https://wowthemes.us11.list-manage.com/subscribe/post?u=8aeb20a530e124561927d3bd8&amp;id=8c3d2d214b'
 include: ["_pages"]
+
+# CV Collection — Selected Work & Achievements
+collections:
+  cv:
+    output: true
+    permalink: /cv/:name/
+
+defaults:
+  - scope:
+      path: ""
+      type: "cv"
+    values:
+      layout: cv-entry
 permalink: /:title/
 
 # Authors
